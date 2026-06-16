@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: ai-model-api
+    runtime: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn app.main:app -c gunicorn.conf.py
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: Custom Model API
+      - key: BIND
+        value: 0.0.0.0:$PORT
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: GUNICORN_TIMEOUT
+        value: "180"
+      - key: API_PREFIX
+        value: /v1
+      - key: ROOT_PATH
+        value: ""
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: "180"
+      - key: RATE_LIMIT
+        value: 60/minute
+      - key: TRUSTED_HOSTS
+        value: "*"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: MODEL_ID
+        value: custom-nexus-v1
+      - key: MODEL_WEIGHTS_PATH
+        value: models/weights/nexus_v1.npz
+      - key: TOKENIZER_PATH
+        value: models/tokenizer/vocab.json
+      - key: D_MODEL
+        value: "256"
+      - key: N_HEADS
+        value: "4"
+      - key: N_LAYERS
+        value: "4"
+      - key: D_FF
+        value: "1024"
+      - key: MAX_SEQ_LEN
+        value: "256"
+      - key: VOCAB_SIZE
+        value: "4096"
+      - key: MAX_NEW_TOKENS
+        value: "128"
+      - key: TEMPERATURE
+        value: "0.7"
+      - key: TOP_K
+        value: "40"
+      - key: TOP_P
+        value: "0.9"
+      - key: API_KEY
+        generateValue: true
