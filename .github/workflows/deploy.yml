@@ -1,0 +1,65 @@
+name: Python FTP Deploy to Production
+ 
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual triggering
+ 
+jobs:
+  deploy:
+    name: Validate and Deploy Python App
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+ 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+ 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+ 
+      - name: Validate Python app imports
+        run: |
+          python -m compileall app scripts run.py wsgi.py
+          python -c "import app.main; print('App import ok')"
+ 
+      - name: Deploy to FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: 72.60.216.54
+          username: u573967329.devaitoollat
+          password: 7p+K:dKA@Q1fzvoJ
+          server-dir: /ai-modal/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/vendor/**
+            **/.venv/**
+            **/__pycache__/**
+            **/*.pyc
+            **/.pytest_cache/**
+            **/.mypy_cache/**
+            **/.env
+            **/.env.*
+            **/.ftpignore
+            **/.github/**
+            **/tests/**
+            **/.idea/**
+            **/.vscode/**
+            **/.fleet/**
+            **/npm-debug.log
+            **/yarn-error.log
+            **/README.md
+            **/.env.example
+          dangerous-clean-slate: false
+          dry-run: false
