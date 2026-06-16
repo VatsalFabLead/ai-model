@@ -37,19 +37,19 @@ services:
       - key: TOKENIZER_PATH
         value: models/tokenizer/vocab.json
       - key: D_MODEL
-        value: "256"
+        value: "64"
       - key: N_HEADS
-        value: "4"
+        value: "2"
       - key: N_LAYERS
-        value: "4"
+        value: "2"
       - key: D_FF
-        value: "1024"
-      - key: MAX_SEQ_LEN
         value: "256"
-      - key: VOCAB_SIZE
-        value: "4096"
-      - key: MAX_NEW_TOKENS
+      - key: MAX_SEQ_LEN
         value: "128"
+      - key: VOCAB_SIZE
+        value: "2048"
+      - key: MAX_NEW_TOKENS
+        value: "32"
       - key: TEMPERATURE
         value: "0.7"
       - key: TOP_K
