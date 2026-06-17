@@ -21,7 +21,7 @@ def main() -> None:
     "app.main:app",
     host=settings.host,
     port=settings.port,
-    reload=not settings.is_production,
+    reload=settings.reload and not settings.is_production,
     timeout_keep_alive=settings.request_timeout_seconds,
   )
 

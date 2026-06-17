@@ -4,7 +4,7 @@ from pathlib import Path
 from app.config import Settings
 from app.engine.inference import GenerationConfig, InferenceEngine
 from app.engine.knowledge import KnowledgeBase, load_knowledge_base
-from app.engine.resume import generate_resume
+from app.engine.resume import detect_resume_intent, generate_resume
 from app.engine.retriever import KnowledgeRetriever, load_retriever
 from app.engine.web_knowledge import WikipediaSource
 from app.services.provider_base import ModelProvider
@@ -65,10 +65,8 @@ class CustomModelProvider(ModelProvider):
       "",
     )
 
-    if last_user.strip():
-      resume = generate_resume(last_user)
-      if resume:
-        return resume
+    if not kwargs.get("skip_intent") and detect_resume_intent(last_user):
+      return generate_resume(last_user)
 
     if last_user.strip() and self._kb and self._kb.size:
       answer, score = self._kb.search(last_user)

@@ -9,6 +9,15 @@ class ProviderRegistry:
     self._provider: ModelProvider | None = None
 
   def _create_provider(self) -> ModelProvider:
+    backend = self._settings.model_backend.lower().strip()
+    if backend == "ollama":
+      from app.services.ollama_provider import OllamaProvider
+
+      return OllamaProvider(self._settings)
+    if backend == "llm":
+      from app.services.llm_provider import LocalLLMProvider
+
+      return LocalLLMProvider(self._settings)
     return CustomModelProvider(self._settings)
 
   async def startup(self) -> None:

@@ -17,19 +17,24 @@ if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.config import get_settings
-from app.services.custom_provider import CustomModelProvider
+from app.services.registry import ProviderRegistry
 
 
 async def run(prompts: list[str]) -> None:
-  provider = CustomModelProvider(get_settings())
-  await provider.load()
-  print(f"Knowledge base entries: {provider._kb.size if provider._kb else 0}")
+  settings = get_settings()
+  registry = ProviderRegistry(settings)
+  await registry.startup()
+  provider = registry.provider
+  print(f"Backend: {settings.model_backend}")
+  kb = getattr(provider, "_kb", None)
+  print(f"Knowledge base entries: {kb.size if kb else 0}")
   print("=" * 60)
   for q in prompts:
     answer = await provider.chat([{"role": "user", "content": q}])
     print(f"User:  {q}")
     print(f"Nexus: {answer}")
     print("-" * 60)
+  await registry.shutdown()
 
 
 def main() -> None:

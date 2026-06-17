@@ -25,3 +25,7 @@ Thumbs.db
 # Local model artifacts (ignore by default, but ship the deployed weights)
 models/weights/*.npz
 !models/weights/nexus_v1.npz
+
+# Open-source LLM weights (large; download with scripts/download_model.py)
+models/llm/
+*.gguf

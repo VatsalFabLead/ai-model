@@ -24,8 +24,10 @@ services:
         value: ""
       - key: REQUEST_TIMEOUT_SECONDS
         value: "180"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
       - key: RATE_LIMIT
-        value: 60/minute
+        value: 300/minute
       - key: TRUSTED_HOSTS
         value: "*"
       - key: CORS_ORIGINS
