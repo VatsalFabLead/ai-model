@@ -98,6 +98,26 @@ async def chat_completions(
   )
 
 
+@router.get("/debug/wiki")
+async def debug_wiki(
+  request: Request,
+  q: str = "Albert Einstein",
+  _: str = Depends(verify_api_key),
+) -> dict:
+  registry = _get_registry(request)
+  provider = registry.provider
+  wiki = getattr(provider, "_wiki", None)
+  if wiki is None:
+    return {"enabled": False, "answer": None, "error": "web knowledge disabled"}
+  answer = await wiki.query(q)
+  return {
+    "enabled": True,
+    "found": bool(answer),
+    "error": getattr(wiki, "last_error", None),
+    "preview": (answer[:200] if answer else None),
+  }
+
+
 @router.get("/models")
 async def list_models(
   request: Request,

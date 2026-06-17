@@ -13,7 +13,8 @@ import httpx
 
 from app.engine.knowledge import _STOPWORDS, tokenize
 
-_USER_AGENT = "NexusCustomModel/1.0 (custom local AI; contact: self-hosted)"
+# Wikimedia policy requires a descriptive User-Agent with a contact URL.
+_USER_AGENT = "NexusCustomModel/1.0 (https://github.com/VatsalFabLead/ai-model)"
 # Lightweight language guess for a few common scripts/words -> Wikipedia subdomain.
 _LANG_HINTS = {
   "hi": ("kya", "kaun", "kaise", "namaste", "aap", "hai", "kyun", "kahan"),
@@ -56,6 +57,7 @@ class WikipediaSource:
     self._sentences = max(1, min(sentences, 10))
     self._timeout = timeout
     self._cache: dict[str, str] = {}
+    self.last_error: str | None = None
 
   async def query(self, question: str) -> str | None:
     lang = guess_lang(question)
@@ -81,7 +83,9 @@ class WikipediaSource:
         resp = await client.get(url, params=params, headers={"User-Agent": _USER_AGENT})
         resp.raise_for_status()
         data = resp.json()
-    except (httpx.HTTPError, ValueError):
+      self.last_error = None
+    except (httpx.HTTPError, ValueError) as exc:
+      self.last_error = f"{type(exc).__name__}: {exc}"
       return None
 
     pages = data.get("query", {}).get("pages", {})
