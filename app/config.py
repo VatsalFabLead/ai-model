@@ -42,6 +42,12 @@ class Settings(BaseSettings):
   retrieval_threshold: float = Field(default=0.6, alias="RETRIEVAL_THRESHOLD")
   knowledge_threshold: float = Field(default=0.18, alias="KNOWLEDGE_THRESHOLD")
 
+  # Free encyclopedia source (Wikipedia) for detailed world knowledge.
+  # This is a data source, NOT an AI model. Set to false to stay fully offline.
+  enable_web_knowledge: bool = Field(default=True, alias="ENABLE_WEB_KNOWLEDGE")
+  web_knowledge_sentences: int = Field(default=8, alias="WEB_KNOWLEDGE_SENTENCES")
+  web_knowledge_timeout: float = Field(default=8.0, alias="WEB_KNOWLEDGE_TIMEOUT")
+
   # Architecture — tuned for Hostinger VPS CPU (increase locally if you have more RAM)
   d_model: int = Field(default=256, alias="D_MODEL")
   n_heads: int = Field(default=4, alias="N_HEADS")

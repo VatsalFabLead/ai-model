@@ -5,16 +5,17 @@ from app.config import Settings
 from app.engine.inference import GenerationConfig, InferenceEngine
 from app.engine.knowledge import KnowledgeBase, load_knowledge_base
 from app.engine.retriever import KnowledgeRetriever, load_retriever
+from app.engine.web_knowledge import WikipediaSource
 from app.services.provider_base import ModelProvider
 
 
 class CustomModelProvider(ModelProvider):
-  """Serves the fully custom stack — all 100% custom and free, no third-party models.
+  """Serves the fully custom stack — 100% custom, free, no third-party AI models.
 
   Answering order:
-    1) TF-IDF knowledge engine (scales to large, multilingual knowledge bases)
-    2) Trained-embedding retriever (persona / chat corpus)
-    3) Neural transformer generation (fallback)
+    1) Custom TF-IDF knowledge base (your own data; instant; multilingual)
+    2) Free encyclopedia source (Wikipedia) for detailed world knowledge
+    3) Graceful fallback (or optional neural generation)
   """
 
   def __init__(self, settings: Settings) -> None:
@@ -22,6 +23,12 @@ class CustomModelProvider(ModelProvider):
     self._engine = InferenceEngine(settings)
     self._retriever: KnowledgeRetriever | None = None
     self._kb: KnowledgeBase | None = None
+    self._wiki: WikipediaSource | None = None
+    if settings.enable_web_knowledge:
+      self._wiki = WikipediaSource(
+        sentences=settings.web_knowledge_sentences,
+        timeout=settings.web_knowledge_timeout,
+      )
 
   def _build_retriever(self) -> None:
     model = self._engine.model
@@ -61,6 +68,11 @@ class CustomModelProvider(ModelProvider):
       answer, score = self._kb.search(last_user)
       if answer and score >= self._settings.knowledge_threshold:
         return answer
+
+    if last_user.strip() and self._wiki is not None:
+      wiki_answer = await self._wiki.query(last_user)
+      if wiki_answer:
+        return wiki_answer
 
     if kwargs.get("use_neural_fallback"):
       prompt = self._engine.format_chat_prompt(messages)

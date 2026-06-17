@@ -52,6 +52,10 @@ services:
         value: "40"
       - key: RETRIEVAL_THRESHOLD
         value: "0.6"
+      - key: ENABLE_WEB_KNOWLEDGE
+        value: "true"
+      - key: WEB_KNOWLEDGE_SENTENCES
+        value: "8"
       - key: TEMPERATURE
         value: "0.7"
       - key: TOP_K

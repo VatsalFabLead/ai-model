@@ -83,6 +83,7 @@ class KnowledgeBase:
     q_toks = tokenize(query)
     if not q_toks:
       return None, 0.0
+    q_all = set(q_toks)
 
     q_tf: dict[str, int] = {}
     for t in q_toks:
@@ -107,11 +108,12 @@ class KnowledgeBase:
 
     # Gate coincidental matches: require a shared meaningful (non-stopword) word,
     # or a near-exact phrase overlap (handles all-stopword questions).
-    q_set = set(q_weights.keys())
+    # Use ALL query tokens (including ones outside the KB vocabulary) so that
+    # unknown content words correctly lower the overlap.
     doc_set = self._doc_terms[best_id]
-    shared = q_set & doc_set
+    shared = q_all & doc_set
     content_shared = shared - _STOPWORDS
-    union = q_set | doc_set
+    union = q_all | doc_set
     jaccard = len(shared) / len(union) if union else 0.0
     if not content_shared and jaccard < 0.6:
       return None, best_score
