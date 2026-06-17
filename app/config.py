@@ -35,7 +35,12 @@ class Settings(BaseSettings):
     default=PROJECT_ROOT / "data" / "corpus.txt",
     alias="CORPUS_PATH",
   )
+  knowledge_path: Path = Field(
+    default=PROJECT_ROOT / "data" / "knowledge.jsonl",
+    alias="KNOWLEDGE_PATH",
+  )
   retrieval_threshold: float = Field(default=0.6, alias="RETRIEVAL_THRESHOLD")
+  knowledge_threshold: float = Field(default=0.18, alias="KNOWLEDGE_THRESHOLD")
 
   # Architecture — tuned for Hostinger VPS CPU (increase locally if you have more RAM)
   d_model: int = Field(default=256, alias="D_MODEL")

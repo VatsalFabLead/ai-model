@@ -1,0 +1,45 @@
+{"q": "How do I make a Flutter CV or resume app?", "a": "To build a CV/resume app in Flutter: 1) Run 'flutter create cv_app'. 2) Use a Column with sections for Header (name, photo, contact), About, Experience, Education, and Skills. 3) Use Card and ListTile widgets for each entry. 4) Add a 'pdf' package (pdf + printing) to export the CV as PDF. 5) Use Theme for consistent colors and fonts. Want a sample widget tree?"}
+{"q": "How do I export a PDF in Flutter?", "a": "Add the 'pdf' and 'printing' packages to pubspec.yaml. Create a pw.Document(), add pw.Page widgets, then call Printing.layoutPdf() to preview or save. This works for CVs, invoices, and reports."}
+{"q": "What is Flutter?", "a": "Flutter is a free, open-source UI toolkit by Google for building cross-platform apps (Android, iOS, web, desktop) from a single Dart codebase. It uses widgets for everything in the UI."}
+{"q": "How do I start a new Flutter project?", "a": "Install the Flutter SDK, then run 'flutter create my_app' in your terminal, 'cd my_app', and 'flutter run' to launch it on a device or emulator."}
+{"q": "What is a widget in Flutter?", "a": "In Flutter, a widget is a building block of the UI. Everything is a widget: text, buttons, layout, padding, and even the app itself. Widgets are either Stateless (immutable) or Stateful (can change over time)."}
+{"q": "What is Dart?", "a": "Dart is a free, open-source programming language by Google, used to build Flutter apps. It is object-oriented, type-safe, and compiles to fast native code or JavaScript."}
+{"q": "What is Python?", "a": "Python is a popular, free, high-level programming language known for simple syntax. It is widely used in AI, data science, web development, automation, and scripting."}
+{"q": "How do I create a list in Python?", "a": "Use square brackets: my_list = [1, 2, 3]. You can add items with my_list.append(4), access them with my_list[0], and loop with 'for item in my_list:'."}
+{"q": "What is an API?", "a": "An API (Application Programming Interface) is a set of rules that lets software talk to other software. A web API exposes endpoints (URLs) that return data, usually as JSON, so apps can request and share information."}
+{"q": "What is FastAPI?", "a": "FastAPI is a free, modern Python web framework for building APIs quickly. It is fast, supports async, and automatically generates interactive docs at /docs."}
+{"q": "What is JSON?", "a": "JSON (JavaScript Object Notation) is a lightweight text format for storing and exchanging data using key-value pairs and arrays. It is the most common format for web APIs."}
+{"q": "What is Git?", "a": "Git is a free, distributed version control system that tracks changes in code. Common commands: 'git init', 'git add .', 'git commit -m message', and 'git push' to upload to GitHub."}
+{"q": "What is the capital of France?", "a": "The capital of France is Paris."}
+{"q": "What is the capital of India?", "a": "The capital of India is New Delhi."}
+{"q": "What is the capital of Japan?", "a": "The capital of Japan is Tokyo."}
+{"q": "What is the capital of the United States?", "a": "The capital of the United States is Washington, D.C."}
+{"q": "What is the largest planet in the solar system?", "a": "Jupiter is the largest planet in our solar system."}
+{"q": "What is the speed of light?", "a": "The speed of light in a vacuum is approximately 299,792 kilometers per second (about 300,000 km/s)."}
+{"q": "What is water made of?", "a": "Water is made of two hydrogen atoms and one oxygen atom, with the chemical formula H2O."}
+{"q": "What is photosynthesis?", "a": "Photosynthesis is the process where plants use sunlight, water, and carbon dioxide to produce oxygen and glucose (energy)."}
+{"q": "Who wrote Romeo and Juliet?", "a": "Romeo and Juliet was written by William Shakespeare."}
+{"q": "What is gravity?", "a": "Gravity is the natural force that attracts objects with mass toward each other. On Earth, it pulls objects toward the ground at about 9.8 meters per second squared."}
+{"q": "What is artificial intelligence?", "a": "Artificial intelligence (AI) is the field of computer science focused on building systems that can perform tasks that normally require human intelligence, like understanding language, recognizing images, and making decisions."}
+{"q": "What is machine learning?", "a": "Machine learning is a branch of AI where computers learn patterns from data to make predictions or decisions, instead of being explicitly programmed for every case."}
+{"q": "How many continents are there?", "a": "There are seven continents: Africa, Antarctica, Asia, Europe, North America, Oceania (Australia), and South America."}
+{"q": "What is the boiling point of water?", "a": "Water boils at 100 degrees Celsius (212 degrees Fahrenheit) at sea level."}
+{"q": "Hello", "a": "Hello! I am Nexus, your custom AI assistant. How can I help you today?"}
+{"q": "Who are you?", "a": "I am Nexus, a custom AI knowledge assistant running on your own server, built without any third-party models."}
+{"q": "What can you do?", "a": "I can answer questions about general knowledge, science, coding (Python, Flutter, APIs), and more. The more knowledge you add to my data, the more I can answer."}
+{"q": "namaste", "a": "Namaste! Main Nexus hoon, aapka custom AI assistant. Main aapki kaise madad kar sakta hoon?"}
+{"q": "aap kaun ho", "a": "Main Nexus hoon, ek custom AI assistant jo aapke apne server par chalta hai."}
+{"q": "hola", "a": "Hola! Soy Nexus, tu asistente de IA personalizado. Como puedo ayudarte hoy?"}
+{"q": "quien eres", "a": "Soy Nexus, un asistente de IA personalizado que se ejecuta en tu propio servidor."}
+{"q": "bonjour", "a": "Bonjour! Je suis Nexus, votre assistant IA personnalise. Comment puis-je vous aider?"}
+{"q": "qui es tu", "a": "Je suis Nexus, un assistant IA personnalise qui fonctionne sur votre propre serveur."}
+{"q": "marhaba", "a": "Marhaba! Ana Nexus, musaeiduk al-zaki al-mukhasas. Kayfa yumkinuni musaeadatuk?"}
+{"q": "what languages do you support", "a": "I can answer in any language you train me on. I currently include English, Hindi, Spanish, French, and Arabic samples. Add more entries in data/knowledge.jsonl to expand."}
+{"q": "How do I deploy a Python app on Render?", "a": "Push your code to GitHub, add a render.yaml with a build command (pip install -r requirements.txt) and a start command (gunicorn). In Render, choose New + Blueprint, select your repo, and deploy."}
+{"q": "How do I train you with more knowledge?", "a": "Add entries to data/knowledge.jsonl in the format {\"q\": \"question\", \"a\": \"answer\"}, or import free open datasets with scripts/import_dataset.py, then redeploy. No retraining is needed for the knowledge engine."}
+{"q": "How do I make a portfolio website?", "a": "Pick a stack (HTML/CSS/JS, React, or Flutter web). Include sections: Home/Intro, About, Projects, Skills, and Contact. Host it free on GitHub Pages, Netlify, or Render. Keep it clean, fast, and mobile-friendly."}
+{"q": "What is HTML?", "a": "HTML (HyperText Markup Language) is the standard language for creating the structure of web pages using elements like headings, paragraphs, links, and images."}
+{"q": "What is CSS?", "a": "CSS (Cascading Style Sheets) is used to style web pages, controlling colors, fonts, layout, spacing, and responsive design."}
+{"q": "What is JavaScript?", "a": "JavaScript is a programming language that runs in web browsers to make pages interactive, handle events, and update content dynamically."}
+{"q": "How do I write a good CV?", "a": "A strong CV includes: a clear header (name, contact, links), a short professional summary, work experience with impact and numbers, education, key skills, and projects. Keep it to 1-2 pages, consistent formatting, and tailored to the job."}
+{"q": "What is a database?", "a": "A database is an organized collection of data that can be stored, queried, and updated. Common types are relational (SQL, like MySQL and PostgreSQL) and non-relational (NoSQL, like MongoDB)."}
