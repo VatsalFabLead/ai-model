@@ -19,6 +19,8 @@ class GenerationConfig:
   temperature: float = 0.7
   top_k: int = 40
   top_p: float = 0.9
+  repetition_penalty: float = 1.15
+  no_repeat_ngram: int = 4
   stop_tokens: tuple[str, ...] = ("<|eos|>",)
 
 
@@ -63,8 +65,34 @@ class InferenceEngine:
     self._model = None
     self._tokenizer = None
 
-  def _sample_next(self, logits: np.ndarray, config: GenerationConfig) -> int:
+  def _sample_next(
+    self,
+    logits: np.ndarray,
+    config: GenerationConfig,
+    generated: list[int],
+    context_len: int,
+  ) -> int:
     logits = logits.astype(np.float64)
+
+    produced = generated[context_len:]
+    if config.repetition_penalty and config.repetition_penalty != 1.0 and produced:
+      for tok in set(produced):
+        if logits[tok] > 0:
+          logits[tok] /= config.repetition_penalty
+        else:
+          logits[tok] *= config.repetition_penalty
+
+    n = config.no_repeat_ngram
+    if n and len(generated) >= n - 1:
+      prefix = tuple(generated[-(n - 1):]) if n > 1 else ()
+      banned: set[int] = set()
+      for i in range(len(generated) - (n - 1)):
+        if tuple(generated[i : i + (n - 1)]) == prefix:
+          nxt = generated[i + (n - 1)]
+          banned.add(nxt)
+      for tok in banned:
+        logits[tok] = -1e9
+
     if config.temperature <= 0:
       return int(np.argmax(logits))
 
@@ -109,12 +137,14 @@ class InferenceEngine:
 
     eos_id = self._tokenizer._vocab.get(ByteTokenizer.EOS, -1)
     context = self._tokenizer.encode(prompt, add_bos=True, add_eos=False)
+    context_len = len(context)
     generated = list(context)
+    max_ctx = self._model.config.max_seq_len
 
     for _ in range(gen_cfg.max_new_tokens):
-      seq = np.array([generated[-self._settings.max_seq_len :]], dtype=np.int32)
+      seq = np.array([generated[-max_ctx:]], dtype=np.int32)
       logits = self._model.forward(seq)
-      next_id = self._sample_next(logits[0, -1], gen_cfg)
+      next_id = self._sample_next(logits[0, -1], gen_cfg, generated, context_len)
       generated.append(next_id)
       if next_id == eos_id:
         break

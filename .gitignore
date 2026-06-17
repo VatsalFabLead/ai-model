@@ -22,5 +22,6 @@ __pycache__/
 Thumbs.db
 .DS_Store
 
-# Local model artifacts (regenerate with scripts/train.py)
+# Local model artifacts (ignore by default, but ship the deployed weights)
 models/weights/*.npz
+!models/weights/nexus_v1.npz

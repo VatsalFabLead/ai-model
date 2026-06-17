@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     default=PROJECT_ROOT / "models" / "tokenizer" / "vocab.json",
     alias="TOKENIZER_PATH",
   )
+  corpus_path: Path = Field(
+    default=PROJECT_ROOT / "data" / "corpus.txt",
+    alias="CORPUS_PATH",
+  )
+  retrieval_threshold: float = Field(default=0.6, alias="RETRIEVAL_THRESHOLD")
 
   # Architecture — tuned for Hostinger VPS CPU (increase locally if you have more RAM)
   d_model: int = Field(default=256, alias="D_MODEL")
