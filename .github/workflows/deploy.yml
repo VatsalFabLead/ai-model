@@ -1,65 +1,67 @@
 name: Python FTP Deploy to Production
- 
+
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # Allows manual triggering
- 
+  workflow_dispatch:
+
 jobs:
   deploy:
     name: Validate and Deploy Python App
     runs-on: ubuntu-latest
     timeout-minutes: 30
- 
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
- 
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
- 
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
- 
+
       - name: Validate Python app imports
         run: |
-          python -m compileall app scripts run.py wsgi.py
+          python -m compileall app scripts run.py wsgi.py passenger_wsgi.py
           python -c "import app.main; print('App import ok')"
- 
-      - name: Deploy to FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+
+      - name: Prepare deploy bundle
+        run: |
+          mkdir -p deploy_bundle
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.venv' \
+            --exclude='venv' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.pytest_cache' \
+            --exclude='.mypy_cache' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='node_modules' \
+            --exclude='models/llm' \
+            --exclude='*.gguf' \
+            --exclude='my_resume.md' \
+            --exclude='resume_output.md' \
+            --exclude='deploy_bundle' \
+            ./ deploy_bundle/
+
+      - name: Deploy via SFTP (Hostinger port 65002)
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            **/vendor/**
-            **/.venv/**
-            **/__pycache__/**
-            **/*.pyc
-            **/.pytest_cache/**
-            **/.mypy_cache/**
-            **/.env
-            **/.env.*
-            **/.ftpignore
-            **/.github/**
-            **/tests/**
-            **/.idea/**
-            **/.vscode/**
-            **/.fleet/**
-            **/npm-debug.log
-            **/yarn-error.log
-            **/README.md
-            **/.env.example
-          dangerous-clean-slate: false
-          dry-run: false
+          port: "65002"
+          local_path: "./deploy_bundle/*"
+          remote_path: ${{ secrets.FTP_SERVER_DIR }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=60 -o StrictHostKeyChecking=no"
