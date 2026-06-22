@@ -7,7 +7,19 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.routes import chat, health, post_scheduler, seo_content
+from app.api.routes import (
+  chat,
+  cover_letter,
+  email_assistant,
+  health,
+  post_scheduler,
+  resume_builder,
+  schema_markup,
+  seo_content,
+  seo_keyword,
+  seo_optimizer,
+  title_meta,
+)
 from app.config import get_settings
 from app.services.registry import ProviderRegistry
 
@@ -53,7 +65,14 @@ def create_app() -> FastAPI:
   app.include_router(health.router)
   app.include_router(chat.router, prefix=settings.api_prefix)
   app.include_router(post_scheduler.router, prefix=settings.api_prefix)
+  app.include_router(schema_markup.router, prefix=settings.api_prefix)
   app.include_router(seo_content.router, prefix=settings.api_prefix)
+  app.include_router(seo_keyword.router, prefix=settings.api_prefix)
+  app.include_router(seo_optimizer.router, prefix=settings.api_prefix)
+  app.include_router(title_meta.router, prefix=settings.api_prefix)
+  app.include_router(email_assistant.router, prefix=settings.api_prefix)
+  app.include_router(resume_builder.router, prefix=settings.api_prefix)
+  app.include_router(cover_letter.router, prefix=settings.api_prefix)
 
   return app
 

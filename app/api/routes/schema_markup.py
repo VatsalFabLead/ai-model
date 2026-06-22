@@ -1,0 +1,97 @@
+"""Schema Markup Generator API — advanced, multilingual, worldwide."""
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+
+from app.core.security import verify_api_key
+from app.services import schema_markup
+from app.services.registry import ProviderRegistry
+
+router = APIRouter(prefix="/schema-markup", tags=["schema-markup"])
+
+
+class SchemaMarkupRequest(BaseModel):
+  schema_type: str = Field(..., examples=["Article", "Product", "FAQPage", "Hotel"])
+  name: str = Field(..., min_length=1, max_length=300, examples=["Email Marketing Best Practices"])
+  data: dict[str, Any] = Field(default_factory=dict)
+  language: str | None = Field(
+    default=None,
+    examples=["English", "Hindi", "Spanish", "French", "Arabic", "Japanese"],
+    description="Page language — sets inLanguage and localized labels",
+  )
+  ai_enhance: bool = Field(
+    default=True,
+    description="Enhance via your local custom model + schema training knowledge",
+  )
+
+
+class SchemaQuality(BaseModel):
+  completeness_score: int
+  seo_ready: bool
+  missing_recommended_fields: list[str]
+  field_count: int
+
+
+class SchemaMarkupResponse(BaseModel):
+  schema_type: str
+  category: str
+  language: str
+  jsonld: dict[str, Any]
+  jsonld_string: str
+  quality: SchemaQuality
+
+
+def _get_provider(request: Request):
+  registry: ProviderRegistry = request.app.state.registry
+  if not registry.is_ready():
+    raise HTTPException(status_code=503, detail="Model is loading or unavailable")
+  return registry.provider
+
+
+@router.get("/types")
+async def list_types(
+  category: str | None = None,
+  _: str = Depends(verify_api_key),
+) -> dict:
+  types = schema_markup.supported_types()
+  if category:
+    cat = category.strip().lower()
+    types = [t for t in types if t.get("category") == cat]
+  return {"types": types, "count": len(types)}
+
+
+@router.get("/categories")
+async def list_categories(_: str = Depends(verify_api_key)) -> dict:
+  cats = schema_markup.supported_categories()
+  return {"categories": cats, "count": len(cats)}
+
+
+@router.get("/languages")
+async def list_languages(_: str = Depends(verify_api_key)) -> dict:
+  langs = schema_markup.supported_languages()
+  return {"languages": langs, "count": len(langs)}
+
+
+@router.post("/generate", response_model=SchemaMarkupResponse)
+async def generate_schema(
+  payload: SchemaMarkupRequest,
+  request: Request,
+  _: str = Depends(verify_api_key),
+) -> SchemaMarkupResponse:
+  provider = _get_provider(request)
+  try:
+    result = await schema_markup.generate_schema_markup(
+      provider,
+      schema_type=payload.schema_type,
+      name=payload.name,
+      data=payload.data,
+      language=payload.language,
+      ai_enhance=payload.ai_enhance,
+    )
+  except ValueError as exc:
+    raise HTTPException(status_code=400, detail=str(exc)) from exc
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=f"Schema markup generation failed: {exc}") from exc
+  return SchemaMarkupResponse(**result)

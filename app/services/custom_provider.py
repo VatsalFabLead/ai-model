@@ -68,18 +68,41 @@ class CustomModelProvider(ModelProvider):
     if not kwargs.get("skip_intent") and detect_resume_intent(last_user):
       return generate_resume(last_user)
 
-    if last_user.strip() and self._kb and self._kb.size:
+    system_prompt = (kwargs.get("system_prompt") or "").strip()
+    domain_context = (kwargs.get("domain_context") or "").strip()
+    task_mode = bool(kwargs.get("skip_kb_direct_match") or system_prompt)
+    use_rag = kwargs.get("use_rag")
+    if use_rag is None:
+      use_rag = self._settings.use_rag
+
+    rag_context = ""
+    if use_rag and last_user.strip() and self._kb and self._kb.size:
       answer, score = self._kb.search(last_user)
       if answer and score >= self._settings.knowledge_threshold:
-        return answer
+        if not task_mode:
+          return answer
+        rag_context = answer
 
-    if last_user.strip() and self._wiki is not None:
+    if domain_context:
+      rag_context = f"{domain_context}\n\n{rag_context}".strip() if rag_context else domain_context
+
+    if not task_mode and last_user.strip() and kwargs.get("use_wiki", True) and self._wiki is not None:
       wiki_answer = await self._wiki.query(last_user)
       if wiki_answer:
         return wiki_answer
 
-    if kwargs.get("use_neural_fallback"):
-      prompt = self._engine.format_chat_prompt(messages)
+    use_neural = kwargs.get("use_neural_fallback") or task_mode
+    if use_neural and self._engine.is_ready():
+      full_messages: list[dict[str, str]] = []
+      if system_prompt:
+        full_messages.append({"role": "system", "content": system_prompt})
+      if rag_context:
+        full_messages.append({
+          "role": "system",
+          "content": f"Reference training context (use if relevant):\n{rag_context[:3000]}",
+        })
+      full_messages.extend(messages)
+      prompt = self._engine.format_chat_prompt(full_messages)
       config = GenerationConfig(
         max_new_tokens=int(kwargs.get("max_tokens", self._settings.max_new_tokens)),
         temperature=float(kwargs.get("temperature", self._settings.temperature)),
@@ -87,6 +110,9 @@ class CustomModelProvider(ModelProvider):
         top_p=float(kwargs.get("top_p", self._settings.top_p)),
       )
       return await self._engine.generate_async(prompt, config)
+
+    if rag_context and task_mode:
+      return rag_context
 
     return self._FALLBACK
 
