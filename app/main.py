@@ -9,9 +9,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.routes import (
   chat,
+  chat_page,
   cover_letter,
   email_assistant,
   health,
+  model_test,
   post_scheduler,
   resume_builder,
   schema_markup,
@@ -63,6 +65,8 @@ def create_app() -> FastAPI:
   )
 
   app.include_router(health.router)
+  app.include_router(model_test.router)
+  app.include_router(chat_page.router)
   app.include_router(chat.router, prefix=settings.api_prefix)
   app.include_router(post_scheduler.router, prefix=settings.api_prefix)
   app.include_router(schema_markup.router, prefix=settings.api_prefix)
