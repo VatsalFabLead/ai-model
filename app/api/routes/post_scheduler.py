@@ -6,9 +6,9 @@ Designed to be called directly from the frontend's "AI Suggestions" buttons.
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_tool_provider
 from app.core.security import verify_api_key
 from app.services import post_scheduler
-from app.services.registry import ProviderRegistry
 
 router = APIRouter(prefix="/post-scheduler", tags=["post-scheduler"])
 
@@ -59,13 +59,6 @@ class GeneratePostResponse(BaseModel):
   hashtags_text: str
 
 
-def _get_provider(request: Request):
-  registry: ProviderRegistry = request.app.state.registry
-  if not registry.is_ready():
-    raise HTTPException(status_code=503, detail="Model is loading or unavailable")
-  return registry.provider
-
-
 @router.get("/platforms")
 async def list_platforms(_: str = Depends(verify_api_key)) -> dict:
   return {"platforms": post_scheduler.supported_platforms()}
@@ -77,7 +70,7 @@ async def suggest_content(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> ContentResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await post_scheduler.suggest_content(
       provider,
@@ -99,7 +92,7 @@ async def suggest_hashtags(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> HashtagResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await post_scheduler.suggest_hashtags(
       provider,
@@ -118,7 +111,7 @@ async def generate_post(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> GeneratePostResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await post_scheduler.generate_post(
       provider,

@@ -3,9 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_tool_provider
 from app.core.security import verify_api_key
 from app.services import email_assistant
-from app.services.registry import ProviderRegistry
 
 router = APIRouter(prefix="/email-assistant", tags=["email-assistant"])
 
@@ -40,20 +40,13 @@ class ColdEmailRequest(BaseModel):
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
 
 
-def _get_provider(request: Request):
-  registry: ProviderRegistry = request.app.state.registry
-  if not registry.is_ready():
-    raise HTTPException(status_code=503, detail="Model is loading or unavailable")
-  return registry.provider
-
-
 @router.post("/new-email", response_model=EmailResponse)
 async def new_email(
   payload: NewEmailRequest,
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> EmailResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await email_assistant.generate_new_email(
       provider,
@@ -73,7 +66,7 @@ async def reply_email(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> EmailResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await email_assistant.generate_reply_email(
       provider,
@@ -93,7 +86,7 @@ async def cold_email(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> EmailResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await email_assistant.generate_cold_email(
       provider,

@@ -1,23 +1,28 @@
 """SEO Content Generator — advanced, multilingual, worldwide.
 
-Single generate() entry with optional web keyword discovery, category templates,
-training knowledge fallbacks, and custom model enhancement. No GPT/Claude/Gemini.
+Structured output: metadata, keywords, outline, content (article + tone), FAQs.
+Template-first for speed; optional custom-model polish when use_ai=True. No GPT/Claude/Gemini.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
 
 from app.engine import seo_content_engine
 from app.engine.keyword_discovery import discover_keywords
+from app.engine.seo_content_domains import build_rich_content, make_variation_seed
+from app.engine.seo_rag_pipeline import run_seo_rag_pipeline, synthesize_structured_content
 from app.services.provider_base import ModelProvider
 
 _GENERIC_HEADINGS = {
   "introduction", "intro", "overview", "summary", "contents", "table of contents",
   "getting started", "background", "conclusion", "about",
 }
+
+_AI_TIMEOUT_SEC = 14.0
 
 
 def supported_categories() -> list[dict[str, str]]:
@@ -85,9 +90,12 @@ def _trim_meta(meta: str, limit: int = 160) -> str:
 
 
 def _try_json(text: str) -> dict | None:
-  t = text.strip()
-  if not t.startswith("{"):
+  t = (text or "").strip()
+  if not t:
     return None
+  if not t.startswith("{"):
+    m = re.search(r"\{[\s\S]*\}", t)
+    t = m.group(0) if m else t
   try:
     obj = json.loads(t)
     return obj if isinstance(obj, dict) else None
@@ -95,151 +103,262 @@ def _try_json(text: str) -> dict | None:
     return None
 
 
-def _is_valid_body(body: str, min_words: int = 80) -> bool:
-  if not body or _count_words(body) < min_words:
-    return False
-  if body.count("###") > 8 or "Training Knowledge" in body:
-    return False
-  return "##" in body or _count_words(body) >= min_words + 40
+def _coerce_faqs(raw: Any) -> list[dict[str, str]]:
+  if not isinstance(raw, list):
+    return []
+  out: list[dict[str, str]] = []
+  for item in raw:
+    if isinstance(item, dict):
+      q = str(item.get("question") or item.get("q") or "").strip()
+      a = str(item.get("answer") or item.get("a") or "").strip()
+      if q:
+        out.append({"question": q, "answer": a})
+    elif isinstance(item, str) and item.strip():
+      out.append({"question": item.strip(), "answer": ""})
+  return out
 
 
-def _parse_seo(raw: str, topic: str) -> tuple[str, str, str]:
-  text = (raw or "").strip()
-  obj = _try_json(text)
-  if obj:
-    title = (obj.get("title") or "").strip()
-    meta = (obj.get("meta_description") or obj.get("meta") or obj.get("description") or "").strip()
-    body = (obj.get("content") or obj.get("body") or obj.get("article") or "").strip()
-    if body:
-      title = title or topic.strip().title()[:70]
-      meta = meta or body
-      return title, _trim_meta(meta), body
-
-  title = None
-  meta = None
-  m = re.search(r"^\s*TITLE\s*[:\-]\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
-  if m:
-    title = m.group(1).strip().strip('"\u201c\u201d')
-  m2 = re.search(
-    r"^\s*(?:META(?:\s*DESCRIPTION)?|DESCRIPTION)\s*[:\-]\s*(.+)$",
-    text, re.IGNORECASE | re.MULTILINE,
-  )
-  if m2:
-    meta = m2.group(1).strip().strip('"\u201c\u201d')
-
-  body = re.sub(r"^\s*TITLE\s*[:\-].+$", "", text, flags=re.IGNORECASE | re.MULTILINE)
-  body = re.sub(
-    r"^\s*(?:META(?:\s*DESCRIPTION)?|DESCRIPTION)\s*[:\-].+$", "",
-    body, flags=re.IGNORECASE | re.MULTILINE,
-  )
-  body = re.sub(r"^\s*-{3,}\s*$", "", body, flags=re.MULTILINE).strip()
-
-  if not title:
-    mh = re.search(r"^#+\s*(.+)$", body, re.MULTILINE)
-    cand = re.sub(r"[*_`]", "", mh.group(1)).strip() if mh else ""
-    if cand and cand.lower() not in _GENERIC_HEADINGS and len(cand.split()) >= 3:
-      title = cand
-    else:
-      title = topic.strip().title()[:70]
-
-  if not meta:
-    para = None
-    for block in re.split(r"\n\s*\n", body):
-      b = block.strip()
-      if b and not b.startswith("#"):
-        para = b
-        break
-    meta = para or topic
-
-  return title, _trim_meta(meta), body
+def _coerce_outline(raw: Any) -> list[str]:
+  if not isinstance(raw, list):
+    return []
+  return [str(x).strip() for x in raw if str(x).strip()]
 
 
-def _fallback_article(
+def _coerce_keywords_struct(raw: Any, fallback: list[str]) -> dict[str, Any]:
+  if isinstance(raw, dict) and raw.get("primary"):
+    sec = raw.get("secondary") or []
+    return {
+      "primary": str(raw["primary"]).strip(),
+      "secondary": [str(s).strip() for s in sec if str(s).strip()],
+    }
+  if isinstance(raw, list) and raw:
+    return {"primary": str(raw[0]).strip(), "secondary": [str(x).strip() for x in raw[1:] if str(x).strip()]}
+  if fallback:
+    return {"primary": fallback[0], "secondary": fallback[1:]}
+  return {"primary": "", "secondary": []}
+
+
+def _coerce_outline_struct(raw: Any) -> list[dict[str, str]]:
+  if not isinstance(raw, list):
+    return []
+  out: list[dict[str, str]] = []
+  for item in raw:
+    if isinstance(item, dict) and item.get("text"):
+      level = str(item.get("level") or "h2").lower()
+      if level not in ("h1", "h2", "h3"):
+        level = "h2"
+      out.append({"level": level, "text": str(item["text"]).strip()})
+    elif isinstance(item, str) and item.strip():
+      out.append({"level": "h2", "text": item.strip()})
+  return out
+
+
+def _outline_to_strings(outline: list[dict[str, str]]) -> list[str]:
+  return [o["text"] for o in outline]
+
+
+def _build_template_structured(
   topic: str,
   keywords: list[str],
   *,
   category: str,
   tone: str,
-  target_words: int,
   audience: str | None,
   language: str | None,
-) -> tuple[str, str, str]:
-  """Deterministic aesthetic article when the model output is weak."""
-  primary = keywords[0] if keywords else topic.strip()
-  year = "2026"
-  title = f"{primary.title()}: The Complete {year} Guide"
-  if category == "how_to_guide":
-    title = f"How to Master {primary.title()} ({year} Step-by-Step Guide)"
-  elif category == "listicle":
-    title = f"10 Proven {primary.title()} Strategies That Work in {year}"
-  elif category == "local_seo" and audience:
-    title = f"Best {primary.title()} in {audience} — Local Expert Guide"
-
-  meta = _trim_meta(
-    f"Discover practical {primary} strategies for worldwide audiences. "
-    f"Actionable tips, expert insights, and proven steps to get real results in {year}."
+  variation_seed: int,
+) -> dict[str, Any]:
+  return build_rich_content(
+    topic,
+    keywords,
+    category=category,
+    tone=tone,
+    audience=audience,
+    seed=variation_seed,
   )
 
-  kw_extra = ", ".join(keywords[1:4]) if len(keywords) > 1 else primary
-  audience_line = f" Whether you are in {audience} or anywhere globally," if audience else " Worldwide,"
 
-  sections: list[str] = []
-  if category == "how_to_guide":
-    sections = [
-      "## What You Need Before You Start",
-      f"Before diving into **{primary}**, gather your basics: clear goals, the right tools, and realistic time. This foundation saves hours later.",
-      "## Step 1: Understand the Fundamentals",
-      f"Start with core concepts of {primary}. Learn how {kw_extra} connect to your main objective.",
-      "## Step 2: Apply Proven Techniques",
-      "Follow industry best practices: measure results, iterate quickly, and document what works for your audience.",
-      "## Step 3: Optimize and Scale",
-      f"Refine your approach to {primary} using data. Small improvements compound into significant growth over time.",
-      "## Common Mistakes to Avoid",
-      "- Skipping research on audience intent\n- Keyword stuffing instead of helpful content\n- Ignoring mobile and page speed",
-    ]
-  elif category == "listicle":
-    sections = [
-      f"## 1. Start With a Clear {primary.title()} Strategy",
-      "Define goals, audience, and success metrics before creating content or campaigns.",
-      f"## 2. Use the Right Tools for {primary.title()}",
-      f"Pick reliable platforms that support {kw_extra} workflows without unnecessary complexity.",
-      "## 3. Create High-Quality, Original Content",
-      "Publish helpful articles, guides, and updates that answer real user questions.",
-      "## 4. Measure and Improve Continuously",
-      "Track rankings, traffic, and conversions — then double down on what performs.",
-      "## 5. Stay Updated With Trends",
-      f"The {primary} landscape evolves fast. Follow trusted sources and adapt quarterly.",
-    ]
-  else:
-    sections = [
-      f"## Why {primary.title()} Matters in {year}",
-      f"{audience_line} businesses and creators who invest in {primary} gain visibility, trust, and sustainable growth.",
-      f"## Key Benefits of Strong {primary.title()}",
-      f"- Better search visibility for {kw_extra}\n- Higher engagement from target readers\n- Long-term compounding traffic",
-      "## Best Practices That Work Worldwide",
-      "Focus on user intent, original research, clear structure, and consistent publishing. Avoid shortcuts that trigger penalties.",
-      f"## How to Get Started With {primary.title()}",
-      "Audit your current content, identify gaps versus competitors, and publish one high-quality piece per week.",
-      "## Conclusion",
-      f"Mastering **{primary}** takes patience and consistency. Apply these steps, track results, and refine your strategy every month.",
-    ]
+def _parse_structured_ai(raw: str, topic: str) -> dict[str, Any] | None:
+  obj = _try_json(raw)
+  if not obj:
+    return None
 
-  body = "\n\n".join(sections)
-  # Pad toward target length with an FAQ block
-  body += (
-    f"\n\n## Frequently Asked Questions\n\n"
-    f"### What is {primary}?\n"
-    f"{primary.title()} is a proven approach used by professionals worldwide to improve visibility and results.\n\n"
-    f"### How long does {primary} take to show results?\n"
-    "Most strategies show meaningful progress within 8–12 weeks with consistent effort.\n\n"
-    f"### Who should focus on {primary}?\n"
-    f"Marketers, business owners, and creators who want sustainable growth in search and social channels."
+  meta_obj = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+  content_obj = obj.get("content") if isinstance(obj.get("content"), dict) else {}
+
+  title = (
+    meta_obj.get("title") or obj.get("title") or ""
+  ).strip()
+  meta = (
+    meta_obj.get("meta_description") or obj.get("meta_description") or obj.get("meta") or ""
+  ).strip()
+  article = (
+    content_obj.get("article") or obj.get("article") or obj.get("content") or obj.get("body") or ""
+  ).strip()
+  tone = (content_obj.get("tone") or obj.get("tone") or "").strip()
+
+  outline = _coerce_outline_struct(obj.get("outline"))
+  faqs = _coerce_faqs(obj.get("faqs"))
+  keywords = _coerce_keywords_struct(obj.get("keywords"), [])
+
+  if not article or _count_words(article) < 60:
+    return None
+
+  if not title:
+    title = topic.strip().title()[:70]
+  if not meta:
+    meta = _trim_meta(article[:200])
+
+  article = seo_content_engine.strip_faq_section(_clean_body(article))
+  if not outline:
+    extracted = seo_content_engine.extract_outline_from_body(article)
+    outline = [{"level": "h2", "text": t} for t in extracted]
+  if not faqs:
+    faqs = seo_content_engine.extract_faqs_from_body(obj.get("content") or article)
+  if not keywords.get("primary"):
+    keywords = {"primary": topic, "secondary": []}
+
+  return {
+    "metadata": {"title": title, "meta_description": _trim_meta(meta)},
+    "keywords": keywords,
+    "outline": outline,
+    "content": {"article": article, "tone": tone},
+    "faqs": faqs,
+  }
+
+
+def _merge_ai_into_template(template: dict[str, Any], ai: dict[str, Any]) -> dict[str, Any]:
+  merged = {
+    "metadata": dict(template["metadata"]),
+    "keywords": dict(template["keywords"]) if isinstance(template.get("keywords"), dict) else {"primary": "", "secondary": []},
+    "outline": list(template["outline"]),
+    "content": dict(template["content"]),
+    "faqs": list(template["faqs"]),
+  }
+  if not merged["keywords"].get("primary"):
+    merged["keywords"] = _coerce_keywords_struct(template.get("keywords"), [])
+  if ai["metadata"].get("title"):
+    merged["metadata"]["title"] = ai["metadata"]["title"]
+  if ai["metadata"].get("meta_description"):
+    merged["metadata"]["meta_description"] = ai["metadata"]["meta_description"]
+  if ai["content"].get("article") and _count_words(ai["content"]["article"]) >= 60:
+    merged["content"]["article"] = ai["content"]["article"]
+  if ai["content"].get("tone"):
+    merged["content"]["tone"] = ai["content"]["tone"]
+  if ai.get("keywords") and isinstance(ai["keywords"], dict) and ai["keywords"].get("primary"):
+    seen = {merged["keywords"]["primary"].lower()}
+    for s in merged["keywords"].get("secondary", []):
+      seen.add(s.lower())
+    for kw in ai["keywords"].get("secondary", []):
+      if kw.lower() not in seen:
+        merged["keywords"]["secondary"].append(kw)
+        seen.add(kw.lower())
+  if ai.get("outline"):
+    merged["outline"] = ai["outline"]
+  if ai.get("faqs"):
+    merged["faqs"] = ai["faqs"]
+  return merged
+
+
+def _pack_response(
+  structured: dict[str, Any],
+  *,
+  topic: str,
+  category: str,
+  lang_code: str,
+  discovery_meta: dict[str, Any],
+  use_ai: bool,
+  ai_used: bool,
+) -> dict[str, Any]:
+  meta = structured["metadata"]
+  article = structured["content"]["article"]
+  tone = structured["content"]["tone"]
+  kw_struct = _coerce_keywords_struct(structured.get("keywords"), [])
+  primary = kw_struct["primary"]
+  secondary = kw_struct["secondary"]
+  keywords_flat = [primary] + secondary if primary else secondary
+  outline_struct = _coerce_outline_struct(structured.get("outline"))
+  title = meta["title"]
+  meta_desc = meta["meta_description"]
+
+  quality = seo_content_engine.quality_report(title, meta_desc, article, keywords_flat)
+  return {
+    "topic": topic,
+    "category": category,
+    "language": lang_code,
+    "metadata": meta,
+    "keywords": kw_struct,
+    "keywords_list": keywords_flat,
+    "outline": outline_struct,
+    "outline_text": _outline_to_strings(outline_struct),
+    "content": {"article": article, "tone": tone},
+    "article": article,
+    "faqs": structured["faqs"],
+    "tone": tone,
+    "title": title,
+    "meta_description": meta_desc,
+    "slug": _slugify(title),
+    "word_count": _count_words(article),
+    "quality": quality,
+    "discovery": discovery_meta,
+    "ai": {"enabled": use_ai, "model_used": ai_used},
+    "variation_seed": structured.get("variation_seed"),
+    "domain": structured.get("domain"),
+    "generator_version": "seo-rag-v2",
+  }
+
+
+async def _enhance_with_ai(
+  provider: ModelProvider,
+  template: dict[str, Any],
+  *,
+  topic: str,
+  primary: str,
+  kw_line: str,
+  category: str,
+  tone: str,
+  target: int,
+  audience_line: str,
+  lang_line: str,
+  structure: str,
+  evidence_context: str = "",
+) -> dict[str, Any] | None:
+  tone_guide = seo_content_engine.tone_hint(tone)
+  system_prompt = (
+    f"You are an expert content writer ({tone} — {tone_guide}). "
+    f"Write REAL, topic-specific content about the subject — not generic SEO/marketing advice. "
+    f"Category: {category.replace('_', ' ')} (~{target} words).{lang_line}{audience_line} "
+    f"Structure: {structure}. "
+    "Return ONLY valid JSON:\n"
+    '{"metadata":{"title":"...","meta_description":"..."},'
+    '"keywords":{"primary":"...","secondary":["..."]},'
+    '"outline":[{"level":"h1|h2|h3","text":"..."}],'
+    '"content":{"article":"markdown article WITHOUT FAQ section","tone":"' + tone + '"},'
+    '"faqs":[{"question":"...","answer":"..."}]}'
   )
-  return title, meta, body
+  draft = json.dumps(template, ensure_ascii=False)[:2800]
+  evidence_block = (evidence_context or "")[:2400]
+  user_prompt = (
+    f"Topic: {topic}\nPrimary keyword: {primary}\nKeywords: {kw_line}\n"
+    f"Evidence from open datasets (use facts, do not invent):\n{evidence_block}\n\n"
+    f"Rewrite into polished SEO JSON (unique wording, topic-specific):\n{draft}"
+  )
+  max_tokens = min(900, int(target * 1.2) + 120)
+  raw = await asyncio.wait_for(
+    provider.chat(
+      [{"role": "user", "content": user_prompt}],
+      system_prompt=system_prompt,
+      use_rag=False,
+      skip_intent=True,
+      max_tokens=max_tokens,
+      temperature=0.55,
+    ),
+    timeout=_AI_TIMEOUT_SEC,
+  )
+  return _parse_structured_ai(raw, topic)
 
 
 async def generate(
-  provider: ModelProvider,
+  provider: ModelProvider | None,
   *,
   topic: str,
   keywords: list[str] | str | None = None,
@@ -251,8 +370,10 @@ async def generate(
   use_ai: bool = True,
   discover_keywords: bool = False,
   max_keyword_items: int = 10,
+  variation_seed: int | None = None,
+  use_rag: bool = True,
 ) -> dict[str, Any]:
-  """Single SEO content generator — keywords, AI article, quality score."""
+  """Structured SEO content — open-data RAG + optional custom-model synthesis."""
   topic = (topic or "").strip()
   if not topic:
     raise ValueError("topic is required")
@@ -284,74 +405,83 @@ async def generate(
   primary = kws[0] if kws else topic
   kw_line = ", ".join(kws) if kws else topic
   audience_line = f" Target audience: {audience.strip()}." if audience else ""
-  lang_line = f" Write the entire article in {language} (language code {lang_code})." if language else ""
+  lang_line = f" Write in {language} ({lang_code})." if language else ""
   structure = seo_content_engine.category_structure_hint(cat)
+  seed = make_variation_seed(variation_seed)
 
-  ai_used = False
-  title, meta, body = "", "", ""
+  rag_meta: dict[str, Any] = {"enabled": use_rag, "confidence": 0.0, "sources_used": []}
+  evidence_context = ""
 
-  if use_ai:
-    tone_guide = seo_content_engine.tone_hint(tone_str)
-    system_prompt = (
-      f"You are an expert worldwide SEO content writer. Write in a {tone_str} tone "
-      f"({tone_guide}) Create an original, SEO-optimized {cat.replace('_', ' ')} "
-      f"of about {target} words.{lang_line}{audience_line} "
-      f"Structure: {structure} "
-      "Rules: primary keyword in title and first paragraph; use ## and ### markdown headings; "
-      "natural keyword integration; intro + conclusion with CTA. "
-      "Respond EXACTLY in this format:\n"
-      "TITLE: <SEO title under 60 chars>\n"
-      "META: <meta description under 160 chars>\n"
-      "---\n"
-      "<full article markdown body>"
-    )
-    user_prompt = (
-      f"Topic: {topic}\nPrimary keyword: {primary}\nKeywords: {kw_line}\nCategory: {cat}"
-    )
+  if use_rag:
     try:
-      max_tokens = min(1100, int(target * 1.6) + 80)
-      raw = await provider.chat(
-        [{"role": "user", "content": user_prompt}],
-        system_prompt=system_prompt,
-        use_rag=False,
-        skip_intent=True,
-        max_tokens=max_tokens,
-        temperature=0.65,
+      rag = await run_seo_rag_pipeline(
+        topic, kws, category=cat, variation_seed=seed, top_k=8,
       )
-      title, meta, body = _parse_seo(raw, topic)
-      body = _clean_body(body)
-      if not _is_valid_body(body, min_words=max(80, target // 4)):
-        raise ValueError("weak ai body")
-      ai_used = True
+      rag_meta = {
+        "enabled": True,
+        "topic_class": rag.topic_class,
+        "confidence": rag.confidence,
+        "sources_routed": rag.sources_routed,
+        "sources_used": rag.sources_used,
+        "document_count": len(rag.documents),
+        "fact_count": len(rag.facts),
+        "entities": rag.entities[:10],
+        "variation_seed": rag.variation_seed,
+      }
+      evidence_context = rag.evidence_context
+      template = synthesize_structured_content(
+        topic, kws, rag,
+        category=cat, tone=tone_str, audience=audience, target_words=target,
+      )
     except Exception:
-      title, meta, body = _fallback_article(
-        topic, kws, category=cat, tone=tone_str, target_words=target,
-        audience=audience, language=language,
+      template = _build_template_structured(
+        topic, kws, category=cat, tone=tone_str, audience=audience,
+        language=language, variation_seed=seed,
       )
   else:
-    title, meta, body = _fallback_article(
-      topic, kws, category=cat, tone=tone_str, target_words=target,
-      audience=audience, language=language,
+    template = _build_template_structured(
+      topic, kws, category=cat, tone=tone_str, audience=audience,
+      language=language, variation_seed=seed,
     )
 
-  quality = seo_content_engine.quality_report(title, meta, body, kws)
-  return {
-    "topic": topic,
-    "category": cat,
-    "language": lang_code,
-    "tone": tone_str,
-    "title": title,
-    "meta_description": meta,
-    "slug": _slugify(title),
-    "keywords": kws,
-    "content": body,
-    "word_count": _count_words(body),
-    "quality": quality,
-    "discovery": discovery_meta,
-    "ai": {"enabled": use_ai, "model_used": ai_used},
-  }
+  ai_used = False
+  structured = template
+
+  if use_ai and provider is not None:
+    try:
+      ai_result = await _enhance_with_ai(
+        provider,
+        template,
+        topic=topic,
+        primary=primary,
+        kw_line=kw_line,
+        category=cat,
+        tone=tone_str,
+        target=target,
+        audience_line=audience_line,
+        lang_line=lang_line,
+        structure=structure,
+        evidence_context=evidence_context,
+      )
+      if ai_result:
+        structured = _merge_ai_into_template(template, ai_result)
+        ai_used = True
+    except Exception:
+      structured = template
+
+  result = _pack_response(
+    structured,
+    topic=topic,
+    category=cat,
+    lang_code=lang_code,
+    discovery_meta=discovery_meta,
+    use_ai=use_ai,
+    ai_used=ai_used,
+  )
+  result["rag"] = rag_meta
+  return result
 
 
 # Backward-compatible alias
-async def generate_seo_content(provider: ModelProvider, **kwargs) -> dict:
+async def generate_seo_content(provider: ModelProvider | None, **kwargs) -> dict:
   return await generate(provider, **kwargs)

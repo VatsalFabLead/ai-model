@@ -1,0 +1,31 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local model artifacts (ignore by default, but ship the deployed weights)
+models/weights/*.npz
+!models/weights/nexus_v1.npz
+
+# Open-source LLM weights (large; download with scripts/download_model.py)
+models/llm/
+*.gguf

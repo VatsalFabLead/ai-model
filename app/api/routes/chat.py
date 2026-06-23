@@ -1,7 +1,7 @@
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.core.security import verify_api_key
@@ -16,12 +16,19 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-  model: str | None = None
+  model: str | None = Field(
+    default=None,
+    description="Backend: custom | ollama | llm | auto. Or prompt prefix: /ollama your question",
+  )
   messages: list[ChatMessage]
   max_tokens: int | None = Field(default=None, ge=1, le=2048)
   temperature: float | None = Field(default=None, ge=0.0, le=2.0)
   top_p: float | None = Field(default=None, ge=0.0, le=1.0)
   stream: bool = False
+  backend: str | None = Field(
+    default=None,
+    description="Optional override: custom | ollama | llm | auto",
+  )
 
 
 class ChatChoice(BaseModel):
@@ -53,6 +60,7 @@ def _get_registry(request: Request) -> ProviderRegistry:
 async def chat_completions(
   payload: ChatCompletionRequest,
   request: Request,
+  response: Response,
   _: str = Depends(verify_api_key),
 ) -> ChatCompletionResponse:
   if payload.stream:
@@ -72,9 +80,25 @@ async def chat_completions(
     kwargs["top_p"] = payload.top_p
 
   try:
-    content = await registry.provider.chat(messages, **kwargs)
+    content, backend_used = await registry.chat(
+      messages,
+      model=payload.model,
+      backend=payload.backend,
+      **kwargs,
+    )
   except Exception as exc:
     raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+
+  response.headers["X-Nexus-Backend"] = backend_used
+
+  low = content.lower()
+  if "don't have a confident answer" in low and "knowledge.jsonl" in low:
+    raise HTTPException(
+      status_code=503,
+      detail="Server is running an old build. Restart with: python run.py",
+    )
+  if "_(source: wikipedia" in low:
+    content = content.split("_(Source:")[0].strip()
 
   prompt_chars = sum(len(m["content"]) for m in messages)
   completion_chars = len(content)
@@ -82,7 +106,7 @@ async def chat_completions(
   return ChatCompletionResponse(
     id=f"chatcmpl-{uuid.uuid4().hex[:24]}",
     created=int(time.time()),
-    model=registry.provider.model_id(),
+    model=registry.model_id(backend_used),
     choices=[
       ChatChoice(
         index=0,
@@ -104,15 +128,21 @@ async def list_models(
   _: str = Depends(verify_api_key),
 ) -> dict:
   registry = _get_registry(request)
-  model_id = registry.provider.model_id() if registry.is_ready() else "custom-nexus-v1"
-  return {
-    "object": "list",
-    "data": [
-      {
-        "id": model_id,
-        "object": "model",
-        "owned_by": "custom",
-        "permission": [],
-      }
-    ],
-  }
+  backends = registry.available_backends()
+  data = []
+  for b in backends:
+    data.append({
+      "id": b,
+      "object": "model",
+      "owned_by": b,
+      "permission": [],
+    })
+  if not data:
+    data.append({
+      "id": registry.model_id(),
+      "object": "model",
+      "owned_by": "custom",
+      "permission": [],
+    })
+  data.append({"id": "auto", "object": "model", "owned_by": "router", "permission": []})
+  return {"object": "list", "data": data}

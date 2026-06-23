@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_tool_provider
 from app.core.security import verify_api_key
 from app.services import resume_builder
-from app.services.registry import ProviderRegistry
 
 router = APIRouter(prefix="/resume-builder", tags=["resume-builder"])
 
@@ -30,6 +30,10 @@ class ResumeGenerateRequest(BaseModel):
   achievements: str | None = None
   languages: str | None = Field(default=None, examples=["English (Fluent), Hindi (Native)"])
   template: str = Field(default="modern", examples=["modern", "classic", "executive", "minimal", "creative"])
+  improve: bool = Field(
+    default=False,
+    description="Re-enhance all sections (summary, experience, skills) even when already filled",
+  )
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
   use_ai: bool = Field(
     default=True,
@@ -78,20 +82,13 @@ class ResumeGenerateResponse(BaseModel):
   ai: ResumeAiMeta
 
 
-def _get_provider(request: Request):
-  registry: ProviderRegistry = request.app.state.registry
-  if not registry.is_ready():
-    raise HTTPException(status_code=503, detail="Model is loading or unavailable")
-  return registry.provider
-
-
 @router.post("/generate", response_model=ResumeGenerateResponse)
 async def generate(
   payload: ResumeGenerateRequest,
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> ResumeGenerateResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await resume_builder.generate(
       provider,
@@ -112,6 +109,7 @@ async def generate(
       template=payload.template,
       language=payload.language,
       use_ai=payload.use_ai,
+      improve=payload.improve,
     )
   except ValueError as exc:
     raise HTTPException(status_code=400, detail=str(exc)) from exc

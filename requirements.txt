@@ -9,6 +9,19 @@ slowapi>=0.1.9
 httpx>=0.27.0
 a2wsgi>=1.10.0
 
+# --- Gemma 4 local weights (D:/Gemma 4/model.safetensors) — free, offline ---
+torch==2.5.1
+torchvision==0.20.1
+transformers>=5.10.0
+accelerate>=0.33.0
+safetensors>=0.4.0
+psutil>=5.9.0
+
+# Plagiarism checker (Sentence Transformers + FAISS) — free, no paid APIs
+# Optional PDF indexing: pip install pypdf
+sentence-transformers>=3.0.0
+faiss-cpu>=1.8.0
+
 # --- Optional: free open-source LLM backend (MODEL_BACKEND=llm) ---
 # llama-cpp-python needs a PREBUILT CPU wheel (no compiler required).
 # Use Python 3.10-3.12 (NOT 3.14) and install with:

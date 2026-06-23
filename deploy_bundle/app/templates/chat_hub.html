@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{app_name} — AI Tools Hub</title>
+  <style>
+    :root {{
+      --bg: #0b0f14; --panel: #151c27; --panel2: #1a2332; --border: #2a3648;
+      --text: #e8edf4; --muted: #8b9cb3; --accent: #3b82f6; --accent2: #22c55e;
+      --danger: #ef4444; --user: #1e3a5f;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }}
+    header {{ padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }}
+    header h1 {{ margin: 0; font-size: 1.05rem; }}
+    header .meta {{ font-size: 0.72rem; color: var(--muted); }}
+    header a {{ color: var(--accent); font-size: 0.82rem; text-decoration: none; }}
+    .bar {{ padding: 0.6rem 1rem; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: flex-end; }}
+    .bar label {{ font-size: 0.68rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }}
+    .bar input, .bar select {{ background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0.38rem 0.55rem; font-size: 0.82rem; }}
+  .bar input[type=password], .bar input[type=text], .bar input[type=email] {{ min-width: 140px; }}
+    .layout {{ flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }}
+    @media (max-width: 900px) {{ .layout {{ grid-template-columns: 1fr; }} .sidebar {{ max-height: 220px; overflow-y: auto; }} }}
+    .sidebar {{ border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; padding: 0.5rem; }}
+    .tool-btn {{ width: 100%; text-align: left; background: transparent; border: 1px solid transparent; color: var(--text); padding: 0.55rem 0.65rem; border-radius: 8px; cursor: pointer; font-size: 0.82rem; margin-bottom: 0.25rem; }}
+    .tool-btn:hover {{ background: var(--panel2); }}
+    .tool-btn.active {{ background: var(--panel2); border-color: var(--accent); color: #fff; }}
+    .tool-btn small {{ display: block; color: var(--muted); font-size: 0.68rem; margin-top: 0.15rem; }}
+    .main {{ display: flex; flex-direction: column; min-height: 0; }}
+    .form-panel {{ padding: 1rem; overflow-y: auto; border-bottom: 1px solid var(--border); max-height: 45vh; }}
+    .form-panel h2 {{ margin: 0 0 0.75rem; font-size: 1rem; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.65rem; }}
+    .field {{ display: flex; flex-direction: column; }}
+    .field.full {{ grid-column: 1 / -1; }}
+    .field label {{ font-size: 0.72rem; color: var(--muted); margin-bottom: 0.25rem; }}
+    .field input, .field select, .field textarea {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 0.5rem 0.65rem; font-size: 0.85rem; font-family: inherit; }}
+    .field textarea {{ min-height: 72px; resize: vertical; }}
+    .actions {{ margin-top: 0.85rem; display: flex; gap: 0.5rem; align-items: center; }}
+    .btn {{ background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 0.55rem 1.1rem; font-weight: 600; cursor: pointer; font-size: 0.85rem; }}
+    .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+    .btn.secondary {{ background: var(--panel2); border: 1px solid var(--border); color: var(--text); }}
+    #messages {{ flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.65rem; }}
+    .msg {{ max-width: 92%; padding: 0.7rem 0.9rem; border-radius: 10px; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }}
+    .msg.user {{ align-self: flex-end; background: var(--user); }}
+    .msg.assistant {{ align-self: flex-start; background: var(--panel2); border: 1px solid var(--border); }}
+    .msg.system {{ align-self: center; color: var(--muted); font-size: 0.78rem; background: transparent; }}
+    .msg.error {{ border-color: var(--danger); color: #fecaca; }}
+    .hint {{ font-size: 0.75rem; color: var(--muted); }}
+    .msg.plag-wrap {{ max-width: 100%; padding: 0; background: transparent; border: none; }}
+    .plag-card {{ background: #f4f0fa; color: #1e1b2e; border-radius: 14px; padding: 1.1rem; border: 1px solid #ddd6fe; }}
+    .plag-gauge-row {{ display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }}
+    .plag-gauge {{ position: relative; width: 150px; height: 80px; }}
+    .plag-gauge svg {{ width: 150px; height: 80px; display: block; }}
+    .plag-gauge-text {{ position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; }}
+    .plag-gauge-text .sub {{ font-size: 0.72rem; color: #6b7280; }}
+    .plag-gauge-text .pct {{ font-size: 1.65rem; font-weight: 800; color: #ea580c; line-height: 1; }}
+    .plag-stats div {{ margin: 0.35rem 0; font-size: 0.92rem; color: #374151; }}
+    .plag-stats strong {{ font-size: 1.05rem; color: #111827; }}
+    .plag-action {{ background: #fff; border-radius: 12px; padding: 1rem; border: 1px solid #e9e5f5; }}
+    .plag-action h3 {{ margin: 0 0 0.5rem; font-size: 1rem; color: #111827; }}
+    .plag-action p {{ margin: 0 0 0.85rem; font-size: 0.88rem; color: #4b5563; }}
+    .plag-btns {{ display: flex; gap: 0.6rem; flex-wrap: wrap; }}
+    .plag-btn {{ border-radius: 8px; padding: 0.55rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: none; }}
+    .plag-btn.outline {{ background: #fff; border: 2px solid #7c3aed; color: #7c3aed; }}
+    .plag-btn.primary {{ background: #7c3aed; color: #fff; }}
+    .plag-btn:disabled {{ opacity: 0.55; cursor: not-allowed; }}
+    .plag-details {{ margin-top: 0.85rem; display: none; }}
+    .plag-details.open {{ display: block; }}
+    .plag-seg {{ background: #faf5ff; border: 1px solid #ede9fe; border-radius: 8px; padding: 0.55rem 0.7rem; margin-bottom: 0.45rem; font-size: 0.82rem; }}
+    .plag-seg .tag {{ color: #7c3aed; font-weight: 600; font-size: 0.72rem; }}
+    .plag-rewrite {{ margin-top: 1rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 0.85rem; color: #064e3b; font-size: 0.88rem; white-space: pre-wrap; }}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>{app_name}</h1>
+      <div class="meta">Nexus custom model + Gemma 4 · 100% free · no GPT · Claude · Gemini · Hugging Face API</div>
+    </div>
+    <a href="/model_test">Model test</a>
+  </header>
+
+  <div class="bar">
+    <div>
+      <label>API key</label>
+      <input id="apiKey" type="password" placeholder="Bearer token" style="width:220px" />
+    </div>
+    <div>
+      <label>Use AI (Gemma + Nexus)</label>
+      <select id="useAi"><option value="true" selected>Yes</option><option value="false">Templates only</option></select>
+    </div>
+    <div class="hint" style="align-self:center">No GPT · Claude · Gemini</div>
+  </div>
+
+  <div class="layout">
+    <nav class="sidebar" id="toolNav"></nav>
+    <div class="main">
+      <div class="form-panel">
+        <h2 id="toolTitle">Select a tool</h2>
+        <div id="toolForm" class="grid"></div>
+        <div class="actions">
+          <button type="button" class="btn" id="generateBtn">Generate</button>
+          <button type="button" class="btn secondary" id="clearBtn">Clear output</button>
+          <span class="hint" id="statusHint"></span>
+        </div>
+      </div>
+      <div id="messages">
+        <div class="msg system">Pick a tool on the left, fill the fields, then click Generate.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = "{api_prefix}";
+    const TONES = ["professional", "casual", "friendly", "formal"];
+    const SCHEMA_TYPES = [
+      "Article","Product","LocalBusiness","FAQPage","Organization","Recipe","Person",
+      "WebSite","WebPage","Blog","NewsArticle","HowTo","Review","AggregateRating",
+      "Service","MedicalBusiness","Restaurant","RealEstateAgent","Course","JobPosting",
+      "VideoObject","ImageObject","PodcastEpisode","Offer","Brand","BreadcrumbList","SitelinksSearchBox"
+    ];
+    const RESUME_TEMPLATES = ["modern","classic","executive","minimal","creative"];
+
+    const TOOLS = [
+      {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, tone",
+        fields: [
+          {{ id: "topic", label: "Topic *", type: "text", required: true }},
+          {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
+          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+        ],
+        endpoint: "/seo-content/generate",
+        build: (f, useAi) => ({{
+          topic: f.topic, keywords: f.keywords || null, tone: f.tone,
+          use_ai: useAi, discover_keywords: false, use_rag: true
+        }}),
+        format: fmtSeoContent
+      }},
+      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Optimize content",
+        fields: [
+          {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
+          {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
+        ],
+        endpoint: "/seo-optimizer/optimize",
+        build: (f, useAi) => ({{
+          content: f.content,
+          keywords: f.keywords || null,
+          use_ai: false,
+          use_rag: false,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
+        }}),
+        format: fmtSeoOptimizer
+      }},
+      {{ id: "title_meta", label: "SEO Title & Meta", desc: "Target keyword / topic",
+        fields: [
+          {{ id: "topic", label: "Target keyword / topic *", type: "text", required: true }},
+          {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
+        ],
+        endpoint: "/title-meta/generate",
+        build: (f, useAi) => ({{
+          topic: f.topic,
+          variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
+          use_ai: false,
+          use_rag: true,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
+        }}),
+        format: fmtTitleMeta
+      }},
+      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "Seed keyword",
+        fields: [
+          {{ id: "seed_keyword", label: "Seed keyword *", type: "text", required: true }},
+          {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
+        ],
+        endpoint: "/seo-keywords/generate",
+        build: (f, useAi) => ({{
+          seed_keyword: f.seed_keyword,
+          variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
+          use_ai: false,
+          use_rag: true,
+          discover_web: true,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
+        }}),
+        format: fmtKeywords
+      }},
+      {{ id: "schema", label: "Schema Markup Generator", desc: "JSON-LD structured data",
+        fields: [
+          {{ id: "schema_type", label: "Schema type *", type: "select", options: SCHEMA_TYPES, value: "Article" }},
+          {{ id: "name", label: "Name / title *", type: "text", required: true }},
+        ],
+        endpoint: "/schema-markup/generate",
+        build: (f, useAi) => ({{ schema_type: f.schema_type, name: f.name, data: {{}}, ai_enhance: useAi }}),
+        format: fmtSchema
+      }},
+      {{ id: "email_new", label: "Email Assistant — New", desc: "Subject, tone, context",
+        fields: [
+          {{ id: "subject", label: "Subject", type: "text" }},
+          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "context", label: "Context / key points *", type: "textarea", required: true, full: true }},
+        ],
+        endpoint: "/email-assistant/new-email",
+        build: (f) => ({{ subject: f.subject||"", context: f.context, tone: f.tone }}),
+        format: fmtEmail
+      }},
+      {{ id: "email_reply", label: "Email Assistant — Reply", desc: "Email + key points + tone",
+        fields: [
+          {{ id: "original_email", label: "Original email *", type: "textarea", required: true, full: true }},
+          {{ id: "reply_points", label: "Key points", type: "textarea", full: true }},
+          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+        ],
+        endpoint: "/email-assistant/reply",
+        build: (f) => ({{ original_email: f.original_email, reply_points: f.reply_points||"", tone: f.tone }}),
+        format: fmtEmail
+      }},
+      {{ id: "email_cold", label: "Email Assistant — Cold", desc: "Company, offer, value prop",
+        fields: [
+          {{ id: "company_name", label: "Company name *", type: "text", required: true }},
+          {{ id: "purpose_offer", label: "Purpose / offer *", type: "textarea", required: true, full: true }},
+          {{ id: "value_proposition", label: "Value proposition *", type: "textarea", required: true, full: true }},
+          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+        ],
+        endpoint: "/email-assistant/cold-email",
+        build: (f) => ({{ company_name: f.company_name, purpose_offer: f.purpose_offer, value_proposition: f.value_proposition, tone: f.tone }}),
+        format: fmtEmail
+      }},
+      {{ id: "plagiarism", label: "Copyright & Plagiarism Check", desc: "Content originality",
+        fields: [
+          {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
+        ],
+        endpoint: "/plagiarism-check/check",
+        build: (f) => ({{ content: f.content }}),
+        isPlagiarism: true
+      }},
+      {{ id: "cover_letter", label: "Cover Letter Builder", desc: "Job role, company, skills",
+        fields: [
+          {{ id: "job_role", label: "Job role *", type: "text", required: true }},
+          {{ id: "company_name", label: "Company name *", type: "text", required: true }},
+          {{ id: "skills_experience", label: "Key skills & experience *", type: "textarea", required: true, full: true }},
+          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+        ],
+        endpoint: "/cover-letter/generate",
+        build: (f) => ({{ job_role: f.job_role, company_name: f.company_name, skills_experience: f.skills_experience, tone: f.tone }}),
+        format: fmtCoverLetter
+      }},
+      {{ id: "resume", label: "Resume Builder", desc: "Template, improve, full profile",
+        fields: [
+          {{ id: "template_name", label: "Template *", type: "select", options: RESUME_TEMPLATES, value: "modern" }},
+          {{ id: "improve", label: "Improve existing content", type: "select", options: ["no","yes"], value: "no" }},
+          {{ id: "full_name", label: "Full name *", type: "text", required: true }},
+          {{ id: "job_title", label: "Job title *", type: "text", required: true }},
+          {{ id: "email", label: "Email *", type: "email", required: true }},
+          {{ id: "phone", label: "Phone *", type: "text", required: true }},
+          {{ id: "linkedin", label: "LinkedIn", type: "text" }},
+          {{ id: "portfolio", label: "Portfolio", type: "text" }},
+          {{ id: "summary", label: "Professional summary", type: "textarea", full: true }},
+          {{ id: "education", label: "Education", type: "textarea", full: true }},
+          {{ id: "experience", label: "Work experience", type: "textarea", full: true }},
+          {{ id: "projects", label: "Projects", type: "textarea", full: true }},
+          {{ id: "certifications", label: "Certifications", type: "textarea", full: true }},
+          {{ id: "achievements", label: "Achievements", type: "textarea", full: true }},
+          {{ id: "languages", label: "Languages", type: "text" }},
+          {{ id: "skills", label: "Skills", type: "textarea", full: true }},
+        ],
+        endpoint: "/resume-builder/generate",
+        build: (f, useAi) => ({{
+          template: f.template_name || "modern",
+          improve: f.improve === "yes",
+          full_name: f.full_name, job_title: f.job_title, email: f.email, phone: f.phone,
+          linkedin: f.linkedin||null, portfolio: f.portfolio||null,
+          summary: f.summary||null, education: f.education||null, experience: f.experience||null,
+          projects: f.projects||null, certifications: f.certifications||null,
+          achievements: f.achievements||null, languages: f.languages||null, skills: f.skills||null,
+          use_ai: useAi
+        }}),
+        format: fmtResume
+      }},
+    ];
+
+    let activeTool = TOOLS[0];
+    const nav = document.getElementById("toolNav");
+    const formEl = document.getElementById("toolForm");
+    const titleEl = document.getElementById("toolTitle");
+    const messagesEl = document.getElementById("messages");
+    const keyEl = document.getElementById("apiKey");
+    const useAiEl = document.getElementById("useAi");
+    const genBtn = document.getElementById("generateBtn");
+    const statusHint = document.getElementById("statusHint");
+
+    const savedKey = sessionStorage.getItem("api_key");
+    if (savedKey) keyEl.value = savedKey;
+    keyEl.addEventListener("change", () => sessionStorage.setItem("api_key", keyEl.value));
+
+    TOOLS.forEach((tool, i) => {{
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tool-btn" + (i === 0 ? " active" : "");
+      b.innerHTML = tool.label + "<small>" + tool.desc + "</small>";
+      b.onclick = () => selectTool(tool, b);
+      nav.appendChild(b);
+    }});
+
+    function selectTool(tool, btn) {{
+      activeTool = tool;
+      document.querySelectorAll(".tool-btn").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      titleEl.textContent = tool.label;
+      renderForm(tool);
+    }}
+
+    function renderForm(tool) {{
+      formEl.innerHTML = "";
+      tool.fields.forEach(f => {{
+        const wrap = document.createElement("div");
+        wrap.className = "field" + (f.full ? " full" : "");
+        const lab = document.createElement("label");
+        lab.textContent = f.label;
+        lab.htmlFor = "f_" + f.id;
+        wrap.appendChild(lab);
+        let input;
+        if (f.type === "select") {{
+          input = document.createElement("select");
+          (f.options || []).forEach(o => {{
+            const opt = document.createElement("option");
+            opt.value = o; opt.textContent = o;
+            if (f.value === o) opt.selected = true;
+            input.appendChild(opt);
+          }});
+        }} else if (f.type === "textarea") {{
+          input = document.createElement("textarea");
+        }} else {{
+          input = document.createElement("input");
+          input.type = f.type || "text";
+        }}
+        input.id = "f_" + f.id;
+        if (f.value != null) input.value = f.value;
+        if (f.placeholder) input.placeholder = f.placeholder;
+        if (f.required) input.required = true;
+        wrap.appendChild(input);
+        formEl.appendChild(wrap);
+      }});
+    }}
+
+    function readForm() {{
+      const out = {{}};
+      activeTool.fields.forEach(f => {{
+        const el = document.getElementById("f_" + f.id);
+        if (el) out[f.id] = el.value.trim();
+      }});
+      return out;
+    }}
+
+    function headers() {{
+      const h = {{ "Content-Type": "application/json" }};
+      const k = keyEl.value.trim();
+      if (k) h["Authorization"] = "Bearer " + k;
+      return h;
+    }}
+
+    function addMsg(role, text, isError) {{
+      const div = document.createElement("div");
+      div.className = "msg " + role + (isError ? " error" : "");
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }}
+
+    async function generate() {{
+      const fields = readForm();
+      for (const f of activeTool.fields) {{
+        if (f.required && !fields[f.id]) {{
+          statusHint.textContent = "Fill required field: " + f.label;
+          return;
+        }}
+      }}
+      statusHint.textContent = "";
+      const useAi = useAiEl.value === "true";
+      const summary = activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
+      addMsg("user", summary);
+      genBtn.disabled = true;
+      statusHint.textContent = "Generating…";
+      try {{
+        let res, data;
+        if (activeTool.isChat) {{
+          res = await fetch(API + activeTool.endpoint, {{
+            method: "POST", headers: headers(),
+            body: JSON.stringify({{
+              model: fields.backend || "auto", backend: fields.backend || "auto",
+              messages: [{{ role: "user", content: fields.message }}],
+              max_tokens: 768, temperature: 0.7
+            }})
+          }});
+          data = await res.json();
+          if (!res.ok) throw new Error(data.detail || res.statusText);
+          const backend = res.headers.get("X-Nexus-Backend") || fields.backend;
+          addMsg("assistant", "[" + backend + "]\\n\\n" + activeTool.format(data));
+        }} else {{
+          const body = activeTool.build(fields, useAi);
+          res = await fetch(API + activeTool.endpoint, {{
+            method: "POST", headers: headers(), body: JSON.stringify(body)
+          }});
+          data = await res.json();
+          if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
+          if (activeTool.isPlagiarism) {{
+            renderPlagiarismCard(data, fields.content);
+          }} else {{
+            addMsg("assistant", activeTool.format(data));
+          }}
+        }}
+      }} catch (e) {{
+        let msg = e.message || String(e);
+        if (msg === "Failed to fetch") msg = "Server unreachable. Run: python run.py";
+        addMsg("assistant", "Error: " + msg, true);
+      }} finally {{
+        genBtn.disabled = false;
+        statusHint.textContent = "";
+      }}
+    }}
+
+    function fmtSeoContent(d) {{
+      const NL = String.fromCharCode(10);
+      const meta = d.metadata || {{ title: d.title, meta_description: d.meta_description }};
+      const kw = d.keywords && d.keywords.primary
+        ? d.keywords
+        : {{ primary: (d.keywords_list || d.keywords || [])[0] || "", secondary: (d.keywords_list || d.keywords || []).slice(1) }};
+      const body = d.content || {{ article: d.article || "", tone: d.tone }};
+      const article = typeof body === "string" ? body : (body.article || "");
+      const outlineItems = d.outline || [];
+      const outline = outlineItems.map(o => {{
+        if (typeof o === "string") return o;
+        const tag = (o.level || "h2").toUpperCase();
+        return tag + ": " + o.text;
+      }}).join(NL);
+      const secKw = (kw.secondary || []).map(k => "- " + k).join(NL);
+      const faqs = (d.faqs || []).map((f, i) => (i + 1) + ". " + f.question + NL + f.answer).join(NL + NL);
+      const rag = d.rag || {{}};
+      const ragLine = rag.enabled
+        ? "Sources: " + (rag.sources_used || []).join(", ") + " · Confidence: " + (rag.confidence ?? "—") + " · v" + (d.generator_version || "?")
+        : "Generator: " + (d.generator_version || "?");
+      return [
+        "Metadata",
+        "Title: " + meta.title,
+        "Meta Description: " + meta.meta_description,
+        ragLine,
+        "",
+        "Keywords",
+        "Primary: " + kw.primary,
+        "Secondary:",
+        secKw || "—",
+        "",
+        "Outline",
+        outline || "—",
+        "",
+        "Article",
+        article,
+        "",
+        "FAQs",
+        faqs || "—"
+      ].join(NL);
+    }}
+    function fmtSeoOptimizer(d) {{
+      const NL = String.fromCharCode(10);
+      const report = (d.optimization || {{}}).seo_report;
+      if (report) {{
+        const fm = report.final_metrics || {{}};
+        const lines = [
+          "SEO Content Optimization · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+          "SEO score: " + (fm.seo_score_before ?? d.seo_score_before) + " → " + (fm.seo_score_after ?? d.seo_score_after),
+          d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+          "",
+          "### SEO Audit",
+          "**Strengths**", ...(report.seo_audit?.strengths || []).map(s => "- " + s),
+          "**Weaknesses**", ...(report.seo_audit?.weaknesses || []).map(s => "- " + s),
+          "**Opportunities**", ...(report.seo_audit?.opportunities || []).map(s => "- " + s),
+          "",
+          "### Keyword Analysis",
+          "Primary: " + (report.keyword_analysis?.primary || "—"),
+          "Secondary: " + ((report.keyword_analysis?.secondary || []).join(", ") || "—"),
+          ...(report.keyword_analysis?.table || []).map(r => "- " + r.keyword + " · " + r.status + " · mentions " + r.mentions),
+          "",
+          "### Entity Analysis (" + (report.entity_analysis?.entity_coverage_pct ?? "—") + "% coverage)",
+          ...(report.entity_analysis?.entities || []).map(e => "- " + e.entity + (e.in_content ? " ✓" : " (missing)")),
+          "",
+          "### Search Intent",
+          "Primary: " + (report.search_intent?.primary || "—"),
+          "",
+          "### Content Gap Analysis",
+          ...(report.content_gap_analysis?.gaps || []).map(g => "- [" + g.priority + "] " + g.suggestion),
+          "",
+          "### Featured Snippets",
+          "**Definition:** " + (report.featured_snippets?.definition || "—"),
+          "**List:**" + NL + (report.featured_snippets?.list || "—"),
+          "",
+          "### Metadata",
+          "Title: " + (report.metadata?.title || "—"),
+          "Meta: " + (report.metadata?.meta_description || "—"),
+          "Slug: " + (report.metadata?.slug || "—"),
+          "OG Title: " + (report.metadata?.og_title || "—"),
+          "OG Description: " + (report.metadata?.og_description || "—"),
+          "",
+          "### Final Metrics",
+          "Readability: " + (fm.readability_score ?? "—") + "/100",
+          "Topical authority: " + (fm.topical_authority_score ?? "—"),
+          "Keyword coverage: " + (fm.keyword_coverage_pct ?? "—") + "%",
+          "Entity coverage: " + (fm.entity_coverage_pct ?? "—") + "%",
+          "Content depth: " + (fm.content_depth_score ?? "—"),
+          "",
+          "### FAQs",
+          ...(report.faqs || []).map((f, i) => (i + 1) + ". " + f.question + NL + f.answer),
+          "",
+          "### Internal Links",
+          ...(report.internal_links || []).map(l => "- " + l.anchor_text + " → " + l.target_topic),
+          "",
+          "### AI Search Optimization",
+          ...(report.ai_search_optimization || []).map(s => "- " + s),
+          "",
+          "### Optimized Article",
+          d.optimized_content || ""
+        ];
+        return lines.filter(Boolean).join(NL);
+      }}
+      const rag = d.rag || {{}};
+      const pipe = d.pipeline || {{}};
+      const arch = d.architecture || {{}};
+      const opt = d.optimization || {{}};
+      const meta = opt.metadata || {{}};
+      const orig = d.original || {{}};
+      const optm = d.optimized || {{}};
+      const cov = (pipe.coverage_map && pipe.coverage_map.coverage_pct != null)
+        ? pipe.coverage_map
+        : (arch.stages?.coverage_map || pipe.coverage_map || {{}});
+      function metricsBlock(label, m) {{
+        return [
+          label,
+          "  Word count: " + (m.word_count ?? "—"),
+          "  Character count: " + (m.character_count ?? "—"),
+          "  Sentence count: " + (m.sentence_count ?? "—"),
+          "  Readability score: " + (m.readability_score != null ? m.readability_score + "/100" : "—"),
+        ].join(NL);
+      }}
+      const archFlow = (arch.flow || []).slice(0, 10).join(" → ");
+      const lines = [
+        "SEO Content Optimization · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        "SEO score: " + d.seo_score_before + " → " + d.seo_score_after + " (+" + d.improvement + ")",
+        rag.enabled ? "Sources: " + (rag.sources_used || []).join(", ") + " · Confidence: " + (rag.confidence ?? "—") : "",
+        archFlow ? "Pipeline: " + archFlow + " …" : "",
+        "",
+        "— Content Metrics (Original) —",
+        metricsBlock("Before:", orig),
+        "",
+        "— Content Metrics (Optimized) —",
+        metricsBlock("After:", optm),
+        "",
+        "— Coverage Map —",
+        "Coverage: " + (cov.coverage_pct ?? "—") + "% · Missing: " + ((cov.missing_terms || []).join(", ") || "—"),
+        "Thin sections: " + ((cov.thin_sections || []).join(", ") || "—"),
+        "Structure: H2=" + (cov.structure?.h2_count ?? "—") + " H3=" + (cov.structure?.h3_count ?? "—") + " bullets=" + (cov.structure?.bullet_count ?? "—"),
+        "Gaps found: " + ((pipe.gap_analysis || []).length) + " · Novel opportunities: " + (pipe.novelty?.novel_count ?? "—") + " (" + (pipe.novelty?.mode || "—") + ")",
+        "Sections planned: " + ((pipe.section_plan || []).length),
+        "",
+        "— Metadata —",
+        "Title: " + (meta.title || "—"),
+        "Meta: " + (meta.meta_description || "—"),
+        "",
+        "— Suggestions —",
+        (d.suggestions || []).map(s => "- " + s).join(NL),
+        "",
+        "— FAQs —",
+        ((opt.faqs || []).map((f, i) => (i + 1) + ". " + f.question + NL + f.answer).join(NL + NL) || "—"),
+        "",
+        "— Optimized Content —",
+        d.optimized_content || ""
+      ];
+      return lines.filter((line, i) => line !== "" || i === 0 || lines[i-1] !== "").join(NL);
+    }}
+    function fmtTitleMeta(d) {{
+      const NL = String.fromCharCode(10);
+      const arch = d.architecture || {{}};
+      const pipe = d.pipeline || {{}};
+      const lines = [
+        "SEO Title & Meta · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+        "",
+        "### Pipeline Architecture",
+        (arch.flow || []).join(" → "),
+        "",
+        "### Open Datasets",
+        Object.keys(arch.open_datasets || {{}}).join(", "),
+        "",
+        "### Keyword Analysis",
+        "Primary: " + (pipe.keywords?.primary || d.topic),
+        "Long-tail: " + ((pipe.keywords?.long_tail || []).slice(0, 4).join("; ") || "—"),
+        "",
+        "### Intent",
+        "Primary: " + (pipe.intent?.primary || "—"),
+        "",
+        "### SERP Patterns",
+        "Recommended: " + ((pipe.serp_patterns?.recommended || []).join(", ") || "—"),
+        "",
+        "### Variations (" + (d.variation_count || 0) + ")",
+        (d.variations||[]).map((v,i) =>
+          "#### Option " + (i+1) + " (" + (v.angle||"") + ") · score " + (v.quality_score||"—") + NL +
+          "**Title** (" + v.title_length + "): " + v.title + NL +
+          "**Meta** (" + v.meta_length + "): " + v.meta_description
+        ).join(NL + NL),
+        "",
+        "_Avg quality: " + (d.quality?.average_score || "—") + "/100_"
+      ];
+      return lines.filter(Boolean).join(NL);
+    }}
+    function fmtKeywords(d) {{
+      const NL = String.fromCharCode(10);
+      const arch = d.architecture || {{}};
+      const pipe = d.pipeline || {{}};
+      const lines = [
+        "SEO Keyword Generator · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+        "",
+        "### Pipeline Architecture",
+        (arch.flow || []).join(" → "),
+        "",
+        "### Open Datasets",
+        Object.keys(arch.open_datasets || {{}}).join(", "),
+        "",
+        "### Input Analysis",
+        "Seed: " + d.seed_keyword,
+        "Entities: " + ((pipe.entities || []).slice(0, 6).join(", ") || "—"),
+        "",
+        "### Intent Distribution",
+        JSON.stringify(pipe.intent_distribution || {{}}),
+        "",
+        "### SEO Score",
+        "Overall: " + (d.seo_score?.overall || "—") + "/100 · Diversity: " + (d.seo_score?.diversity || "—"),
+        "",
+        "### Keywords (" + (d.count || 0) + ")",
+        (d.keywords||[]).map((k,i) =>
+          (i+1) + ". **" + k.keyword + "** · vol " + k.search_volume + " · diff " + k.difficulty +
+          " · CPC $" + k.cpc_usd + " · " + k.trend + " · " + k.intent + " · score " + (k.seo_score||"—")
+        ).join(NL),
+        "",
+        "### Top Opportunities",
+        (d.opportunities||[]).slice(0,5).map(o => "- " + o.keyword + " (" + o.opportunity_score + ")").join(NL) || "—"
+      ];
+      return lines.filter(Boolean).join(NL);
+    }}
+    function fmtSchema(d) {{ return "**Type:** " + d.schema_type + "\\n**Score:** " + d.quality?.completeness_score + "/100\\n\\n```json\\n" + d.jsonld_string + "\\n```"; }}
+    function fmtEmail(d) {{ return "**Subject:** " + d.subject + "\\n**Tone:** " + d.tone + "\\n\\n" + d.email; }}
+    function fmtPlagiarism(d) {{
+      return d.summary + "\\nSimilarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
+    }}
+
+    function plagGaugeSvg(pct) {{
+      const p = Math.min(100, Math.max(0, pct));
+      const arc = 157;
+      const off = arc - (arc * p / 100);
+      return '<svg viewBox="0 0 150 80"><path d="M15,70 A60,60 0 0 1 135,70" fill="none" stroke="#e5e7eb" stroke-width="14" stroke-linecap="round"/><path d="M15,70 A60,60 0 0 1 135,70" fill="none" stroke="#f97316" stroke-width="14" stroke-linecap="round" stroke-dasharray="' + arc + '" stroke-dashoffset="' + off + '"/></svg>';
+    }}
+
+    function renderPlagiarismCard(data, fullContent) {{
+      const wrap = document.createElement("div");
+      wrap.className = "msg assistant plag-wrap";
+      const sim = data.similarity_percent || 0;
+      const orig = data.original_percent || (100 - sim);
+      const preview = data.content_preview || (fullContent || "").slice(0, 48);
+      const warn = data.scan_incomplete || data.embedding_note ||
+        (!data.embedding_available && sim === 0) ||
+        ((data.sources_used || []).length === 0 && sim === 0);
+      const warnText = data.embedding_note || (data.flags && data.flags[0]) ||
+        "Reference sources not loaded — run: pip install sentence-transformers faiss-cpu && python scripts/build_plagiarism_index.py";
+      wrap.innerHTML =
+        '<div class="plag-card">' +
+          '<div class="plag-gauge-row">' +
+            '<div class="plag-gauge">' + plagGaugeSvg(sim) +
+              '<div class="plag-gauge-text"><div class="sub">Plagiarism</div><div class="pct">' + sim + '%</div></div>' +
+            '</div>' +
+            '<div class="plag-stats">' +
+              '<div><strong>' + sim + '%</strong> Similarity detected</div>' +
+              '<div><strong>' + orig + '%</strong> Original content</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="plag-action">' +
+            (warn ? '<p style="color:#b45309;font-size:0.85rem;margin:0 0 0.75rem">' + escapeHtml(warnText) + '</p>' : '') +
+            '<h3>' + (warn ? 'Scan incomplete — similarity may be wrong' : sim + '% of your text matches existing sources') + '</h3>' +
+            (data.sources_used && data.sources_used.length ?
+              '<p class="hint">Sources: ' + escapeHtml(data.sources_used.join(', ')) + '</p>' : '') +
+            '<p>Would you like to make your text “' + escapeHtml(preview) + '…” fully original?</p>' +
+            '<div class="plag-btns">' +
+              '<button type="button" class="plag-btn outline" data-act="details">See Details</button>' +
+              '<button type="button" class="plag-btn primary" data-act="remove">Remove Plagiarism</button>' +
+            '</div>' +
+            '<div class="plag-details" data-details></div>' +
+            '<div class="plag-rewrite" data-rewrite style="display:none"></div>' +
+          '</div>' +
+        '</div>';
+
+      const detailsEl = wrap.querySelector("[data-details]");
+      const highlights = data.highlighted_sentences || [];
+      const segs = data.matched_segments || [];
+      if (highlights.length) {{
+        detailsEl.innerHTML = highlights.map(h =>
+          '<div class="plag-seg"><div class="tag">' + escapeHtml(h.label || h.source_type) +
+          ' · ' + h.match_percent + '% · ' + escapeHtml(h.risk) + ' risk</div>' +
+          escapeHtml(h.sentence || h.highlight) +
+          (h.matched_excerpt ? '<div style="margin-top:0.35rem;color:#6b7280"><em>Matched:</em> ' +
+            escapeHtml(h.matched_excerpt) + '</div>' : '') +
+          (h.url ? '<div style="color:#6b7280;margin-top:0.25rem"><a href="' + escapeHtml(h.url) +
+            '" target="_blank" rel="noopener">' + escapeHtml(h.source) + '</a></div>' :
+            '<div style="color:#6b7280;margin-top:0.25rem">' + escapeHtml(h.source) + '</div>') +
+          '</div>'
+        ).join("");
+      }} else if (segs.length) {{
+        detailsEl.innerHTML = segs.map(s =>
+          '<div class="plag-seg"><div class="tag">' + escapeHtml(s.label) + ' · ' + s.match_percent + '% match</div>' +
+          escapeHtml(s.text) +
+          (s.matched_excerpt ? '<div style="margin-top:0.35rem;color:#6b7280"><em>Matched:</em> ' + escapeHtml(s.matched_excerpt) + '</div>' : '') +
+          '<div style="color:#6b7280;margin-top:0.25rem">' + escapeHtml(s.source) + '</div></div>'
+        ).join("");
+      }} else {{
+        detailsEl.innerHTML = '<div class="plag-seg">No specific matched segments — overall similarity is ' + sim + '%.</div>';
+      }}
+
+      wrap.querySelector('[data-act="details"]').onclick = (e) => {{
+        detailsEl.classList.toggle("open");
+        e.target.textContent = detailsEl.classList.contains("open") ? "Hide Details" : "See Details";
+      }};
+
+      wrap.querySelector('[data-act="remove"]').onclick = async (e) => {{
+        const btn = e.target;
+        btn.disabled = true;
+        btn.textContent = "Rewriting…";
+        try {{
+          const res = await fetch(API + "/plagiarism-check/remove", {{
+            method: "POST", headers: headers(),
+            body: JSON.stringify({{ content: fullContent }})
+          }});
+          const out = await res.json();
+          if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : JSON.stringify(out.detail));
+          const after = out.after || {{}};
+          const sim = after.similarity_percent ?? 0;
+          const orig = after.original_percent ?? 0;
+          wrap.querySelector(".pct").textContent = sim + "%";
+          wrap.querySelector(".plag-gauge").innerHTML = plagGaugeSvg(sim) +
+            '<div class="plag-gauge-text"><div class="sub">Plagiarism</div><div class="pct">' + sim + '%</div></div>';
+          const stats = wrap.querySelector(".plag-stats");
+          if (stats) stats.innerHTML =
+            '<div><strong>' + sim + '%</strong> Similarity detected</div>' +
+            '<div><strong>' + orig + '%</strong> Original content</div>';
+          const rw = wrap.querySelector("[data-rewrite]");
+          rw.style.display = "block";
+          const ok = sim <= 12 ? "✓ No significant similarity detected.\\n\\n" : "✓ Rewrite complete.\\n\\n";
+          rw.textContent = ok + out.summary + "\\n\\n" + out.rewritten_content;
+          const contentEl = document.getElementById("f_content");
+          if (contentEl) contentEl.value = out.rewritten_content;
+          btn.textContent = sim <= 12 ? "Done — original" : ("Done — " + orig + "% original");
+        }} catch (err) {{
+          btn.disabled = false;
+          btn.textContent = "Remove Plagiarism";
+          const msg = err.message || String(err);
+          addMsg("assistant", "Error: " + msg, true);
+        }}
+      }};
+
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }}
+
+    function escapeHtml(s) {{
+      return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }}
+    function fmtCoverLetter(d) {{ return "**Role:** " + d.job_role + " @ " + d.company_name + "\\n\\n" + d.cover_letter; }}
+    function fmtResume(d) {{ return "**Template:** " + d.template + " · Score: " + d.quality?.completeness_score + "/100\\n\\n" + d.resume_markdown; }}
+
+    document.getElementById("generateBtn").onclick = generate;
+    document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; }};
+    selectTool(TOOLS[0], nav.querySelector(".tool-btn"));
+  </script>
+</body>
+</html>

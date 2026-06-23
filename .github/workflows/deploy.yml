@@ -1,4 +1,4 @@
-name: Python FTP Deploy to Production
+name: Python CI and Deploy
 
 on:
   push:
@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Validate and Deploy Python App
+  validate:
+    name: Validate Python App
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -31,6 +31,20 @@ jobs:
         run: |
           python -m compileall app scripts run.py wsgi.py passenger_wsgi.py
           python -c "import app.main; print('App import ok')"
+
+  # Hostinger shared hosting blocks inbound SFTP/FTP from GitHub cloud runners.
+  # Deploy from your PC:  .\scripts\deploy_hostinger.ps1
+  # Or upgrade to Hostinger VPS / use Render (render.yaml).
+  deploy:
+    name: Deploy to Hostinger (manual trigger)
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Prepare deploy bundle
         run: |
@@ -54,8 +68,9 @@ jobs:
             --exclude='deploy_bundle' \
             ./ deploy_bundle/
 
-      - name: Deploy via SFTP (Hostinger port 65002)
+      - name: Deploy via SFTP (may fail on shared hosting)
         uses: wlixcc/SFTP-Deploy-Action@v1.2.6
+        continue-on-error: true
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
@@ -65,3 +80,9 @@ jobs:
           remote_path: ${{ secrets.FTP_SERVER_DIR }}
           sftp_only: true
           sftpArgs: "-o ConnectTimeout=60 -o StrictHostKeyChecking=no"
+
+      - name: Deploy note
+        if: always()
+        run: |
+          echo "::warning::If SFTP timed out, Hostinger shared hosting blocks GitHub runners."
+          echo "Run from your PC: scripts/deploy_hostinger.ps1"

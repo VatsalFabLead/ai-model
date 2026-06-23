@@ -13,9 +13,10 @@ from pathlib import Path
 import httpx
 
 from app.config import Settings
-from app.engine.knowledge import KnowledgeBase, load_knowledge_base
+from app.engine.answer_complete import CONTINUE_PROMPT, is_incomplete_answer, merge_continuation
+from app.engine.live_facts import fetch_gold_price_context, is_gold_price_query
 from app.engine.resume import detect_resume_intent, generate_resume
-from app.engine.web_knowledge import WikipediaSource
+from app.engine.tool_context import ToolContextBuilder
 from app.services.provider_base import ModelProvider
 
 
@@ -23,13 +24,7 @@ class OllamaProvider(ModelProvider):
   def __init__(self, settings: Settings) -> None:
     self._settings = settings
     self._ready = False
-    self._kb: KnowledgeBase | None = None
-    self._wiki: WikipediaSource | None = None
-    if settings.enable_web_knowledge:
-      self._wiki = WikipediaSource(
-        sentences=settings.web_knowledge_sentences,
-        timeout=settings.web_knowledge_timeout,
-      )
+    self._tools = ToolContextBuilder(settings)
 
   async def load(self) -> None:
     base = self._settings.ollama_host.rstrip("/")
@@ -45,30 +40,14 @@ class OllamaProvider(ModelProvider):
         f"Original error: {exc}"
       ) from exc
 
-    self._kb = load_knowledge_base(
-      knowledge_path=Path(self._settings.knowledge_path),
-      corpus_path=Path(self._settings.corpus_path),
-    )
+    self._tools.load_kb()
     self._ready = True
 
   async def unload(self) -> None:
     self._ready = False
-    self._kb = None
 
   def is_ready(self) -> bool:
     return self._ready
-
-  async def _build_context(self, query: str) -> str:
-    parts: list[str] = []
-    if self._kb and self._kb.size:
-      answer, score = self._kb.search(query)
-      if answer and score >= self._settings.knowledge_threshold:
-        parts.append(answer)
-    if self._wiki is not None:
-      wiki = await self._wiki.query(query)
-      if wiki:
-        parts.append(wiki)
-    return "\n\n".join(parts)[:3000]
 
   async def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
     last_user = next(
@@ -79,6 +58,11 @@ class OllamaProvider(ModelProvider):
     if not kwargs.get("skip_intent") and detect_resume_intent(last_user):
       return generate_resume(last_user)
 
+    if is_gold_price_query(last_user):
+      live = await fetch_gold_price_context(last_user)
+      if live:
+        return live
+
     system_prompt = kwargs.get("system_prompt") or self._settings.llm_system_prompt
     use_rag = kwargs.get("use_rag")
     if use_rag is None:
@@ -88,29 +72,45 @@ class OllamaProvider(ModelProvider):
       {"role": "system", "content": system_prompt}
     ]
     if use_rag and last_user.strip():
-      context = await self._build_context(last_user)
+      context = await self._tools.gather(last_user)
       if context:
         full_messages.append({
           "role": "system",
-          "content": f"Reference context (use if relevant):\n{context}",
+          "content": f"Reference context (use if relevant):\n{context[:28000]}",
         })
     full_messages.extend(messages)
 
     temperature = kwargs.get("temperature")
     temperature = float(temperature if temperature is not None else self._settings.llm_temperature)
     max_tokens = int(kwargs.get("max_tokens") or self._settings.llm_max_tokens)
+    max_passes = max(1, self._settings.chat_completion_max_passes)
     base = self._settings.ollama_host.rstrip("/")
-    payload = {
-      "model": self._settings.ollama_model,
-      "messages": full_messages,
-      "stream": False,
-      "options": {"temperature": temperature, "num_predict": max_tokens},
-    }
-    async with httpx.AsyncClient(timeout=120) as client:
-      r = await client.post(f"{base}/api/chat", json=payload)
-      r.raise_for_status()
-      data = r.json()
-    return (data.get("message", {}).get("content") or "").strip()
+
+    answer = ""
+    for attempt in range(max_passes):
+      run_messages = list(full_messages)
+      if attempt > 0 and answer.strip():
+        run_messages = run_messages + [
+          {"role": "assistant", "content": answer.strip()},
+          {"role": "user", "content": CONTINUE_PROMPT},
+        ]
+      payload = {
+        "model": self._settings.ollama_model,
+        "messages": run_messages,
+        "stream": False,
+        "options": {"temperature": temperature, "num_predict": max_tokens},
+      }
+      async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(f"{base}/api/chat", json=payload)
+        r.raise_for_status()
+        data = r.json()
+      chunk = (data.get("message", {}).get("content") or "").strip()
+      answer = merge_continuation(answer, chunk)
+      done = bool(data.get("done", True))
+      if done and not is_incomplete_answer(answer):
+        break
+
+    return answer
 
   def model_id(self) -> str:
-    return self._settings.model_id
+    return f"ollama/{self._settings.ollama_model}"

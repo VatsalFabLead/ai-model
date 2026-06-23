@@ -7,7 +7,6 @@ top of neural generation so known questions return clean answers.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import numpy as np
@@ -20,19 +19,40 @@ def parse_corpus(text: str) -> list[tuple[str, str]]:
   """Extract (question, answer) pairs from the chat-formatted corpus."""
   pairs: list[tuple[str, str]] = []
   pending_user: str | None = None
-  for raw in text.splitlines():
-    line = raw.strip()
-    if not line:
-      continue
-    if line.startswith("User:"):
-      pending_user = line[len("User:") :].strip()
-    elif line.startswith("Assistant:") and pending_user is not None:
-      answer = line[len("Assistant:") :].strip()
-      answer = answer.replace(ByteTokenizer.EOS, "").strip()
-      answer = re.sub(r"\s+", " ", answer)
-      if answer:
-        pairs.append((pending_user, answer))
+  answer_lines: list[str] = []
+
+  def flush() -> None:
+    nonlocal pending_user, answer_lines
+    if pending_user is None or not answer_lines:
       pending_user = None
+      answer_lines = []
+      return
+    answer = "\n".join(answer_lines)
+    answer = answer.replace(ByteTokenizer.EOS, "").strip()
+    if answer:
+      pairs.append((pending_user, answer))
+    pending_user = None
+    answer_lines = []
+
+  for raw in text.splitlines():
+    line = raw.rstrip()
+    stripped = line.strip()
+    if not stripped:
+      if answer_lines:
+        answer_lines.append("")
+      continue
+    if stripped.startswith("User:"):
+      flush()
+      pending_user = stripped[len("User:") :].strip()
+      continue
+    if stripped.startswith("Assistant:") and pending_user is not None:
+      answer_lines = [stripped[len("Assistant:") :].strip()]
+      continue
+    if pending_user is not None and answer_lines:
+      answer_lines.append(line)
+      continue
+    flush()
+  flush()
   return pairs
 
 

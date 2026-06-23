@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_tool_provider
 from app.core.security import verify_api_key
 from app.services import schema_markup
-from app.services.registry import ProviderRegistry
 
 router = APIRouter(prefix="/schema-markup", tags=["schema-markup"])
 
@@ -43,13 +43,6 @@ class SchemaMarkupResponse(BaseModel):
   quality: SchemaQuality
 
 
-def _get_provider(request: Request):
-  registry: ProviderRegistry = request.app.state.registry
-  if not registry.is_ready():
-    raise HTTPException(status_code=503, detail="Model is loading or unavailable")
-  return registry.provider
-
-
 @router.get("/types")
 async def list_types(
   category: str | None = None,
@@ -80,7 +73,7 @@ async def generate_schema(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> SchemaMarkupResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await schema_markup.generate_schema_markup(
       provider,

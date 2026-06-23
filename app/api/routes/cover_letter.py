@@ -3,9 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_tool_provider
 from app.core.security import verify_api_key
 from app.services import cover_letter
-from app.services.registry import ProviderRegistry
 
 router = APIRouter(prefix="/cover-letter", tags=["cover-letter"])
 
@@ -32,20 +32,13 @@ class CoverLetterResponse(BaseModel):
   word_count: int
 
 
-def _get_provider(request: Request):
-  registry: ProviderRegistry = request.app.state.registry
-  if not registry.is_ready():
-    raise HTTPException(status_code=503, detail="Model is loading or unavailable")
-  return registry.provider
-
-
 @router.post("/generate", response_model=CoverLetterResponse)
 async def generate(
   payload: CoverLetterRequest,
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> CoverLetterResponse:
-  provider = _get_provider(request)
+  provider = get_tool_provider(request)
   try:
     result = await cover_letter.generate_cover_letter(
       provider,

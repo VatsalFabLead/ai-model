@@ -120,6 +120,50 @@ class KnowledgeBase:
 
     return self._answers[best_id], best_score
 
+  def search_ranked(self, query: str, limit: int = 3) -> list[tuple[str, float]]:
+    """Return top knowledge hits with scores (relaxed gate for RAG context)."""
+    if not self._answers or limit < 1:
+      return []
+    q_toks = tokenize(query)
+    if not q_toks:
+      return []
+    q_all = set(q_toks)
+
+    q_tf: dict[str, int] = {}
+    for t in q_toks:
+      q_tf[t] = q_tf.get(t, 0) + 1
+    q_weights: dict[str, float] = {}
+    for t, c in q_tf.items():
+      if t in self._idf:
+        q_weights[t] = (1.0 + math.log(c)) * self._idf[t]
+    norm = math.sqrt(sum(w * w for w in q_weights.values())) or 1.0
+    for t in q_weights:
+      q_weights[t] /= norm
+
+    scores: dict[int, float] = {}
+    for t, qw in q_weights.items():
+      for doc_id, dw in self._inverted.get(t, ()):
+        scores[doc_id] = scores.get(doc_id, 0.0) + qw * dw
+
+    if not scores:
+      return []
+
+    ranked: list[tuple[str, float]] = []
+    for doc_id, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+      if score < 0.04:
+        continue
+      doc_set = self._doc_terms[doc_id]
+      shared = q_all & doc_set
+      content_shared = shared - _STOPWORDS
+      union = q_all | doc_set
+      jaccard = len(shared) / len(union) if union else 0.0
+      if not content_shared and jaccard < 0.45:
+        continue
+      ranked.append((self._answers[doc_id], float(score)))
+      if len(ranked) >= limit:
+        break
+    return ranked
+
 
 def _parse_corpus_pairs(text: str) -> list[tuple[str, str]]:
   from app.engine.tokenizer import ByteTokenizer

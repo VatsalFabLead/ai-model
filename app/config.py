@@ -23,13 +23,36 @@ class Settings(BaseSettings):
   port: int = Field(default=8000, alias="PORT")
   request_timeout_seconds: int = Field(default=120, alias="REQUEST_TIMEOUT_SECONDS")
 
-  # Provider backend: "custom" (from-scratch NumPy), "llm" (GGUF via llama.cpp),
-  # or "ollama" (free open-source models via local Ollama server).
-  model_backend: str = Field(default="custom", alias="MODEL_BACKEND")
+  # Provider backend: custom | llm | ollama | auto | multi | prompt
+  # auto = try custom → ollama → llm per request. prompt = read /ollama /llm /custom prefix.
+  model_backend: str = Field(default="auto", alias="MODEL_BACKEND")
 
   # Ollama (free, open-source local runtime). Not GPT/Claude/Gemini.
   ollama_host: str = Field(default="http://localhost:11434", alias="OLLAMA_HOST")
   ollama_model: str = Field(default="qwen2.5:0.5b", alias="OLLAMA_MODEL")
+
+  # Gemma 4 — free local: model.safetensors in GEMMA_MODEL_DIR (no Hugging Face API).
+  gemma_enabled: bool = Field(default=True, alias="GEMMA_ENABLED")
+  gemma_model_dir: Path = Field(default=Path("D:/Gemma 4"), alias="GEMMA_MODEL_DIR")
+  gemma_weights_file: str = Field(default="model.safetensors", alias="GEMMA_WEIGHTS_FILE")
+  gemma_device: str = Field(default="cpu", alias="GEMMA_DEVICE")
+  gemma_load_safetensors: str = Field(
+    default="auto",
+    alias="GEMMA_LOAD_SAFETENSORS",
+    description="auto | true | false — auto skips direct load if RAM is too small",
+  )
+  gemma_gguf_path: Path | None = Field(default=None, alias="GEMMA_GGUF_PATH")
+  gemma_ollama_model: str = Field(default="gemma3:12b", alias="GEMMA_OLLAMA_MODEL")
+  gemma_max_tokens: int = Field(default=1024, alias="GEMMA_MAX_TOKENS")
+  gemma_temperature: float = Field(default=0.7, alias="GEMMA_TEMPERATURE")
+  gemma_system_prompt: str = Field(
+    default=(
+      "You are Nexus powered by Gemma, a professional writing assistant. "
+      "Follow instructions precisely. Use clear structure, correct grammar, and SEO best practices. "
+      "Never mention GPT, Claude, Gemini, or Hugging Face."
+    ),
+    alias="GEMMA_SYSTEM_PROMPT",
+  )
 
   # Free open-source local model (GGUF via llama.cpp). Not GPT/Claude/Gemini.
   llm_model_path: Path = Field(
@@ -39,7 +62,7 @@ class Settings(BaseSettings):
   llm_context: int = Field(default=4096, alias="LLM_CONTEXT")
   llm_threads: int = Field(default=4, alias="LLM_THREADS")
   llm_gpu_layers: int = Field(default=0, alias="LLM_GPU_LAYERS")
-  llm_max_tokens: int = Field(default=512, alias="LLM_MAX_TOKENS")
+  llm_max_tokens: int = Field(default=1024, alias="LLM_MAX_TOKENS")
   llm_temperature: float = Field(default=0.7, alias="LLM_TEMPERATURE")
   # Anti-repetition sampling (important for small models to avoid loops).
   llm_top_p: float = Field(default=0.95, alias="LLM_TOP_P")
@@ -82,7 +105,10 @@ class Settings(BaseSettings):
   # This is a data source, NOT an AI model. Set to false to stay fully offline.
   enable_web_knowledge: bool = Field(default=True, alias="ENABLE_WEB_KNOWLEDGE")
   web_knowledge_sentences: int = Field(default=8, alias="WEB_KNOWLEDGE_SENTENCES")
-  web_knowledge_timeout: float = Field(default=8.0, alias="WEB_KNOWLEDGE_TIMEOUT")
+  web_knowledge_timeout: float = Field(default=12.0, alias="WEB_KNOWLEDGE_TIMEOUT")
+  answer_min_words: int = Field(default=0, alias="ANSWER_MIN_WORDS")
+  answer_max_words: int = Field(default=0, alias="ANSWER_MAX_WORDS")
+  show_answer_sources: bool = Field(default=False, alias="SHOW_ANSWER_SOURCES")
 
   # Architecture — tuned for Hostinger VPS CPU (increase locally if you have more RAM)
   d_model: int = Field(default=256, alias="D_MODEL")
@@ -92,11 +118,29 @@ class Settings(BaseSettings):
   max_seq_len: int = Field(default=256, alias="MAX_SEQ_LEN")
   vocab_size: int = Field(default=4096, alias="VOCAB_SIZE")
 
-  # Inference
-  max_new_tokens: int = Field(default=128, alias="MAX_NEW_TOKENS")
+  # Inference-only custom model (tools = RAG context; transformer writes every reply).
+  inference_only: bool = Field(default=True, alias="INFERENCE_ONLY")
+  inference_max_passes: int = Field(default=4, alias="INFERENCE_MAX_PASSES")
+  inference_context_chars: int = Field(default=2400, alias="INFERENCE_CONTEXT_CHARS")
+  tool_context_max_words: int = Field(default=600, alias="TOOL_CONTEXT_MAX_WORDS")
+  chat_completion_max_passes: int = Field(default=4, alias="CHAT_COMPLETION_MAX_PASSES")
+  max_new_tokens: int = Field(default=512, alias="MAX_NEW_TOKENS")
   temperature: float = Field(default=0.7, alias="TEMPERATURE")
   top_k: int = Field(default=40, alias="TOP_K")
   top_p: float = Field(default=0.9, alias="TOP_P")
+  # Legacy flag; custom provider always uses inference when INFERENCE_ONLY=true.
+  use_neural_fallback: bool = Field(default=True, alias="USE_NEURAL_FALLBACK")
+  # GGUF/llama.cpp can crash on some Windows setups — keep off in auto unless needed.
+  llm_backend_enabled: bool = Field(default=False, alias="LLM_BACKEND_ENABLED")
+
+  # Plagiarism checker — Sentence Transformers + FAISS + Wikipedia + SearXNG (all free)
+  plagiarism_index_dir: Path = Field(
+    default=PROJECT_ROOT / "data" / "plagiarism",
+    alias="PLAGIARISM_INDEX_DIR",
+  )
+  searxng_url: str = Field(default="http://127.0.0.1:8080", alias="SEARXNG_URL")
+  plagiarism_use_searxng: bool = Field(default=True, alias="PLAGIARISM_USE_SEARXNG")
+  plagiarism_use_wikipedia_live: bool = Field(default=True, alias="PLAGIARISM_USE_WIKIPEDIA_LIVE")
 
   # Security & rate limits (Hostinger-friendly defaults)
   cors_origins: str = Field(default="*", alias="CORS_ORIGINS")

@@ -14,6 +14,7 @@ from app.api.routes import (
   email_assistant,
   health,
   model_test,
+  plagiarism_checker,
   post_scheduler,
   resume_builder,
   schema_markup,
@@ -34,6 +35,19 @@ def create_app() -> FastAPI:
   async def lifespan(app: FastAPI):
     app.state.registry = registry
     await registry.startup()
+    import asyncio
+    from app.engine.plagiarism_engine import configure, warm_up
+    from app.config import get_settings
+    cfg = get_settings()
+    configure(cfg.plagiarism_index_dir)
+    await asyncio.to_thread(warm_up)
+    from app.engine.seo_optimizer_rag_pipeline import GENERATOR_VERSION
+    import logging
+    from app.engine.title_meta_rag_pipeline import GENERATOR_VERSION as TITLE_META_VERSION
+    from app.engine.seo_keyword_rag_pipeline import GENERATOR_VERSION as SEO_KEYWORD_VERSION
+    logging.getLogger("uvicorn.error").info("SEO Optimizer pipeline: %s", GENERATOR_VERSION)
+    logging.getLogger("uvicorn.error").info("Title & Meta pipeline: %s", TITLE_META_VERSION)
+    logging.getLogger("uvicorn.error").info("SEO Keyword pipeline: %s", SEO_KEYWORD_VERSION)
     yield
     await registry.shutdown()
 
@@ -68,6 +82,7 @@ def create_app() -> FastAPI:
   app.include_router(model_test.router)
   app.include_router(chat_page.router)
   app.include_router(chat.router, prefix=settings.api_prefix)
+  app.include_router(plagiarism_checker.router, prefix=settings.api_prefix)
   app.include_router(post_scheduler.router, prefix=settings.api_prefix)
   app.include_router(schema_markup.router, prefix=settings.api_prefix)
   app.include_router(seo_content.router, prefix=settings.api_prefix)

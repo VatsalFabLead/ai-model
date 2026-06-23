@@ -367,6 +367,7 @@ async def generate(
   template: str = "modern",
   language: str | None = None,
   use_ai: bool = True,
+  improve: bool = False,
 ) -> dict[str, Any]:
   """Single entry point: skills + summary + experience + full resume in one call."""
   personal = {
@@ -387,7 +388,7 @@ async def generate(
 
   final_skills = (skills or "").strip()
   skills_list: list[str] = []
-  if use_ai and not final_skills:
+  if use_ai and (improve or not final_skills):
     sk = await suggest_skills(provider, job_title=job, language=language)
     skills_list = sk["skills"]
     final_skills = sk["text"]
@@ -412,7 +413,7 @@ async def generate(
       pass
 
   final_summary = (summary or "").strip()
-  if use_ai and not final_summary:
+  if use_ai and (improve or not final_summary):
     summ_res = await generate_summary(
       provider,
       personal=personal,

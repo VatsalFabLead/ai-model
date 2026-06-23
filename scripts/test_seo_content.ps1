@@ -3,7 +3,7 @@
 
 param(
   [string]$BaseUrl = "http://127.0.0.1:8000",
-  [string]$ApiKey = "wYGt5Pq-fUUVzO9mWVtkhoVwLWBWPjEY8InlnWqoqDshkVl2",
+  [string]$ApiKey = $env:API_KEY,
   [int]$TimeoutSec = 120
 )
 
@@ -29,6 +29,9 @@ Write-Host ("OK: {0} | SEO score: {1}% | Words: {2}" -f $r.title, $r.quality.seo
 Write-Host ("Category: {0} | Lang: {1} | AI used: {2}" -f $r.category, $r.language, $r.ai.model_used)
 Write-Host ("Meta: {0}" -f $r.meta_description)
 Write-Host ("Keywords: {0}" -f ($r.keywords -join ', '))
-Write-Host "`n--- Content preview ---"
-$r.content.Substring(0, [Math]::Min(800, $r.content.Length))
-if ($r.content.Length -gt 800) { Write-Host "..." }
+Write-Host ("Outline sections: {0}" -f ($r.outline -join ' | '))
+Write-Host ("FAQs: {0}" -f $r.faqs.Count)
+Write-Host "`n--- Article preview ---"
+$article = if ($r.content.article) { $r.content.article } else { $r.content }
+$article.Substring(0, [Math]::Min(800, $article.Length))
+if ($article.Length -gt 800) { Write-Host "..." }
