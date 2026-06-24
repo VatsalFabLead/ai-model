@@ -38,6 +38,15 @@ from app.engine.seo_rag_pipeline import (
   score_confidence,
 )
 from app.engine.seo_content_domains import make_variation_seed
+from app.engine.seo_optimizer_enrichment import (
+  build_key_takeaways,
+  fill_content_gaps,
+  filter_content_pools,
+  generate_optimizer_faqs,
+  is_internal_suggestion,
+  optimize_metadata_clean,
+  parse_term_from_gap,
+)
 
 ARCHITECTURE_FLOW = [
   "input_article",
@@ -62,7 +71,7 @@ ARCHITECTURE_FLOW = [
   "final_article",
 ]
 
-GENERATOR_VERSION = "seo-optimizer-rag-v5.0"
+GENERATOR_VERSION = "seo-optimizer-rag-v5.1"
 
 _INSTRUCTION_MARKERS = (
   "you are an expert seo content optimizer",
@@ -495,6 +504,8 @@ def build_variation_context(
 
   gap_hints = [g["suggestion"] for g in gaps if g.get("suggestion")]
 
+  sentences, bullets = filter_content_pools(sentences, bullets)
+
   return VariationContext(
     seed=seed,
     short_topic=short_topic,
@@ -514,10 +525,10 @@ def _sentence_has_word(s: str, word: str) -> bool:
   return bool(re.search(rf"\b{re.escape(word)}\b", s.lower()))
 
 
-def _sentence_to_question(sentence: str, topic: str, salt: int) -> str:
+def _sentence_to_question(sentence: str, topic: str, salt: int) -> str | None:
   s = re.sub(r"\s+", " ", sentence.strip().rstrip("."))
-  if not s:
-    return f"What is {topic}?"
+  if not s or is_internal_suggestion(s):
+    return None
   if s.endswith("?"):
     return s
   words = s.split()
@@ -528,7 +539,7 @@ def _sentence_to_question(sentence: str, topic: str, salt: int) -> str:
     return f"{s}?"
   if mode == 1:
     return f"How does {s.lower()} relate to {topic}?"
-  return f"Can you explain how {s.lower()} applies to {topic}?"
+  return f"Can you explain how {s.lower()} relates to {topic}?"
 
 
 def _heading_to_question(heading: str, topic: str, salt: int) -> str:
@@ -568,7 +579,7 @@ def generate_faqs_from_content(ctx: VariationContext) -> list[dict[str, str]]:
 
   intro_pool = ctx.paragraphs or [f"{primary.title()} is covered in this article."]
   intro = _clean_faq_answer(ctx.pick(intro_pool, 0))
-  what_q = _sentence_to_question(ctx.pick(ctx.sentences, 2) or intro, primary, ctx.seed)
+  what_q = _sentence_to_question(ctx.pick(ctx.sentences, 2) or intro, primary, ctx.seed) or f"What is {primary.title()}?"
   faqs.append({"question": what_q, "answer": intro})
   seen_q.add(what_q.lower())
 
@@ -637,6 +648,8 @@ def generate_faqs_from_content(ctx: VariationContext) -> list[dict[str, str]]:
     if len(faqs) >= 10:
       break
     q = _sentence_to_question(bullet, primary, ctx.seed + 30)
+    if not q:
+      continue
     if q.lower() in seen_q:
       continue
     seen_q.add(q.lower())
@@ -646,6 +659,8 @@ def generate_faqs_from_content(ctx: VariationContext) -> list[dict[str, str]]:
     if len(faqs) >= 10:
       break
     q = _sentence_to_question(sent, primary, ctx.seed + 90 + len(faqs))
+    if not q:
+      continue
     if q.lower() in seen_q:
       continue
     seen_q.add(q.lower())
@@ -928,12 +943,13 @@ def detect_local_opportunities(
 ) -> dict[str, Any]:
   """Novelty from local analysis when RAG is skipped or returns nothing."""
   novel: list[dict[str, Any]] = []
-  for g in gaps[:6]:
+  for term in coverage_map.get("missing_terms", [])[:6]:
     novel.append({
-      "text": g["suggestion"],
-      "source": g.get("source", "local_analysis"),
-      "confidence": 0.85 if g.get("priority") == "high" else 0.7,
-      "type": g.get("type", "gap"),
+      "text": f"Section opportunity: {term}",
+      "source": "coverage_map",
+      "confidence": 0.85,
+      "type": "coverage_gap",
+      "term": term,
     })
   for sec in coverage_map.get("sections", []):
     if sec.get("strength") == "thin":
@@ -999,8 +1015,10 @@ def plan_sections(
     plan.append({"level": "h2", "title": gap_titles})
 
   for g in gaps[:3]:
-    if g["type"] in ("coverage_gap", "competitor_gap"):
-      plan.append({"level": "h3", "title": _clip(g["suggestion"], 60)})
+    if g["type"] in ("coverage_gap", "competitor_gap", "topic_gap", "entity_gap"):
+      term = parse_term_from_gap(g)
+      if term and not is_internal_suggestion(term):
+        plan.append({"level": "h3", "title": _clip(term, 60)})
 
   if not any(p["title"].lower() == "conclusion" for p in plan):
     plan.append({"level": "h2", "title": "Conclusion"})
@@ -1063,12 +1081,18 @@ def generate_sections(
     parts.append("\n".join(f"- {t}" for t in rotated[:3]) + "\n")
     suggestions.append("Generated evidence section from novel open-data facts.")
 
-  gap_sents = [g["suggestion"] for g in gaps if g["type"] in ("competitor_gap", "coverage_gap")]
+  gap_sents = [
+    g["suggestion"] for g in gaps
+    if g["type"] in ("competitor_gap", "coverage_gap") and not is_internal_suggestion(g.get("suggestion", ""))
+  ]
   if allow_rag_injection and gap_sents:
     heading = _pick(seed + 2, ["## Deeper Context", "## Additional Topics", "## Expanded Coverage"])
     start_g = seed % max(1, len(gap_sents))
-    parts.append(f"{heading}\n\n" + "\n\n".join(gap_sents[start_g : start_g + 2]) + "\n")
-    suggestions.append("Filled gaps identified in coverage map and competitor analysis.")
+    # Use competitor facts only — never paste optimizer suggestion strings
+    fact_fill = fact_texts[start_g : start_g + 2] if fact_texts else []
+    if fact_fill:
+      parts.append(f"{heading}\n\n" + "\n\n".join(fact_fill) + "\n")
+    suggestions.append("Filled gaps with evidence from open-data facts.")
 
   for item in section_plan:
     if item["level"] != "h2":
@@ -1111,10 +1135,12 @@ def generate_faqs(
   if novel_facts:
     primary = ctx.short_topic
     for f in novel_facts[:1]:
-      faqs.append({
-        "question": _sentence_to_question(clean_fact_text(f["text"]), primary, ctx.seed + 99),
-        "answer": clean_fact_text(f["text"]),
-      })
+      q = _sentence_to_question(clean_fact_text(f["text"]), primary, ctx.seed + 99)
+      if q:
+        faqs.append({
+          "question": q,
+          "answer": clean_fact_text(f["text"]),
+        })
   return faqs
 
 
@@ -1354,7 +1380,7 @@ def paraphrase_sentence(sentence: str, seed: int) -> str:
     (r"\bcreate\b", ["build", "make", "develop"]),
     (r"\bapplications\b", ["apps", "software", "programs"]),
     (r"\bfeature\b", ["capability", "function", "tool"]),
-    (r"\bperformance\b", ["speed", "efficiency", "responsiveness"]),
+    (r"\bperformance\b", ["speed", "efficiency", "throughput"]),
     (r"\ballows\b", ["lets", "enables", "helps"]),
     (r"\bmodern\b", ["current", "today's", "contemporary"]),
     (r"\bbuild\b", ["develop", "create", "craft"]),
@@ -1551,7 +1577,7 @@ def apply_lexical_variation(text: str, seed: int) -> tuple[str, list[str]]:
     (r"\bcreate\b", ["build", "make", "develop"]),
     (r"\bapplications\b", ["apps", "software", "programs"]),
     (r"\bfeature\b", ["capability", "function", "tool"]),
-    (r"\bperformance\b", ["speed", "efficiency", "responsiveness"]),
+    (r"\bperformance\b", ["speed", "efficiency", "throughput"]),
   ]
   for j, (pat, alts) in enumerate(extra_swaps):
     choice = alts[(seed + j * 23) % len(alts)]
@@ -1583,8 +1609,9 @@ def polish_strong_content(
   gaps: list[dict[str, str]],
   seed: int,
   ctx: VariationContext | None = None,
+  skip_variation_rebuild: bool = False,
 ) -> tuple[str, list[str]]:
-  """Light SEO polish — variations pulled from article content."""
+  """Light SEO polish — preserve gap-filled sections; avoid scrambling structured content."""
   suggestions: list[str] = []
   text = content.strip()
   primary = keywords[0] if keywords else short_topic
@@ -1592,8 +1619,13 @@ def polish_strong_content(
     content, short_topic=short_topic, display_title=short_topic, keywords=keywords, gaps=gaps, seed=seed,
   )
 
-  text, var_suggestions = apply_content_variation(text, vctx, seed)
-  suggestions.extend(var_suggestions)
+  if skip_variation_rebuild:
+    text, lex_s = apply_lexical_variation(text, seed)
+    suggestions.extend(lex_s)
+    suggestions.append("Preserved gap-filled structure; light lexical polish only.")
+  else:
+    text, var_suggestions = apply_content_variation(text, vctx, seed)
+    suggestions.extend(var_suggestions)
 
   if not re.search(r"^#\s+", text, re.MULTILINE):
     text = f"# {short_topic.title()}\n\n{text}"
@@ -1636,16 +1668,17 @@ def polish_strong_content(
       suggestions.append("Reinforced conclusion with a content-derived line.")
 
   takeaway_pool = list(vctx.bullets)
-  if not takeaway_pool:
-    takeaway_pool = vctx.pick_n(vctx.gap_hints, 3, 14)
-  if not takeaway_pool:
-    takeaway_pool = [k for k in keywords[1:4] if k]
-  if takeaway_pool and "## Quick Takeaways" not in text and (seed % 3) == (len(vctx.h2_titles) % 3):
-    block = "## Quick Takeaways\n\n" + "\n".join(f"* {_clip(b, 80)}" for b in takeaway_pool[:3]) + "\n\n"
-    first_break = re.search(r"\n\s*\n", text)
-    if first_break:
-      text = text[: first_break.end()] + block + text[first_break.end() :]
-      suggestions.append("Added Quick Takeaways from article bullets and gaps.")
+  if not takeaway_pool or any(is_internal_suggestion(b) for b in takeaway_pool):
+    takeaway_pool = build_key_takeaways(short_topic, keywords, text, [])
+  if takeaway_pool and "## Key Takeaways" not in text and "## Quick Takeaways" not in text:
+    block = "## Key Takeaways\n\n" + "\n".join(f"- {b}" for b in takeaway_pool[:5]) + "\n\n"
+    if re.search(r"^##\s+conclusion\b", text, re.I | re.M):
+      text = re.sub(r"^(##\s+conclusion\b)", block + "\\1", text, count=1, flags=re.I | re.M)
+    elif re.search(r"^##\s+frequently asked questions\b", text, re.I | re.M):
+      text = re.sub(r"^(##\s+frequently asked questions\b)", block + "\\1", text, count=1, flags=re.I | re.M)
+    else:
+      text = text.rstrip() + "\n\n" + block
+    suggestions.append("Added Key Takeaways from article content and filled gaps.")
 
   return text.strip(), suggestions
 
@@ -1680,10 +1713,12 @@ def humanize_text(text: str, *, seed: int, tone: str, ctx: VariationContext | No
 
 
 def rotate_faqs(faqs: list[dict[str, str]], seed: int) -> list[dict[str, str]]:
-  if len(faqs) < 2:
+  if len(faqs) < 4:
     return faqs
-  start = seed % len(faqs)
-  return faqs[start:] + faqs[:start]
+  pinned = faqs[:4]
+  rest = faqs[4:]
+  start = seed % max(1, len(rest))
+  return pinned + rest[start:] + rest[:start]
 
 
 def optimize_readability(text: str) -> tuple[str, list[str]]:
@@ -1706,35 +1741,8 @@ def optimize_metadata(
   seed: int,
   ctx: VariationContext | None = None,
 ) -> dict[str, str]:
-  primary = keywords[0] if keywords else short_topic
-  vctx = ctx or build_variation_context(
-    content, short_topic=short_topic, display_title=display_title, keywords=keywords, gaps=[], seed=seed,
-  )
-
-  title_pool: list[str] = []
-  angles = ["Complete Guide", "Expert Overview", "Practical Guide", "In-Depth Look", "Essential Guide"]
-  angle = angles[(seed // 5) % len(angles)]
-  if display_title:
-    title_pool.append(_clip(display_title, 60))
-    title_pool.append(_clip(f"{angle}: {display_title[:45]}", 60))
-  for h in _shuffle(vctx.h2_titles, seed + 3)[:5]:
-    title_pool.append(_clip(f"{h} | {short_topic.title()}", 60))
-    title_pool.append(_clip(f"{short_topic.title()}: {h}", 60))
-  if primary:
-    title_pool.append(_clip(f"{primary.title()} — {vctx.pick(vctx.h2_titles, seed + 2) or 'Overview'}", 60))
-    title_pool.append(_clip(f"{angle} to {primary.title()}", 60))
-  title = vctx.pick(title_pool or [short_topic.title()], seed + 7)[:60]
-
-  meta_pool: list[str] = []
-  for s in _shuffle(vctx.sentences, seed + 11)[:10]:
-    meta_pool.append(_clip(f"{primary}: {s}", 160))
-  for b in _shuffle(vctx.bullets, seed + 13)[:4]:
-    meta_pool.append(_clip(f"{primary} — {b}", 160))
-  benefits = _benefits_section_body(content)
-  if benefits:
-    meta_pool.append(_clip(benefits, 160))
-  meta = vctx.pick(meta_pool or [f"Learn about {primary}."], seed + 19)[:160]
-  return {"title": title, "meta_description": meta}
+  topic = display_title or short_topic
+  return optimize_metadata_clean(topic, keywords, content, seed=seed)
 
 
 def internal_linking_suggestions(
@@ -1748,7 +1756,9 @@ def internal_linking_suggestions(
   for ent in entities[:4]:
     links.append({"anchor_text": ent, "target_topic": ent, "reason": "Entity link for topical authority."})
   for g in gaps[:2]:
-    links.append({"anchor_text": _clip(g["suggestion"], 40), "target_topic": "related guide", "reason": f"Gap fill ({g['source']})."})
+    term = parse_term_from_gap(g)
+    if term:
+      links.append({"anchor_text": term, "target_topic": term, "reason": f"Gap fill ({g.get('type', 'gap')})."})
   return links[:10]
 
 
@@ -2012,6 +2022,30 @@ async def run_optimizer_rag_pipeline(
     stages["relevance_filter"] = {"kept": 0, "dropped": 0, "skipped": True}
     stages["entity_extraction"]["merged"] = all_entities
     stages["gap_analysis"] = {"gaps": gaps, "pre_retrieval_count": len(pre_gaps), "mode": "local"}
+  elif len(pre_gaps) > 0:
+    sources = route_sources(topic_class, max_sources=4)
+    stages["source_router"] = {"topic_class": topic_class, "sources": sources, "fast_path": "gap_fill_rag"}
+    try:
+      raw_docs = await retrieve_from_sources(topic, kws, sources, per_source=2, seed=seed)
+      sources_used = sorted({d.source for d in raw_docs})
+      docs = deduplicate_docs(raw_docs)
+      docs = rerank_docs(f"{topic} {' '.join(kws)}", docs, top_k=8)
+      facts = extract_facts(docs, topic, kws)
+      facts = resolve_conflicts(facts)
+      confidence = score_confidence(facts, docs)
+      all_entities = list(dict.fromkeys(content_entities + extract_entities(topic, docs, facts)))[:20]
+      novel_facts = [{"text": f.text, "source": f.source, "confidence": f.confidence} for f in facts[:8]]
+      stages["retriever"] = {"raw_count": len(raw_docs), "skipped": False}
+      stages["deduplication"] = {"unique_count": len(docs), "skipped": False}
+      stages["reranker"] = {"top_k": len(docs), "skipped": False}
+      stages["fact_extraction"] = {"fact_count": len(facts), "skipped": False, "confidence": confidence}
+      stages["relevance_filter"] = {"kept": len(docs), "dropped": 0, "skipped": False}
+    except Exception as exc:
+      stages["retriever"] = {"raw_count": 0, "skipped": True, "error": str(exc)[:80]}
+      stages["fact_extraction"] = {"fact_count": 0, "skipped": True}
+    gaps = list(pre_gaps)
+    stages["entity_extraction"]["merged"] = all_entities
+    stages["gap_analysis"] = {"gaps": gaps, "pre_retrieval_count": len(pre_gaps), "mode": "gap_rag"}
   else:
     # Fast local-only path — retrieval never injects into body; skip network + ML index for speed
     gaps = list(pre_gaps)
@@ -2029,13 +2063,25 @@ async def run_optimizer_rag_pipeline(
     stages["entity_extraction"]["merged"] = all_entities
     stages["gap_analysis"] = {"gaps": gaps, "pre_retrieval_count": len(pre_gaps), "mode": "local_fast"}
 
-  # Section planner + generator (never inject external facts into body)
-  section_plan = plan_sections(content, kws, gaps, coverage_map, seed=seed)
+  # Gap fill — convert missing terms into real sections (never paste suggestions)
+  gap_filled, terms_added = fill_content_gaps(
+    content,
+    gaps,
+    coverage_map,
+    topic=topic,
+    keywords=kws,
+    facts=novel_facts,
+    seed=seed,
+  )
+  stages["gap_fill"] = {"terms_added": terms_added, "count": len(terms_added)}
+  working_content = gap_filled
+
+  # Section planner + generator
+  section_plan = plan_sections(working_content, kws, gaps, coverage_map, seed=seed)
   stages["section_planner"] = {"sections": section_plan}
 
-  # Dynamic variation context (all phrasing derived from this article)
   vctx = build_variation_context(
-    content,
+    working_content,
     short_topic=short_topic,
     display_title=display_title,
     keywords=kws,
@@ -2044,20 +2090,22 @@ async def run_optimizer_rag_pipeline(
   )
 
   draft, gen_suggestions = polish_strong_content(
-    content,
+    working_content,
     short_topic=short_topic,
     keywords=kws,
     coverage_map=coverage_map,
     gaps=gaps,
     seed=seed,
     ctx=vctx,
+    skip_variation_rebuild=bool(terms_added),
   )
-  gen_suggestions.insert(0, "Section generator preserved your article — local SEO polish only (no wiki/corpus injection).")
+  gen_suggestions.insert(0, f"Gap fill added {len(terms_added)} section(s) from coverage analysis.")
   stages["section_generator"] = {
     "planned_sections": len(section_plan),
     "draft_words": count_words(draft),
     "conservative_mode": True,
-    "external_injection": False,
+    "external_injection": bool(novel_facts),
+    "terms_filled": terms_added,
   }
 
   novelty = detect_local_opportunities(content, coverage_map, gaps)
@@ -2075,10 +2123,14 @@ async def run_optimizer_rag_pipeline(
     gaps=gaps,
     seed=seed + 211,
   )
-  faqs = generate_faqs_from_content(vctx)
+  faqs = generate_optimizer_faqs(
+    topic, kws, draft, entities=all_entities, seed=seed,
+  )
+  if len(faqs) < 3:
+    faqs = generate_faqs_from_content(vctx)
   faqs = rotate_faqs(faqs, seed)
   draft = append_faqs_to_content(draft, faqs)
-  stages["faq_generator"] = {"count": len(faqs), "faqs": faqs, "source": "content_dynamic"}
+  stages["faq_generator"] = {"count": len(faqs), "faqs": faqs, "source": "topic_aware"}
 
   metadata = optimize_metadata(draft, short_topic, display_title, kws, seed=seed, ctx=vctx)
   stages["metadata_generator"] = metadata

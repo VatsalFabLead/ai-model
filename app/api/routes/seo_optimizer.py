@@ -116,7 +116,7 @@ class OptimizeResponse(BaseModel):
   keywords: list[str]
   ai: AiMeta
   use_rag: bool = True
-  generator_version: str = "seo-optimizer-rag-v5.0"
+  generator_version: str = "seo-optimizer-rag-v5.1"
   variation_seed: int | None = None
   rag: RagMeta | None = None
   pipeline: PipelineAnalysis | None = None
