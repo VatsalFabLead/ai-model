@@ -14,7 +14,11 @@ from typing import Any
 from app.engine import seo_content_engine
 from app.engine.keyword_discovery import discover_keywords
 from app.engine.seo_content_domains import build_rich_content, make_variation_seed
-from app.engine.seo_rag_pipeline import run_seo_rag_pipeline, synthesize_structured_content
+from app.engine.seo_content_rag_pipeline import (
+  GENERATOR_VERSION,
+  ARCHITECTURE_FLOW,
+  run_seo_content_pipeline,
+)
 from app.services.provider_base import ModelProvider
 
 _GENERIC_HEADINGS = {
@@ -268,6 +272,7 @@ def _pack_response(
   discovery_meta: dict[str, Any],
   use_ai: bool,
   ai_used: bool,
+  pipeline_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
   meta = structured["metadata"]
   article = structured["content"]["article"]
@@ -280,8 +285,10 @@ def _pack_response(
   title = meta["title"]
   meta_desc = meta["meta_description"]
 
-  quality = seo_content_engine.quality_report(title, meta_desc, article, keywords_flat)
-  return {
+  quality = pipeline_meta.get("quality") if pipeline_meta else None
+  if not quality:
+    quality = seo_content_engine.quality_report(title, meta_desc, article, keywords_flat)
+  result = {
     "topic": topic,
     "category": category,
     "language": lang_code,
@@ -303,8 +310,16 @@ def _pack_response(
     "ai": {"enabled": use_ai, "model_used": ai_used},
     "variation_seed": structured.get("variation_seed"),
     "domain": structured.get("domain"),
-    "generator_version": "seo-rag-v2",
+    "generator_version": GENERATOR_VERSION,
   }
+  if pipeline_meta:
+    result["architecture"] = pipeline_meta.get("architecture")
+    result["pipeline_stages"] = pipeline_meta.get("stages")
+    result["elapsed_ms"] = pipeline_meta.get("elapsed_ms")
+    result["intent"] = pipeline_meta.get("intent")
+    result["snippet"] = structured.get("snippet")
+    result["schema"] = structured.get("schema")
+  return result
 
 
 async def _enhance_with_ai(
@@ -409,14 +424,33 @@ async def generate(
   structure = seo_content_engine.category_structure_hint(cat)
   seed = make_variation_seed(variation_seed)
 
+  try:
+    pipeline_out = await run_seo_content_pipeline(
+      topic,
+      kws,
+      category=cat,
+      tone=tone_str,
+      audience=audience,
+      target_words=target,
+      variation_seed=seed,
+      use_rag=use_rag,
+    )
+  except Exception:
+    pipeline_out = None
+
   rag_meta: dict[str, Any] = {"enabled": use_rag, "confidence": 0.0, "sources_used": []}
   evidence_context = ""
+  template: dict[str, Any]
 
-  if use_rag:
+  if pipeline_out:
+    template = pipeline_out["structured"]
+    rag_meta = pipeline_out.get("rag") or rag_meta
+    evidence_context = pipeline_out.get("evidence_context") or ""
+    seed = pipeline_out.get("variation_seed", seed)
+  elif use_rag:
     try:
-      rag = await run_seo_rag_pipeline(
-        topic, kws, category=cat, variation_seed=seed, top_k=8,
-      )
+      from app.engine.seo_rag_pipeline import run_seo_rag_pipeline, synthesize_structured_content
+      rag = await run_seo_rag_pipeline(topic, kws, category=cat, variation_seed=seed, top_k=8)
       rag_meta = {
         "enabled": True,
         "topic_class": rag.topic_class,
@@ -477,6 +511,7 @@ async def generate(
     discovery_meta=discovery_meta,
     use_ai=use_ai,
     ai_used=ai_used,
+    pipeline_meta=pipeline_out,
   )
   result["rag"] = rag_meta
   return result

@@ -22,7 +22,7 @@ class SeoContentRequest(BaseModel):
     examples=["professional", "casual", "friendly", "formal"],
     description="Writing tone — only professional, casual, friendly, or formal",
   )
-  word_count: int | None = Field(default=500, ge=100, le=1500)
+  word_count: int | None = Field(default=1000, ge=100, le=2500)
   audience: str | None = Field(default=None, examples=["small business owners", "Surat India"])
   category: str | None = Field(
     default="blog_article",
@@ -122,7 +122,7 @@ class SeoContentResponse(BaseModel):
   discovery: SeoDiscoveryMeta
   ai: SeoAiMeta
   rag: SeoRagMeta | None = None
-  generator_version: str = "seo-rag-v2"
+  generator_version: str = "seo-content-rag-v4.1"
   variation_seed: int | None = None
   domain: str | None = None
 
@@ -178,36 +178,31 @@ async def generate(
 
 @router.get("/pipeline")
 async def pipeline_architecture(_: str = Depends(verify_api_key)) -> dict[str, Any]:
-  """Production RAG architecture — free open datasets only."""
+  """SEO content workflow: Keyword → Intent → Entity → Facts → Outline → Writing → SEO → Final."""
+  from app.engine.seo_content_rag_pipeline import (
+    ARCHITECTURE_FLOW,
+    GENERATOR_VERSION,
+    WORKFLOW_LABELS,
+  )
   return {
-    "flow": [
-      "User Query",
-      "Topic Classifier",
-      "Source Router",
-      "Retrieve Top-k Docs",
-      "Deduplication",
-      "Embedding Reranker",
-      "Fact Extractor",
-      "Conflict Resolver",
-      "Confidence Scoring",
-      "Entity Extraction",
-      "Synthesis (custom LLM optional)",
-      "Generated Response",
+    "version": GENERATOR_VERSION,
+    "flow": ARCHITECTURE_FLOW,
+    "labels": WORKFLOW_LABELS,
+    "workflow": [
+      {"stage": stage, "label": WORKFLOW_LABELS[stage]}
+      for stage in ARCHITECTURE_FLOW
     ],
-    "routes": {
-      "general": ["wikipedia", "wikidata", "dbpedia", "gooaq", "squad", "c4"],
-      "technical": ["arxiv", "semantic_scholar", "stackexchange", "wikipedia"],
-      "news": ["gdelt", "fineweb", "wikipedia", "c4"],
-      "health_fitness": ["wikipedia", "wikidata", "conceptnet", "gooaq", "squad"],
-      "programming": ["stackexchange", "arxiv", "wikipedia", "dolly"],
-    },
     "datasets": [
       "Wikipedia", "Wikidata", "DBpedia", "ConceptNet", "Stack Exchange",
-      "arXiv", "Semantic Scholar", "GDELT", "GooAQ", "SQuAD", "Dolly",
-      "C4", "FineWeb", "local FAISS index",
+      "arXiv", "Semantic Scholar", "GDELT", "GooAQ", "SQuAD", "local FAISS",
     ],
-    "note": "All sources are free/open. No GPT, Claude, or Gemini APIs.",
   }
+
+
+@router.get("/version")
+async def generator_version(_: str = Depends(verify_api_key)) -> dict[str, str]:
+  from app.engine.seo_content_rag_pipeline import GENERATOR_VERSION
+  return {"generator_version": GENERATOR_VERSION}
 
 
 @router.get("/schema")

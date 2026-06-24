@@ -27,6 +27,22 @@ from app.engine.seo_content_domains import (
   expand_keywords,
   make_variation_seed,
 )
+from app.engine.seo_retrieval_engine import (
+  StrictFact,
+  anchor_terms,
+  assign_facts_to_sections,
+  build_dynamic_outline,
+  chunk_documents,
+  cross_encoder_rerank_chunks,
+  detect_nsfw_topic,
+  disambiguate_entities_embedding,
+  entity_candidates,
+  extract_facts_strict,
+  filter_relevant_documents,
+  generate_paa_faqs,
+  generate_safe_metadata,
+  polluted_fact,
+)
 
 _SOURCE_PRIORITY = {
   "wikipedia": 0.95,
@@ -194,32 +210,28 @@ def _split_sentences(text: str) -> list[str]:
 
 
 def extract_facts(docs: list[OpenDoc], topic: str, keywords: list[str]) -> list[ExtractedFact]:
-  terms = {t.lower() for t in re.findall(r"\w+", f"{topic} {' '.join(keywords)}") if len(t) > 2}
+  """Strict fact extraction — word-boundary match, chunk rerank, no pollution fallback."""
+  anchors = anchor_terms(topic, keywords)
+  nsfw = detect_nsfw_topic(topic, keywords)
+  if nsfw.get("skip_open_retrieval"):
+    return []
+
+  filtered_docs = filter_relevant_documents(docs, topic, keywords)
+  chunks = chunk_documents(filtered_docs)
+  query = f"{topic} {' '.join(keywords)}".strip()
+  ranked = cross_encoder_rerank_chunks(query, chunks, anchors)
+  strict = extract_facts_strict(ranked, topic, keywords)
+
   facts: list[ExtractedFact] = []
-  seen: set[str] = set()
-  for doc in docs:
-    for sent in _split_sentences(doc.text):
-      low = sent.lower()
-      if not terms or not any(t in low for t in terms):
-        if len(terms) > 2 and sum(1 for t in terms if t in low) < 1:
-          continue
-      key = low[:80]
-      if key in seen:
-        continue
-      seen.add(key)
-      conf = doc.score * _SOURCE_PRIORITY.get(doc.source, 0.6)
-      ents = [w for w in re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b", sent)][:5]
-      facts.append(
-        ExtractedFact(text=sent, source=doc.source, confidence=conf, entities=ents)
-      )
-  facts.sort(key=lambda f: f.confidence, reverse=True)
-  if not facts and docs:
-    for doc in docs[:4]:
-      for sent in _split_sentences(doc.text)[:4]:
-        facts.append(
-          ExtractedFact(text=sent, source=doc.source, confidence=doc.score * 0.7)
-        )
-    facts = resolve_conflicts(facts)
+  for sf in strict:
+    if polluted_fact(sf.text, anchors, topic=topic, keywords=keywords):
+      continue
+    facts.append(ExtractedFact(
+      text=sf.text,
+      source=sf.source,
+      confidence=sf.confidence,
+      entities=sf.entities,
+    ))
   return facts[:24]
 
 
@@ -281,144 +293,97 @@ def synthesize_structured_content(
   tone: str,
   audience: str | None,
   target_words: int,
+  intent: str = "informational",
+  content_profile: str = "general",
 ) -> dict[str, Any]:
-  """Build unique article from RAG evidence — not static templates."""
+  """Build article from verified facts — one unique fact per section."""
   seed = rag.variation_seed
   domain = detect_domain(topic, keywords)
   kw = expand_keywords(topic, keywords, domain)
   primary = kw["primary"]
-  outline = build_structured_outline(topic, primary, domain=domain, category=category, seed=seed)
+
+  outline = build_dynamic_outline(
+    topic, primary, profile=content_profile, intent=intent, seed=seed,
+  )
+  if not outline:
+    outline = build_structured_outline(topic, primary, domain=domain, category=category, seed=seed)
 
   facts = rag.facts
-  fact_texts = [f.text for f in facts]
-
-  # Title variants from evidence
-  title = _pick([
-    f"{topic}: A Complete Guide",
-    f"{topic} — Expert Guide for Beginners",
-    f"{primary.title()}: Everything You Need to Know",
-    f"The Ultimate Guide to {primary.title()}",
-  ], seed)
-  if rag.entities:
-    title = _pick([
-      f"{topic}: A Professional Guide to {rag.entities[0]}",
-      title,
-    ], seed + 1)
-
-  meta_bits = fact_texts[:2] or [f"Learn about {primary} with practical, evidence-based guidance."]
-  meta = _clip(
-    f"Discover {primary} with actionable tips and expert insights. "
-    + " ".join(meta_bits)[:120],
-    160,
-  )
-
-  # Build article sections from facts
-  intro_pool = [
-    f"Understanding **{topic}** helps readers make informed decisions. "
-    "This guide combines verified open-data sources with practical advice.",
-    f"**{topic}** is a subject many beginners want to master. "
-    "Below is a structured, evidence-informed overview you can apply right away.",
-    f"Whether you are new to **{primary}** or refining your approach, "
-    "this article distills reliable information into clear, actionable steps.",
+  strict_facts = [
+    StrictFact(text=f.text, source=f.source, confidence=f.confidence, chunk_score=f.confidence)
+    for f in facts
   ]
-  sections: list[str] = [f"# {outline[0]['text'] if outline else title}", "", "## Introduction", "", _pick(intro_pool, seed + 2), ""]
 
-  h2_outline = [o for o in outline if o.get("level") == "h2" and o["text"].lower() != "introduction"]
-  fact_idx = 0
-  for i, h2 in enumerate(h2_outline):
-    if h2["text"].lower() == "conclusion":
-      continue
-    sections.append(f"## {h2['text']}")
-    sections.append("")
-    chunk: list[str] = []
-    while fact_idx < len(fact_texts) and len(" ".join(chunk).split()) < max(60, target_words // max(1, len(h2_outline))):
-      chunk.append(fact_texts[fact_idx])
-      fact_idx += 1
-    if chunk:
-      sections.append(" ".join(chunk[:3]))
-    else:
-      sections.append(
-        _pick([
-          f"When exploring {primary}, focus on fundamentals, consistent practice, and measurable progress.",
-          f"Research on {primary} highlights practical steps, common pitfalls, and long-term benefits.",
-        ], seed + i)
-      )
-    sections.append("")
+  title = outline[0]["text"] if outline else f"{topic}: Complete Guide"
+  h2_headings = [
+    o["text"] for o in outline
+    if o.get("level") == "h2" and o["text"].lower() not in ("introduction", "conclusion")
+  ]
+  section_facts = assign_facts_to_sections(h2_headings, strict_facts, topic=topic, primary=primary)
 
-  # H3 subsections from outline
-  h3_items = [o for o in outline if o.get("level") == "h3"]
-  if h3_items and fact_idx < len(fact_texts):
-    parent_h2 = next((o for o in h2_outline if "plan" in o["text"].lower() or "step" in o["text"].lower()), None)
-    if parent_h2:
-      sections.append(f"## {parent_h2['text']}")
-      sections.append("")
-    for j, h3 in enumerate(h3_items[:5]):
-      sections.append(f"### {h3['text']}")
-      sections.append("")
-      if fact_idx < len(fact_texts):
-        sections.append(fact_texts[fact_idx])
-        fact_idx += 1
-      else:
-        sections.append(f"Apply proven techniques for {h3['text'].lower()} as part of your {primary} routine.")
-      sections.append("")
+  meta = generate_safe_metadata(title, "", primary, topic)
+
+  intro_pool = [
+    f"This guide explains **{primary}** in the context of **{topic}** with structured, "
+    "search-aligned information readers can trust.",
+    f"**{topic}** covers important considerations around **{primary}**. "
+    "Below is a clear overview organized by section.",
+  ]
+  sections: list[str] = [f"# {title}", ""]
+  if strict_facts:
+    sections.append(f"> **Quick answer:** {strict_facts[0].text[:260]}\n")
+  sections.extend(["## Introduction", "", _pick(intro_pool, seed), ""])
+
+  for h2 in h2_headings:
+    sections.append(f"## {h2}")
+    sections.append("")
+    body = section_facts.get(h2, "")
+    sections.append(body)
+    sections.append("")
 
   sections.extend([
     "## Conclusion",
     "",
-    _pick([
-      f"**{primary.title()}** becomes achievable with the right structure and consistent effort. "
-      "Use the steps above, track your progress, and refine your approach over time.",
-      f"By applying these evidence-based principles to **{topic}**, you can build lasting results. "
-      "Start small, stay consistent, and improve week by week.",
-    ], seed + 7),
+    f"Use this guide to make informed decisions about **{primary}** related to **{topic}**. "
+    "Verify details with reputable sources and prioritize safety and clarity.",
   ])
 
-  article = "\n".join(sections).strip()
-  article = re.sub(r"\n{3,}", "\n\n", article)
+  article = re.sub(r"\n{3,}", "\n\n", "\n".join(sections)).strip()
+  meta = generate_safe_metadata(title, article, primary, topic)
 
-  domain = detect_domain(topic, keywords)
   word_count = len(re.findall(r"\b[\w'-]+\b", article))
   faqs: list[dict[str, str]] = []
 
-  if word_count < max(200, target_words // 2) or domain in ("enterprise", "fitness"):
-    from app.engine.seo_content_domains import build_rich_content
-
-    rich = build_rich_content(
-      topic, keywords, category=category, tone=tone, audience=audience, seed=seed,
-    )
-    title = rich["metadata"]["title"]
-    meta = rich["metadata"]["meta_description"]
-    outline = rich.get("outline", outline)
-    rich_article = rich["content"]["article"]
-    if fact_texts:
-      if "## Introduction" in rich_article:
-        head, tail = rich_article.split("## Introduction", 1)
-        article = f"{head.rstrip()}\n\n## Introduction\n\n{fact_texts[0]}\n\n{tail.lstrip()}"
-      else:
-        article = f"## Introduction\n\n{fact_texts[0]}\n\n{rich_article}"
+  if word_count < max(200, target_words // 2) or content_profile in ("adult_services", "local_services", "ambiguous_escort"):
+    if content_profile in ("adult_services", "local_services", "ambiguous_escort"):
+      h2_outline = [o for o in outline if o.get("level") == "h2"]
+      article = build_profile_article_from_outline(
+        topic, primary, outline,
+        profile=content_profile if content_profile != "ambiguous_escort" else "adult_services",
+        intent=intent,
+      )
+      title = outline[0]["text"] if outline else title
+      faqs = generate_paa_faqs(
+        topic, primary, strict_facts, content_profile, intent,
+        keywords=keywords, domain=domain, seed=seed,
+      )
     else:
-      article = rich_article
-    faqs = list(rich.get("faqs", []))
+      from app.engine.seo_content_domains import build_rich_content
+
+      rich = build_rich_content(
+        topic, keywords, category=category, tone=tone, audience=audience, seed=seed,
+      )
+      title = rich["metadata"]["title"]
+      outline = rich.get("outline", outline)
+      article = rich["content"]["article"]
+      meta = generate_safe_metadata(title, article, primary, topic)
+      faqs = list(rich.get("faqs", []))
 
   if not faqs:
-    faq_questions = [
-      f"What is {primary}?",
-      f"How do I get started with {primary}?",
-      f"What are the benefits of {primary}?",
-      f"How long does it take to see results with {primary}?",
-      f"Who should focus on {primary}?",
-    ]
-    for i, q in enumerate(faq_questions[:5]):
-      if i < len(fact_texts):
-        faqs.append({"question": q, "answer": _clip(fact_texts[i], 300)})
-      else:
-        faqs.append({
-          "question": q,
-          "answer": (
-            f"{primary.title()} offers practical value for anyone learning about {topic}. "
-            "Start with fundamentals and build gradually."
-          ),
-        })
+    faqs = generate_paa_faqs(
+      topic, primary, strict_facts, content_profile, intent,
+      keywords=keywords, domain=domain, seed=seed,
+    )
 
   return {
     "metadata": {"title": title[:70], "meta_description": meta},
@@ -428,6 +393,7 @@ def synthesize_structured_content(
     "faqs": faqs,
     "domain": domain,
     "variation_seed": seed,
+    "content_profile": content_profile,
     "rag": {
       "topic_class": rag.topic_class,
       "confidence": rag.confidence,
@@ -450,24 +416,46 @@ async def run_seo_rag_pipeline(
 ) -> RagPipelineResult:
   seed = make_variation_seed(variation_seed)
   topic_class = classify_topic(topic, keywords, category)
+  nsfw = detect_nsfw_topic(topic, keywords)
   sources = route_sources(topic_class, max_sources=max_sources)
 
-  raw_docs = await retrieve_from_sources(
-    topic, keywords, sources, per_source=2, seed=seed,
-  )
+  raw_docs: list[OpenDoc] = []
+  if not nsfw.get("skip_open_retrieval"):
+    raw_docs = await retrieve_from_sources(
+      topic, keywords, sources, per_source=2, seed=seed,
+    )
+    raw_docs = filter_relevant_documents(raw_docs, topic, keywords)
+
   sources_hit = sorted({d.source for d in raw_docs})
   docs = deduplicate_docs(raw_docs)
-  docs = rerank_docs(topic, docs, top_k=top_k)
 
-  # Rotate top docs by seed for variety between runs
-  if len(docs) > 2:
-    offset = seed % len(docs)
-    docs = docs[offset:] + docs[:offset]
+  anchors = anchor_terms(topic, keywords)
+  chunks = chunk_documents(docs)
+  query = f"{topic} {' '.join(keywords)}".strip()
+  ranked_chunks = cross_encoder_rerank_chunks(query, chunks, anchors)
+  if ranked_chunks:
+    docs = [
+      OpenDoc(
+        doc_id=f"{ch.source}:{i}",
+        source=ch.source,
+        title=ch.title,
+        text=ch.text,
+        score=ch.score,
+      )
+      for i, ch in enumerate(ranked_chunks[:top_k])
+    ]
+  docs = rerank_docs(query, docs, top_k=top_k)
 
   facts = extract_facts(docs, topic, keywords)
   facts = resolve_conflicts(facts)
-  confidence = score_confidence(facts, docs)
+
+  cands = entity_candidates(topic, keywords)
+  disambig = disambiguate_entities_embedding(topic, keywords, cands)
   entities = extract_entities(topic, docs, facts)
+  if disambig.get("selected"):
+    entities = [disambig["selected"]] + [e for e in entities if e != disambig["selected"]]
+
+  confidence = score_confidence(facts, docs)
   evidence = _evidence_block(docs, facts)
 
   return RagPipelineResult(
@@ -476,7 +464,7 @@ async def run_seo_rag_pipeline(
     sources_used=sources_hit,
     documents=docs,
     facts=facts,
-    entities=entities,
+    entities=entities[:15],
     confidence=confidence,
     evidence_context=evidence,
     variation_seed=seed,
