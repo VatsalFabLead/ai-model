@@ -1,20 +1,20 @@
-"""Resume Builder API — single /generate endpoint (like seo-keywords/generate)."""
+"""Resume Builder API — RAG pipeline with AI resume output."""
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_tool_provider
 from app.core.security import verify_api_key
 from app.services import resume_builder
+from app.services.resume_builder import _ensure_output_fields
 
 router = APIRouter(prefix="/resume-builder", tags=["resume-builder"])
 
 
 class ResumeGenerateRequest(BaseModel):
-  """All resume fields in one flat request — AI fills missing skills/summary/experience."""
-
   full_name: str = Field(..., min_length=1, max_length=120, examples=["Vatsal Patel"])
   job_title: str = Field(..., min_length=1, max_length=120, examples=["Flutter Developer"])
   email: str = Field(..., min_length=3, max_length=200, examples=["you@example.com"])
@@ -30,23 +30,19 @@ class ResumeGenerateRequest(BaseModel):
   achievements: str | None = None
   languages: str | None = Field(default=None, examples=["English (Fluent), Hindi (Native)"])
   template: str = Field(default="modern", examples=["modern", "classic", "executive", "minimal", "creative"])
-  improve: bool = Field(
-    default=False,
-    description="Re-enhance all sections (summary, experience, skills) even when already filled",
-  )
+  template_name: str | None = Field(default=None, description="Alias for template")
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
-  use_ai: bool = Field(
-    default=True,
-    description="Auto-generate skills, summary, and optimize experience via custom model",
-  )
+  use_ai: bool = Field(default=True, description="LLM rewrite for summary, experience, and projects")
+  use_rag: bool = Field(default=True, description="Use open-dataset occupation/skill routing")
+  variation_seed: int | None = Field(default=None, description="Omit for unique wording each request")
 
 
 class ResumeQuality(BaseModel):
   completeness_score: int
   resume_ready: bool
-  filled_fields: list[str]
-  missing_fields: list[str]
-  field_count: int
+  filled_fields: list[str] = Field(default_factory=list)
+  missing_fields: list[str] = Field(default_factory=list)
+  field_count: int = 0
 
 
 class ResumeAiMeta(BaseModel):
@@ -54,6 +50,14 @@ class ResumeAiMeta(BaseModel):
   skills_generated: bool
   summary_generated: bool
   experience_enhanced: bool
+  model_used: bool = False
+
+
+class ResumeExportMeta(BaseModel):
+  pdf_available: bool = False
+  docx_available: bool = False
+  pdf_base64: str | None = None
+  docx_base64: str | None = None
 
 
 class ResumeGenerateResponse(BaseModel):
@@ -74,12 +78,40 @@ class ResumeGenerateResponse(BaseModel):
   skills_list: list[str]
   experience_bullets: list[str]
   template: str
+  template_name: str
   language: str
   category: str
   resume_markdown: str
+  resume_ai_text: str
   word_count: int
   quality: ResumeQuality
   ai: ResumeAiMeta
+  generator_version: str | None = None
+  variation_seed: int | None = None
+  architecture: dict[str, Any] | None = None
+  pipeline: dict[str, Any] | None = None
+  skill_groups: dict[str, list[str]] | None = None
+  export: ResumeExportMeta | None = None
+  elapsed_ms: float | None = None
+
+
+@router.get("/templates")
+async def list_templates(_: str = Depends(verify_api_key)) -> dict:
+  return {"templates": resume_builder.supported_templates()}
+
+
+@router.get("/version")
+async def resume_version(_: str = Depends(verify_api_key)) -> dict[str, str]:
+  from app.engine.resume_rag_pipeline import GENERATOR_VERSION
+
+  return {"generator_version": GENERATOR_VERSION, "status": "ok"}
+
+
+@router.get("/pipeline")
+async def pipeline_architecture(_: str = Depends(verify_api_key)) -> dict[str, Any]:
+  from app.engine.resume_rag_pipeline import ARCHITECTURE_FLOW, OPEN_DATASET_TREE
+
+  return {"flow": ARCHITECTURE_FLOW, "open_datasets": OPEN_DATASET_TREE}
 
 
 @router.post("/generate", response_model=ResumeGenerateResponse)
@@ -88,7 +120,19 @@ async def generate(
   request: Request,
   _: str = Depends(verify_api_key),
 ) -> ResumeGenerateResponse:
-  provider = get_tool_provider(request)
+  provider = None
+  if payload.use_ai:
+    registry = request.app.state.registry
+    for key in ("custom", "gemma", "ollama", "llm"):
+      p = registry._providers.get(key)
+      if p and p.is_ready():
+        provider = p
+        break
+    if provider is None:
+      try:
+        provider = get_tool_provider(request)
+      except HTTPException:
+        pass
   try:
     result = await resume_builder.generate(
       provider,
@@ -107,38 +151,21 @@ async def generate(
       achievements=payload.achievements,
       languages=payload.languages,
       template=payload.template,
+      template_name=payload.template_name,
       language=payload.language,
       use_ai=payload.use_ai,
-      improve=payload.improve,
+      use_rag=payload.use_rag,
+      variation_seed=payload.variation_seed,
     )
   except ValueError as exc:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
   except Exception as exc:
     raise HTTPException(status_code=500, detail=f"Resume generation failed: {exc}") from exc
 
-  fields = result.pop("fields", {})
-  return ResumeGenerateResponse(
-    full_name=fields.get("full_name", payload.full_name),
-    job_title=fields.get("job_title", payload.job_title),
-    email=fields.get("email", payload.email),
-    phone=fields.get("phone", payload.phone),
-    linkedin=fields.get("linkedin", "") or "",
-    portfolio=fields.get("portfolio", "") or "",
-    education=fields.get("education", "") or "",
-    experience=fields.get("experience", "") or "",
-    skills=fields.get("skills", "") or "",
-    summary=result.get("summary", "") or "",
-    projects=fields.get("projects", "") or "",
-    certifications=fields.get("certifications", "") or "",
-    achievements=fields.get("achievements", "") or "",
-    languages=fields.get("languages", "") or "",
-    skills_list=result.get("skills_list", []),
-    experience_bullets=result.get("experience_bullets", []),
-    template=result["template"],
-    language=result["language"],
-    category=result["category"],
-    resume_markdown=result["resume_markdown"],
-    word_count=result["word_count"],
-    quality=result["quality"],
-    ai=result["ai"],
+  result["template_name"] = result.get("template_name") or result.get("template", "modern")
+  result = _ensure_output_fields(result)
+  version = result.get("generator_version", "unknown")
+  return JSONResponse(
+    content=ResumeGenerateResponse(**result).model_dump(),
+    headers={"X-Resume-Builder-Version": version},
   )

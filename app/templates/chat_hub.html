@@ -113,14 +113,13 @@
 
   <script>
     const API = "{api_prefix}";
-    const TONES = ["professional", "casual", "friendly", "formal"];
+    const TONES = ["professional", "casual", "friendly", "formal", "confident", "enthusiastic", "persuasive"];
     const SCHEMA_TYPES = [
       "Article","Product","LocalBusiness","FAQPage","Organization","Recipe","Person",
       "WebSite","WebPage","Blog","NewsArticle","HowTo","Review","AggregateRating",
       "Service","MedicalBusiness","Restaurant","RealEstateAgent","Course","JobPosting",
       "VideoObject","ImageObject","PodcastEpisode","Offer","Brand","BreadcrumbList","SitelinksSearchBox"
     ];
-    const RESUME_TEMPLATES = ["modern","classic","executive","minimal","creative"];
 
     const TOOLS = [
       {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, tone",
@@ -230,21 +229,26 @@
         build: (f) => ({{ content: f.content }}),
         isPlagiarism: true
       }},
-      {{ id: "cover_letter", label: "Cover Letter Builder", desc: "Job role, company, skills",
+      {{ id: "cover_letter", label: "Professional Cover Letter AI", desc: "Role, company, experience",
         fields: [
           {{ id: "job_role", label: "Job role *", type: "text", required: true }},
           {{ id: "company_name", label: "Company name *", type: "text", required: true }},
+          {{ id: "applicant_name", label: "Your name", type: "text" }},
           {{ id: "skills_experience", label: "Key skills & experience *", type: "textarea", required: true, full: true }},
           {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
         ],
         endpoint: "/cover-letter/generate",
-        build: (f) => ({{ job_role: f.job_role, company_name: f.company_name, skills_experience: f.skills_experience, tone: f.tone }}),
+        build: (f, useAi) => ({{
+          job_role: f.job_role, company_name: f.company_name,
+          applicant_name: f.applicant_name || null,
+          skills_experience: f.skills_experience, tone: f.tone,
+          use_ai: useAi, use_rag: true,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
+        }}),
         format: fmtCoverLetter
       }},
-      {{ id: "resume", label: "Resume Builder", desc: "Template, improve, full profile",
+      {{ id: "resume", label: "Resume Builder", desc: "Full profile",
         fields: [
-          {{ id: "template_name", label: "Template *", type: "select", options: RESUME_TEMPLATES, value: "modern" }},
-          {{ id: "improve", label: "Improve existing content", type: "select", options: ["no","yes"], value: "no" }},
           {{ id: "full_name", label: "Full name *", type: "text", required: true }},
           {{ id: "job_title", label: "Job title *", type: "text", required: true }},
           {{ id: "email", label: "Email *", type: "email", required: true }},
@@ -262,14 +266,14 @@
         ],
         endpoint: "/resume-builder/generate",
         build: (f, useAi) => ({{
-          template: f.template_name || "modern",
-          improve: f.improve === "yes",
           full_name: f.full_name, job_title: f.job_title, email: f.email, phone: f.phone,
           linkedin: f.linkedin||null, portfolio: f.portfolio||null,
           summary: f.summary||null, education: f.education||null, experience: f.experience||null,
           projects: f.projects||null, certifications: f.certifications||null,
           achievements: f.achievements||null, languages: f.languages||null, skills: f.skills||null,
-          use_ai: useAi
+          use_ai: useAi,
+          use_rag: true,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtResume
       }},
@@ -364,6 +368,27 @@
       return div;
     }}
 
+    async function fetchJson(url, options, timeoutMs) {{
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs || 120000);
+      try {{
+        const res = await fetch(url, {{ ...options, signal: ctrl.signal }});
+        const data = await res.json();
+        return {{ res, data }};
+      }} catch (e) {{
+        if (e.name === "AbortError") {{
+          const tool = activeTool?.id || "";
+          const hint = tool === "resume" || tool === "cover_letter"
+            ? " For Resume/Cover Letter + AI wait up to 3 min, or try Templates only."
+            : "";
+          throw new Error("Request timed out after " + Math.round((timeoutMs || 120000) / 1000) + "s." + hint);
+        }}
+        throw e;
+      }} finally {{
+        clearTimeout(timer);
+      }}
+    }}
+
     async function generate() {{
       const fields = readForm();
       for (const f of activeTool.fields) {{
@@ -379,27 +404,32 @@
       genBtn.disabled = true;
       statusHint.textContent = "Generating…";
       try {{
-        let res, data;
         if (activeTool.isChat) {{
-          res = await fetch(API + activeTool.endpoint, {{
+          const {{ res, data }} = await fetchJson(API + activeTool.endpoint, {{
             method: "POST", headers: headers(),
             body: JSON.stringify({{
               model: fields.backend || "auto", backend: fields.backend || "auto",
               messages: [{{ role: "user", content: fields.message }}],
               max_tokens: 768, temperature: 0.7
             }})
-          }});
-          data = await res.json();
+          }}, 120000);
           if (!res.ok) throw new Error(data.detail || res.statusText);
           const backend = res.headers.get("X-Nexus-Backend") || fields.backend;
           addMsg("assistant", "[" + backend + "]\\n\\n" + activeTool.format(data));
         }} else {{
           const body = activeTool.build(fields, useAi);
-          res = await fetch(API + activeTool.endpoint, {{
+          const timeoutMs = (activeTool.id === "resume" || activeTool.id === "cover_letter")
+            ? (useAi ? 180000 : 90000) : 120000;
+          const {{ res, data }} = await fetchJson(API + activeTool.endpoint, {{
             method: "POST", headers: headers(), body: JSON.stringify(body)
-          }});
-          data = await res.json();
+          }}, timeoutMs);
           if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
+          if (activeTool.id === "resume" && !data.generator_version) {{
+            data.generator_version = res.headers.get("X-Resume-Builder-Version") || data.generator_version;
+          }}
+          if (activeTool.id === "cover_letter" && !data.generator_version) {{
+            data.generator_version = res.headers.get("X-Cover-Letter-Version") || data.generator_version;
+          }}
           if (activeTool.isPlagiarism) {{
             renderPlagiarismCard(data, fields.content);
           }} else {{
@@ -766,8 +796,43 @@
     function escapeHtml(s) {{
       return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }}
-    function fmtCoverLetter(d) {{ return "**Role:** " + d.job_role + " @ " + d.company_name + "\\n\\n" + d.cover_letter; }}
-    function fmtResume(d) {{ return "**Template:** " + d.template + " · Score: " + d.quality?.completeness_score + "/100\\n\\n" + d.resume_markdown; }}
+    function fmtCoverLetter(d) {{
+      const letter = (d.cover_letter || "").trim();
+      if (!letter) return "No cover letter was generated.";
+      return letter;
+    }}
+    function fmtResume(d) {{
+      const NL = String.fromCharCode(10);
+      const arch = d.architecture || {{}};
+      const q = d.quality || {{}};
+      const comp = (q.completeness_score === 0 || q.completeness_score) ? q.completeness_score : "—";
+      const layers = (arch.layers || []).join(" → ");
+      const lines = [
+        "Resume Builder · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+        d.pipeline?.llm_used ? "LLM rewrite: summary + experience + projects" : "Rule-based rewrite (enable Use AI for LLM)",
+        q.resume_ready ? "Resume ready" : "",
+        "",
+        "### Pipeline Layers",
+        layers || "input → parse → understand → enhance → rewrite → optimize → format → output",
+        "",
+        "### Pipeline Architecture",
+        (arch.flow || []).join(" → ") || "—",
+        "",
+        "### Open Datasets",
+        Object.keys(arch.open_datasets || {{}}).join(", ") || "—",
+        "",
+        "### Score",
+        "Completeness: " + comp + "/100",
+        "",
+        "### Resume (Markdown)",
+        d.resume_markdown || d.resume_ai_text || "",
+        "",
+        (d.export?.pdf_available ? "_PDF export included in API response (base64)_" : ""),
+        (d.export?.docx_available ? "_DOCX export included in API response (base64)_" : "")
+      ];
+      return lines.filter(Boolean).join(NL);
+    }}
 
     document.getElementById("generateBtn").onclick = generate;
     document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; }};

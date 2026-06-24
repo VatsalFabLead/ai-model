@@ -120,7 +120,6 @@
       "Service","MedicalBusiness","Restaurant","RealEstateAgent","Course","JobPosting",
       "VideoObject","ImageObject","PodcastEpisode","Offer","Brand","BreadcrumbList","SitelinksSearchBox"
     ];
-    const RESUME_TEMPLATES = ["modern","classic","executive","minimal","creative"];
 
     const TOOLS = [
       {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, tone",
@@ -241,10 +240,8 @@
         build: (f) => ({{ job_role: f.job_role, company_name: f.company_name, skills_experience: f.skills_experience, tone: f.tone }}),
         format: fmtCoverLetter
       }},
-      {{ id: "resume", label: "Resume Builder", desc: "Template, improve, full profile",
+      {{ id: "resume", label: "Resume Builder", desc: "Full profile",
         fields: [
-          {{ id: "template_name", label: "Template *", type: "select", options: RESUME_TEMPLATES, value: "modern" }},
-          {{ id: "improve", label: "Improve existing content", type: "select", options: ["no","yes"], value: "no" }},
           {{ id: "full_name", label: "Full name *", type: "text", required: true }},
           {{ id: "job_title", label: "Job title *", type: "text", required: true }},
           {{ id: "email", label: "Email *", type: "email", required: true }},
@@ -262,14 +259,14 @@
         ],
         endpoint: "/resume-builder/generate",
         build: (f, useAi) => ({{
-          template: f.template_name || "modern",
-          improve: f.improve === "yes",
           full_name: f.full_name, job_title: f.job_title, email: f.email, phone: f.phone,
           linkedin: f.linkedin||null, portfolio: f.portfolio||null,
           summary: f.summary||null, education: f.education||null, experience: f.experience||null,
           projects: f.projects||null, certifications: f.certifications||null,
           achievements: f.achievements||null, languages: f.languages||null, skills: f.skills||null,
-          use_ai: useAi
+          use_ai: useAi,
+          use_rag: true,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtResume
       }},
@@ -767,7 +764,38 @@
       return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }}
     function fmtCoverLetter(d) {{ return "**Role:** " + d.job_role + " @ " + d.company_name + "\\n\\n" + d.cover_letter; }}
-    function fmtResume(d) {{ return "**Template:** " + d.template + " · Score: " + d.quality?.completeness_score + "/100\\n\\n" + d.resume_markdown; }}
+    function fmtResume(d) {{
+      const NL = String.fromCharCode(10);
+      const arch = d.architecture || {{}};
+      const pipe = d.pipeline || {{}};
+      const ats = d.ats_keywords || {{}};
+      const lines = [
+        "Resume Builder · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+        "",
+        "### Pipeline Architecture",
+        (arch.flow || []).join(" → "),
+        "",
+        "### Open Datasets",
+        Object.keys(arch.open_datasets || {{}}).join(", "),
+        "",
+        "### Scores",
+        "Completeness: " + (d.quality?.completeness_score || "—") + "/100 · ATS: " + (d.quality?.ats_score || "—") + "/100",
+        "",
+        "### ATS Keywords",
+        (ats.keywords || []).slice(0, 12).join(", ") || "—",
+        "",
+        "### AI Resume (Markdown)",
+        d.resume_markdown || d.resume_ai_text || "",
+        "",
+        "### ATS Plain Text",
+        d.ats_resume_text || "—",
+        "",
+        (d.export?.pdf_available ? "_PDF export included in API response (base64)_" : ""),
+        (d.export?.docx_available ? "_DOCX export included in API response (base64)_" : "")
+      ];
+      return lines.filter(Boolean).join(NL);
+    }}
 
     document.getElementById("generateBtn").onclick = generate;
     document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; }};

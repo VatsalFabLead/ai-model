@@ -50,9 +50,11 @@ def create_app() -> FastAPI:
     import logging
     from app.engine.title_meta_rag_pipeline import GENERATOR_VERSION as TITLE_META_VERSION
     from app.engine.seo_keyword_rag_pipeline import GENERATOR_VERSION as SEO_KEYWORD_VERSION
+    from app.engine.resume_rag_pipeline import GENERATOR_VERSION as RESUME_VERSION
     logging.getLogger("uvicorn.error").info("SEO Optimizer pipeline: %s", GENERATOR_VERSION)
     logging.getLogger("uvicorn.error").info("Title & Meta pipeline: %s", TITLE_META_VERSION)
     logging.getLogger("uvicorn.error").info("SEO Keyword pipeline: %s", SEO_KEYWORD_VERSION)
+    logging.getLogger("uvicorn.error").info("Resume Builder pipeline: %s", RESUME_VERSION)
     yield
     await registry.shutdown()
 

@@ -340,3 +340,87 @@ def quality_report(fields: dict[str, Any]) -> dict[str, Any]:
 def normalize_template(template: str) -> str:
   t = (template or "modern").strip().lower()
   return t if t in _TEMPLATES else "modern"
+
+
+def _contact_line(personal: dict[str, Any], template: str) -> str:
+  use_icons = template in {"modern", "creative"}
+  parts = []
+  if personal.get("email"):
+    parts.append(f"{'📧 ' if use_icons else ''}{personal['email']}")
+  if personal.get("phone"):
+    parts.append(f"{'📱 ' if use_icons else ''}{personal['phone']}")
+  if personal.get("linkedin"):
+    parts.append(f"{'🔗 ' if use_icons else 'LinkedIn: '}{personal['linkedin']}")
+  if personal.get("portfolio"):
+    parts.append(f"{'💻 ' if use_icons else 'Portfolio: '}{personal['portfolio']}")
+  sep = "  |  " if template != "classic" else "  ·  "
+  return sep.join(parts) if parts else ""
+
+
+def _section_block(title: str, body: str, template: str) -> str:
+  body = (body or "").strip()
+  if not body:
+    return ""
+  if template == "executive":
+    return f"\n\n## ▌ {title}\n\n{body}\n"
+  if template == "creative":
+    return f"\n\n### ✦ {title}\n\n{body}\n"
+  if template == "minimal":
+    return f"\n\n## {title.upper()}\n\n{body}\n"
+  return f"\n---\n\n## {title}\n\n{body}\n"
+
+
+def _format_skills(skills: str | list) -> str:
+  if isinstance(skills, list):
+    items = [s.strip() for s in skills if str(s).strip()]
+  else:
+    items = [s.strip() for s in re.split(r"[,;\n]+", str(skills)) if s.strip()]
+  return "\n".join(f"- {s}" for s in items)
+
+
+def build_resume_markdown(
+  data: dict[str, Any],
+  *,
+  summary: str | None = None,
+  template: str = "modern",
+  language: str | None = None,
+) -> str:
+  labels = section_labels(language)
+  p = data.get("personal") or {}
+  name = p.get("full_name") or p.get("name") or "Your Name"
+  title = p.get("job_title") or "Professional"
+  contact = _contact_line(p, template)
+  template = normalize_template(template)
+
+  if template == "executive":
+    header = f"# {name.upper()}\n### {title}"
+  elif template == "creative":
+    header = f"# ✦ {name}\n**{title}**"
+  else:
+    header = f"# {name}\n**{title}**"
+  if contact:
+    header += f"\n{contact}"
+
+  parts = [header]
+  summ = summary or data.get("summary") or ""
+  if summ.strip():
+    parts.append(_section_block(labels["summary"], summ.strip(), template))
+  skills = data.get("skills") or ""
+  if skills:
+    parts.append(_section_block(labels["skills"], _format_skills(skills), template))
+  exp = data.get("experience") or ""
+  if exp.strip():
+    parts.append(_section_block(labels["experience"], exp.strip(), template))
+  edu = data.get("education") or ""
+  if edu.strip():
+    parts.append(_section_block(labels["education"], edu.strip(), template))
+  for sec_title, key in (
+    (labels["projects"], "projects"),
+    (labels["certifications"], "certifications"),
+    (labels["achievements"], "achievements"),
+    (labels["languages"], "languages"),
+  ):
+    sec_body = data.get(key)
+    if sec_body and str(sec_body).strip():
+      parts.append(_section_block(sec_title, str(sec_body).strip(), template))
+  return "\n".join(p for p in parts if p).strip()

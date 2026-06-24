@@ -1,36 +1,24 @@
-"""Professional Cover Letter Generator.
-
-Creates personalized cover letters from job role, company, skills/experience,
-and tone. Uses your custom model backend with template fallback.
-No GPT/Claude/Gemini involved.
-"""
+"""Professional Cover Letter AI Generator — full RAG production pipeline."""
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
+from app.engine.cover_letter_rag_pipeline import (
+  ARCHITECTURE_FLOW,
+  CoverLetterLLM,
+  GENERATOR_VERSION,
+  OPEN_DATASET_TREE,
+  PIPELINE_LAYERS,
+  run_cover_letter_pipeline,
+  score_cover_letter,
+)
 from app.services.provider_base import ModelProvider
 
-_VALID_TONES = {
-  "professional",
-  "casual",
-  "friendly",
-  "formal",
-  "confident",
-  "enthusiastic",
-  "persuasive",
-  "neutral",
-}
-
-_MAX_TOKENS = 500
-
-
-def _normalize_tone(tone: str | None) -> str:
-  if not tone:
-    return "professional"
-  t = tone.strip().lower()
-  return t if t in _VALID_TONES else "professional"
+_MAX_TOKENS = 360
+_AI_TIMEOUT_SEC = 90.0
 
 
 def _clean(text: str) -> str:
@@ -48,32 +36,71 @@ def _clean(text: str) -> str:
   return re.sub(r"\n{3,}", "\n\n", t).strip()
 
 
-def _template_cover_letter(
-  job_role: str,
-  company_name: str,
-  skills_experience: str,
-  tone: str,
-) -> str:
-  role = job_role.strip() or "the open position"
-  company = company_name.strip() or "your organization"
-  skills = skills_experience.strip() or "relevant skills and proven experience in this field."
+def _ensure_output_fields(result: dict[str, Any]) -> dict[str, Any]:
+  letter = result.get("cover_letter") or ""
+  if not result.get("quality"):
+    result["quality"] = score_cover_letter(
+      letter,
+      result.get("ats_keywords") or {},
+      result.get("experience_analysis") or {},
+      result.get("role_analysis") or {},
+    )
+  result.setdefault("generator_version", GENERATOR_VERSION)
+  result.setdefault("architecture", {
+    "flow": ARCHITECTURE_FLOW,
+    "layers": PIPELINE_LAYERS,
+    "open_datasets": OPEN_DATASET_TREE,
+  })
+  return result
 
-  return f"""Dear Hiring Manager,
 
-I am writing to express my strong interest in the {role} role at {company}. With a track record of delivering quality work and collaborating effectively across teams, I am confident I can contribute meaningfully to your goals.
+class _PipelineLLM:
+  """Single-call LLM adapter — one generation instead of four slow round-trips."""
 
-{skills}
+  def __init__(self, provider: ModelProvider, language: str | None) -> None:
+    self._provider = provider
+    self._language = language
 
-I am particularly drawn to {company} because of its reputation and the opportunity to grow while making a tangible impact. I would welcome the chance to discuss how my background aligns with your team's needs.
-
-Thank you for your time and consideration. I look forward to hearing from you.
-
-Sincerely,
-[Your Name]"""
+  async def generate_full_letter(self, context: dict[str, Any], draft_hint: str) -> str | None:
+    tone = (context.get("tone") or {}).get("tone", "professional")
+    name = context.get("applicant_name")
+    var_seed = int(context.get("variation_seed") or 0)
+    lang = f" Write the entire letter in {self._language}." if self._language else ""
+    name_hint = f" Sign off with: Sincerely, {name}" if name else " End with Sincerely, [Your Name]"
+    system = (
+      f"You are an expert cover letter writer. Write one complete {tone} cover letter "
+      f"(greeting, 3-4 short paragraphs, professional closing).{lang}{name_hint} "
+      "Use only facts from the candidate profile — do not invent employers or degrees. "
+      "Write fresh, natural prose. Do not reuse boilerplate. Return only the letter text."
+    )
+    user = (
+      f"Variation id: {var_seed} — use distinct wording from any prior draft.\n"
+      f"Job role: {context.get('job_role')}\n"
+      f"Company: {context.get('company_name')}\n"
+      f"Skills: {', '.join((context.get('skills') or [])[:10])}\n"
+      f"Candidate background:\n{context.get('skills_experience', '')[:2000]}\n\n"
+      f"Structure reference only (rewrite fully, do not copy):\n{draft_hint[:1200]}"
+    )
+    temp = 0.72 + (var_seed % 13) / 100.0
+    try:
+      raw = await asyncio.wait_for(
+        self._provider.chat(
+          [{"role": "user", "content": user}],
+          system_prompt=system,
+          use_rag=False,
+          skip_intent=True,
+          max_tokens=_MAX_TOKENS,
+          temperature=min(0.88, temp),
+        ),
+        timeout=_AI_TIMEOUT_SEC,
+      )
+      return _clean(raw) or None
+    except Exception:
+      return None
 
 
 async def generate_cover_letter(
-  provider: ModelProvider,
+  provider: ModelProvider | None,
   *,
   job_role: str,
   company_name: str,
@@ -81,56 +108,35 @@ async def generate_cover_letter(
   tone: str | None = None,
   language: str | None = None,
   applicant_name: str | None = None,
+  use_ai: bool = True,
+  use_rag: bool = True,
+  variation_seed: int | None = None,
 ) -> dict[str, Any]:
-  role = (job_role or "").strip()
-  company = (company_name or "").strip()
-  skills = (skills_experience or "").strip()
-  if not role:
-    raise ValueError("job_role is required")
-  if not company:
-    raise ValueError("company_name is required")
-  if not skills:
-    raise ValueError("skills_experience is required")
-
-  tone_str = _normalize_tone(tone)
-  lang = f" Write the entire letter in {language}." if language else ""
-  name_line = f" Sign off with the name: {applicant_name}." if applicant_name else " End with 'Sincerely,' and [Your Name]."
-
-  system_prompt = (
-    f"You are an expert career coach and cover letter writer. Write a {tone_str}, "
-    "personalized, one-page cover letter (3–4 short paragraphs) for the job application. "
-    "Structure: greeting, why you're interested, how your skills match the role (use their "
-    "details — do not invent fake employers or degrees), enthusiasm for the company, and a "
-    f"professional closing.{lang}{name_line} Return only the letter text, no labels or markdown."
-  )
-  user_prompt = (
-    f"Job role: {role}\n"
-    f"Company: {company}\n"
-    f"Applicant skills & experience:\n{skills}"
-  )
-
-  try:
-    raw = await provider.chat(
-      [{"role": "user", "content": user_prompt}],
-      system_prompt=system_prompt,
-      use_rag=False,
-      skip_intent=True,
-      max_tokens=_MAX_TOKENS,
-      temperature=0.65,
-    )
-    letter = _clean(raw)
-    if len(letter) < 120:
-      raise ValueError("too short")
-  except Exception:
-    letter = _template_cover_letter(role, company, skills, tone_str)
-    if applicant_name:
-      letter = letter.replace("[Your Name]", applicant_name)
-
-  word_count = len(re.findall(r"\b[\w'-]+\b", letter))
-  return {
-    "job_role": role,
-    "company_name": company,
-    "tone": tone_str,
-    "cover_letter": letter,
-    "word_count": word_count,
+  payload = {
+    "job_role": job_role,
+    "company_name": company_name,
+    "skills_experience": skills_experience,
+    "tone": tone,
+    "applicant_name": applicant_name,
   }
+
+  llm: CoverLetterLLM | None = _PipelineLLM(provider, language) if use_ai and provider else None
+
+  result = await run_cover_letter_pipeline(
+    payload,
+    language=language,
+    use_ai=use_ai,
+    use_rag=use_rag,
+    variation_seed=variation_seed,
+    llm=llm,
+  )
+
+  json_out = (result.get("architecture") or {}).get("stages", {}).get("json_output") or {}
+  llm_stages = json_out.get("llm_stages") or {}
+  result["ai"] = {
+    "enabled": use_ai,
+    "model_used": bool(use_ai and provider and llm_stages.get("full_letter")),
+    "full_letter_llm": bool(llm_stages.get("full_letter")),
+    "fallback_rule_based": bool(llm_stages.get("fallback_rule_based")),
+  }
+  return _ensure_output_fields(result)
