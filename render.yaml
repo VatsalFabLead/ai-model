@@ -3,7 +3,7 @@ services:
     name: ai-model-api
     runtime: python
     plan: free
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements-render.txt
     startCommand: gunicorn app.main:app -c gunicorn.conf.py
     healthCheckPath: /health
     autoDeploy: true
@@ -32,6 +32,14 @@ services:
         value: "*"
       - key: CORS_ORIGINS
         value: "*"
+      - key: MODEL_BACKEND
+        value: custom
+      - key: GEMMA_ENABLED
+        value: "false"
+      - key: LLM_BACKEND_ENABLED
+        value: "false"
+      - key: PLAGIARISM_WARMUP_AT_START
+        value: "false"
       - key: MODEL_ID
         value: custom-nexus-v1
       - key: MODEL_WEIGHTS_PATH

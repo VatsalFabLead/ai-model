@@ -15,11 +15,15 @@ _TEMPLATE = Path(__file__).resolve().parent.parent.parent / "templates" / "chat_
 
 
 @router.get("/chat_page", response_class=HTMLResponse)
-async def chat_page() -> str:
+async def chat_page() -> HTMLResponse:
   settings = get_settings()
   html = _TEMPLATE.read_text(encoding="utf-8")
-  return html.format(
+  body = html.format(
     app_name=settings.app_name,
     api_prefix=settings.api_prefix,
     model_backend=settings.model_backend,
+  )
+  return HTMLResponse(
+    content=body,
+    headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
   )

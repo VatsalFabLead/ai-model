@@ -141,6 +141,7 @@ class Settings(BaseSettings):
   searxng_url: str = Field(default="http://127.0.0.1:8080", alias="SEARXNG_URL")
   plagiarism_use_searxng: bool = Field(default=True, alias="PLAGIARISM_USE_SEARXNG")
   plagiarism_use_wikipedia_live: bool = Field(default=True, alias="PLAGIARISM_USE_WIKIPEDIA_LIVE")
+  plagiarism_warmup_at_start: bool = Field(default=True, alias="PLAGIARISM_WARMUP_AT_START")
 
   # Security & rate limits (Hostinger-friendly defaults)
   cors_origins: str = Field(default="*", alias="CORS_ORIGINS")

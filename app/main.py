@@ -40,7 +40,12 @@ def create_app() -> FastAPI:
     from app.config import get_settings
     cfg = get_settings()
     configure(cfg.plagiarism_index_dir)
-    await asyncio.to_thread(warm_up)
+    if cfg.plagiarism_warmup_at_start:
+      try:
+        await asyncio.to_thread(warm_up)
+      except Exception as exc:
+        import logging
+        logging.getLogger("uvicorn.error").warning("Plagiarism warm-up skipped: %s", exc)
     from app.engine.seo_optimizer_rag_pipeline import GENERATOR_VERSION
     import logging
     from app.engine.title_meta_rag_pipeline import GENERATOR_VERSION as TITLE_META_VERSION
