@@ -1,4 +1,4 @@
-"""Resume Builder — PARSE → UNDERSTAND → ENHANCE → REWRITE → OPTIMIZE → FORMAT → OUTPUT."""
+"""Resume Builder AI — spell-correct → normalize → parse → generate → rewrite → score → output."""
 
 from __future__ import annotations
 
@@ -118,17 +118,18 @@ class _PipelineLLM:
   async def generate_summary(self, context: dict[str, Any]) -> str | None:
     personal = context.get("personal") or {}
     understanding = context.get("understanding") or {}
+    skills = ", ".join((context.get("skills") or [])[:10])
     return await self._chat(
-      "Expert resume writer. Rewrite the professional summary from the candidate profile. "
-      "Return ONE paragraph only (70-100 words). Strong verbs, no headers, no bullets. "
-      "Do NOT copy input verbatim — synthesize and improve.",
+      "Expert resume writer. Write ONE professional summary paragraph (70-100 words). "
+      "Start with 'Results-driven [Job Title]'. Use third-person implied (no 'I'), "
+      "but NEVER mention the candidate's name. "
+      "ONLY mention technologies from the Skills list — do not invent skills. "
+      "No headers, no bullets, no AI clichés like 'hiring workflows'.",
       (
-        f"Name: {personal.get('full_name')}\n"
         f"Role: {personal.get('job_title')}\n"
-        f"Domain: {understanding.get('domain')}\n"
-        f"Skills: {', '.join((context.get('skills') or [])[:8])}\n"
+        f"Years: {understanding.get('years_experience')}\n"
+        f"Skills (use ONLY these): {skills}\n"
         f"Experience notes: {context.get('experience') or ''}\n"
-        f"Education: {context.get('education') or ''}\n"
         f"Draft hint: {context.get('raw_summary') or context.get('draft') or ''}"
       ),
       220,
@@ -136,12 +137,18 @@ class _PipelineLLM:
 
   async def rewrite_experience(self, context: dict[str, Any]) -> str | None:
     return await self._chat(
-      "Expert resume writer. Rewrite work experience as 5-7 professional resume bullets. "
-      "One bullet per line, each starts with '- '. Use action verbs and metrics when reasonable. "
-      "Do NOT copy input verbatim — enhance and quantify.",
+      "Expert resume writer. Format work experience with:\n"
+      "1) Job title on first line\n"
+      "2) Company name on second line (if provided in input)\n"
+      "3) Dates on third line (if provided)\n"
+      "4) 4-6 bullets starting with '- '\n"
+      "Use realistic responsibilities for the role. "
+      "Do NOT turn duration text like '5 years' into a bullet. "
+      "Do NOT invent company names or technologies not in the input. "
+      "Use action verbs naturally (Developed, Built, Integrated) — never 'Reduced 5 Years'.",
       (
         f"Job title: {context.get('job_title')}\n"
-        f"Role context: {(context.get('understanding') or {}).get('narrative', '')}\n\n"
+        f"Skills: {', '.join((context.get('skills') or [])[:8])}\n\n"
         f"{context.get('draft') or context.get('experience') or ''}"
       ),
       _MAX_TOKENS,
@@ -149,15 +156,17 @@ class _PipelineLLM:
 
   async def optimize_projects(self, context: dict[str, Any]) -> str | None:
     raw = await self._chat(
-      "Expert resume writer. Rewrite projects section with 2-4 impact-focused bullets or short paragraphs. "
-      "Each line starts with '- ' when using bullets. Mention tech stack and outcomes. "
-      "Do NOT copy input verbatim — rewrite for recruiters.",
+      "Expert resume writer. For each project:\n"
+      "1) **Project Name** on its own line\n"
+      "2) One natural paragraph (2-3 sentences) describing what was built, tech used, and outcomes\n"
+      "Write like a human resume — no 'Integrated the project scope' template phrases. "
+      "ONLY use technologies from the Skills list or project input.",
       (
         f"Role: {(context.get('personal') or {}).get('job_title')}\n"
-        f"Skills: {', '.join((context.get('skills') or [])[:6])}\n\n"
+        f"Skills: {', '.join((context.get('skills') or [])[:8])}\n\n"
         f"{context.get('draft') or context.get('projects') or ''}"
       ),
-      320,
+      480,
     )
     if not raw:
       return None
@@ -221,7 +230,7 @@ async def generate(
     llm=llm,
   )
 
-  json_out = (result.get("architecture") or {}).get("stages", {}).get("json_output") or {}
+  json_out = (result.get("architecture") or {}).get("stages", {}).get("output") or {}
   llm_stages = json_out.get("llm_stages") or {}
 
   result["ai"] = {
@@ -229,7 +238,6 @@ async def generate(
     "model_used": bool(use_ai and provider and any(llm_stages.values())),
     "summary_llm": bool(llm_stages.get("summary")),
     "experience_llm": bool(llm_stages.get("experience")),
-    "projects_llm": bool(llm_stages.get("projects")),
     "skills_generated": not (skills or "").strip(),
     "summary_generated": True,
     "experience_enhanced": True,

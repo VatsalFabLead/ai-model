@@ -1,9 +1,8 @@
-"""Resume Builder — PARSE → UNDERSTAND → ENHANCE → REWRITE → OPTIMIZE → FORMAT → OUTPUT.
+"""Resume Builder AI — streamlined production pipeline.
 
-input → validator → ner_parser → summary_generator (LLM) → grammar_corrector
-→ experience_rewriter (LLM) → bullet_enhancer → project_optimizer (LLM) → achievement_rewriter
-→ skill_classifier → skill_deduplicator → language_formatter → template_renderer
-→ resume_scorer → pdf_docx_generator → json_output
+input → spell_corrector → skill_normalizer → language_validator → ner_parser
+→ summary_generator → grammar_corrector → experience_rewriter → skill_classifier
+→ skill_deduplicator → resume_scorer → output
 """
 
 from __future__ import annotations
@@ -17,81 +16,72 @@ import time
 from typing import Any, Protocol
 
 from app.engine import resume_engine as reng
-from app.engine.open_data_retrieval import OpenDoc, retrieve_from_sources
-from app.engine.resume import _skills_for
+from app.engine.open_data_retrieval import OpenDoc
 from app.engine.resume_narrative import (
   extract_skills_from_narrative,
   is_narrative_text,
+  is_minimal_experience,
+  format_structured_experience,
   rewrite_achievements_narrative,
   rewrite_certifications_narrative,
   rewrite_education_narrative,
   rewrite_experience_narrative,
-  rewrite_languages_narrative,
-  rewrite_projects_narrative,
+  enhance_projects_section,
   rewrite_summary_narrative,
+  is_meta_experience_line,
+  line_has_action_verb,
+  build_role_experience_bullets,
+)
+from app.engine.resume_open_data import (
+  OPEN_DATASET_TREE,
+  pick_action_verb,
+  retrieve_resume_context,
+)
+from app.engine.resume_preprocess import (
+  extract_years_experience,
+  format_languages_section,
+  format_years_phrase,
+  normalize_languages_text,
+  normalize_skills_list,
+  normalize_skills_text,
+  seniority_from_years,
+  spell_correct_payload,
+  validate_language,
 )
 from app.engine.seo_content_domains import make_variation_seed
 
-GENERATOR_VERSION = "resume-builder-rag-v4.2"
+GENERATOR_VERSION = "resume-builder-rag-v5.4"
 
 PIPELINE_LAYERS = [
   "input",
+  "preprocess",
   "parse",
-  "understand",
-  "enhance",
+  "generate",
   "rewrite",
   "optimize",
-  "format",
   "output",
 ]
 
 ARCHITECTURE_FLOW = [
   "input",
-  "validator",
+  "spell_corrector",
+  "skill_normalizer",
+  "language_validator",
   "ner_parser",
   "summary_generator",
   "grammar_corrector",
   "experience_rewriter",
-  "bullet_enhancer",
-  "project_optimizer",
-  "achievement_rewriter",
   "skill_classifier",
   "skill_deduplicator",
-  "language_formatter",
-  "template_renderer",
   "resume_scorer",
-  "pdf_docx_generator",
-  "json_output",
+  "output",
 ]
 
 _LLM_TIMEOUT_SEC = 35.0
 
-OPEN_DATASET_TREE: dict[str, list[str]] = {
-  "JSON Resume Templates": ["jsonresume", "resume_knowledge"],
-  "ESCO Skills Dataset": ["esco", "resume_knowledge"],
-  "O*NET Occupation Database": ["onet", "wikipedia"],
-  "Kaggle Job Description Dataset": ["kaggle_jobs", "gooaq"],
-  "University Dataset": ["university", "wikidata"],
-  "GeoNames Dataset": ["geonames", "wikidata"],
-  "Resume NER Dataset": ["resume_ner", "resume_knowledge"],
-  "Sentence Transformers": ["sentence_transformers", "local_embeddings"],
-  "Gemma 3 / Llama 3": ["gemma", "llama"],
-  "PDF Generator": ["fpdf", "docx"],
-}
-
-_SOURCE_ROUTE = ["wikipedia", "wikidata", "gooaq"]
-
 _ACTION_VERBS = (
-  "Led", "Built", "Delivered", "Optimized", "Designed", "Implemented",
-  "Automated", "Increased", "Reduced", "Collaborated", "Managed", "Developed",
-)
-_TECH_SKILLS = (
-  "Python", "JavaScript", "SQL", "Git", "REST APIs", "Agile", "Docker",
-  "AWS", "Flutter", "Dart", "React", "Communication", "Problem Solving",
-)
-_SOFT_SKILLS = (
-  "Leadership", "Teamwork", "Communication", "Time Management",
-  "Critical Thinking", "Adaptability", "Stakeholder Management",
+  "Developed", "Built", "Designed", "Implemented", "Delivered", "Optimized",
+  "Created", "Integrated", "Maintained", "Collaborated on",
 )
 
 
@@ -198,7 +188,11 @@ def parse_ner(payload: dict[str, Any], personal: dict[str, Any]) -> dict[str, An
   }
 
 
-def understand_profile(ner: dict[str, Any], personal: dict[str, Any]) -> dict[str, Any]:
+def understand_profile(
+  ner: dict[str, Any],
+  personal: dict[str, Any],
+  profile_text: str = "",
+) -> dict[str, Any]:
   """UNDERSTAND — build career context from parsed entities (not raw echo)."""
   entities = ner.get("entities") or {}
   skills = entities.get("skills") or []
@@ -213,19 +207,20 @@ def understand_profile(ner: dict[str, Any], personal: dict[str, Any]) -> dict[st
   else:
     domain = "software engineering"
 
-  blob = " ".join(str(entities.get(k) or "") for k in ("dates", "organizations"))
-  seniority = "senior" if re.search(r"\b(5|6|7|8|9|10)\+?\s*years?\b", blob, re.I) else (
-    "mid" if re.search(r"\b(2|3|4)\+?\s*years?\b", blob, re.I) or entities.get("organizations") else "entry"
-  )
+  years = extract_years_experience(profile_text)
+  seniority = seniority_from_years(years)
+  years_note = f" Approximately {years} years of experience." if years is not None else ""
   return {
     "domain": domain,
     "seniority": seniority,
+    "years_experience": years,
     "core_skills": skills[:10],
     "target_role": job,
     "organizations": entities.get("organizations") or [],
     "narrative": (
       f"{personal.get('full_name', 'Candidate')} is a {seniority}-level {job} "
       f"in {domain} with strengths in {', '.join(skills[:5]) or 'cross-functional delivery'}."
+      f"{years_note}"
     ),
   }
 
@@ -350,10 +345,7 @@ def normalize_keywords(ats_keywords: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_skills_from_text(text: str | None) -> list[str]:
-  """Parse skills from comma lists or conversational paragraphs."""
-  narrative = extract_skills_from_narrative(text or "")
-  if len(narrative) >= 3:
-    return narrative
+  """Parse skills from comma lists — never invent skills from substring matches."""
   if not text:
     return []
   skip_headers = {
@@ -376,24 +368,24 @@ def _parse_skills_from_text(text: str | None) -> list[str]:
     if re.search(r"\bi\s+(?:have|use|am)\b", p, re.I):
       continue
     items.append(p)
-  merged = narrative + [i for i in items if i.lower() not in {m.lower() for m in narrative}]
-  return list(dict.fromkeys(merged))
+  if items:
+    return normalize_skills_list(items)
+  return extract_skills_from_narrative(text or "")
 
 
 def _esco_skills(job_title: str, existing: str | None, seed: int) -> list[str]:
+  """Return only skills explicitly provided by the user — no invented additions."""
   parsed = _parse_skills_from_text(existing)
-  base = parsed if len(parsed) >= 3 else _skills_for(job_title, job_title)
-  if existing and not parsed:
+  if parsed:
+    return normalize_skills_list(parsed)
+  if existing:
+    items = []
     for part in re.split(r"[,;\n]+", existing):
       p = part.strip()
-      if p and p not in base:
-        base.append(p)
-  extra = list(_TECH_SKILLS) + list(_SOFT_SKILLS)
-  for i in range(4):
-    s = _pick(extra, seed + i)
-    if s not in base:
-      base.append(s)
-  return base[:20]
+      if p:
+        items.append(p)
+    return normalize_skills_list(items)
+  return []
 
 
 def categorize_skills(skills: list[str], job_title: str) -> dict[str, list[str]]:
@@ -413,9 +405,9 @@ def categorize_skills(skills: list[str], job_title: str) -> dict[str, list[str]]
     technical = skills[:6]
     tools = skills[6:]
   return {
-    "technical": technical or skills[:5],
-    "soft": soft or list(_SOFT_SKILLS)[:4],
-    "tools": tools or skills[5:9],
+    "technical": technical,
+    "soft": soft,
+    "tools": tools,
   }
 
 
@@ -443,35 +435,33 @@ def generate_summary_text(
     f"{verb} {title}{years_hint} specializing in {domain}, with deep expertise in {skill_text}. "
     f"Known for measurable impact, cross-functional collaboration, and clean execution "
     f"in fast-paced environments.{context} "
-    f"{narrative or ''} Committed to ATS-optimized, recruiter-ready presentation."
+    f"{narrative or ''} Focused on recruiter-ready, professional presentation."
   ).strip()
 
 
-def optimize_experience(text: str, job_title: str, seed: int, improve: bool = True) -> tuple[str, list[str]]:
+def optimize_experience(
+  text: str,
+  job_title: str,
+  seed: int,
+  improve: bool = True,
+  verbs: list[str] | None = None,
+  skills: list[str] | None = None,
+) -> tuple[str, list[str]]:
   raw = (text or "").strip()
-  if not raw:
-    bullets = [
-      f"- {_pick(list(_ACTION_VERBS), seed)} key initiatives as {job_title}, improving quality and delivery speed.",
-      "- Collaborated with cross-functional teams to ship features on schedule.",
-      "- Applied best practices for maintainable code, documentation, and code reviews.",
-      "- Resolved production issues and optimized performance for better user outcomes.",
-    ]
-    return "\n".join(bullets), bullets
+  if not raw or is_minimal_experience(raw):
+    return format_structured_experience(raw, job_title, skills or [], seed)
 
-  lines = _lines(raw)
+  lines = [ln for ln in _lines(raw) if not is_meta_experience_line(ln)]
   bullets: list[str] = []
   for i, ln in enumerate(lines[:8]):
     ln = re.sub(r"^[\-\*]\s*", "", ln)
-    if not ln:
+    if not ln or is_meta_experience_line(ln):
       continue
-    verb = _pick(list(_ACTION_VERBS), seed + i)
-    if not re.match(r"^[A-Z]", ln):
-      ln = f"{verb} {ln[0].lower() + ln[1:]}" if ln else ln
-    if not ln[0].isupper():
-      ln = f"{verb} {ln}"
+    if not line_has_action_verb(ln):
+      ln = f"Developed {ln[0].lower() + ln[1:]}" if ln else ln
     bullets.append(f"- {ln}" if not ln.startswith("-") else ln)
   if len(bullets) < 3:
-    bullets.append(f"- {_pick(list(_ACTION_VERBS), seed + 9)} scalable solutions aligned with business goals.")
+    bullets = [f"- {b}" for b in build_role_experience_bullets(job_title, skills or [])]
   return "\n".join(bullets), bullets
 
 
@@ -549,23 +539,18 @@ def rewrite_experience(
 
 
 def enhance_bullets(experience: str, seed: int) -> tuple[str, list[str]]:
-  """Strengthen bullets with action verbs and optional metric hints."""
+  """Normalize bullet formatting without injecting random action verbs."""
   lines = _lines(experience)
   if not lines:
     return experience, []
   out: list[str] = []
-  for i, ln in enumerate(lines):
+  for ln in lines:
     ln = re.sub(r"^[\-\*•]\s*", "", ln)
-    if not ln:
+    if not ln or is_meta_experience_line(ln):
       continue
-    verb = _pick(list(_ACTION_VERBS), seed + i)
-    if not re.match(r"^[A-Z]", ln):
-      ln = f"{verb} {ln[0].lower() + ln[1:]}" if ln else ln
-    if "%" not in ln and re.search(r"\d", ln) is None and i % 4 == 0:
-      ln = f"{ln.rstrip('.')}, improving delivery quality and team velocity"
     out.append(f"- {ln}" if not ln.startswith("-") else ln)
-  if len(out) < 3:
-    out.append(f"- {_pick(list(_ACTION_VERBS), seed + 11)} cross-functional outcomes with measurable impact.")
+  if len(out) < 3 and "\n\n" not in experience:
+    out = [f"- {b.lstrip('- ')}" for b in out]
   joined = "\n".join(out)
   return joined, out
 
@@ -575,10 +560,8 @@ def rewrite_achievements(text: str, seed: int) -> str:
 
 
 def format_languages(text: str) -> str:
-  items = [p.strip() for p in re.split(r"[,;\n]+", text or "") if p.strip()]
-  if not items:
-    return ""
-  return "\n".join(f"- {lang}" for lang in items)
+  body, _ = format_languages_section(text)
+  return body
 
 
 def deduplicate_keywords(ats_keywords: dict[str, Any]) -> dict[str, Any]:
@@ -890,57 +873,84 @@ async def run_resume_pipeline(
   stages["input"] = {"template": template, "use_ai": use_ai}
 
   validation = validator(payload)
-  stages["validator"] = validation
   if not validation["valid"]:
     raise ValueError("; ".join(validation["errors"]))
 
-  personal = parse_personal_info(payload)
-  ner = parse_ner(payload, personal)
-  personal = ner.get("personal") or personal
-  understanding = understand_profile(ner, personal)
-  stages["ner_parser"] = {
-    "entity_count": ner.get("entity_count", 0),
-    "entities": ner.get("entities"),
-    "understanding": understanding,
-    "layer": "parse+understand",
+  corrected, spell_meta = spell_correct_payload(payload)
+  stages["spell_corrector"] = spell_meta
+
+  skills_raw = str(corrected.get("skills") or "")
+  norm_skills_text, norm_skills_preview = normalize_skills_text(skills_raw)
+  if norm_skills_text:
+    corrected["skills"] = norm_skills_text
+  stages["skill_normalizer"] = {
+    "normalized_count": len(norm_skills_preview),
+    "skills": norm_skills_preview[:12],
   }
 
-  job = personal["job_title"]
-  docs: list[OpenDoc] = []
-  rag_sources: list[str] = []
-  if use_rag:
-    try:
-      docs = await asyncio.wait_for(
-        retrieve_from_sources(
-          f"{job} resume skills occupation",
-          [job.split()[0]] if job.split() else [job],
-          _SOURCE_ROUTE,
-          per_source=1,
-          seed=seed,
-        ),
-        timeout=4.0,
-      )
-      rag_sources = sorted({d.source for d in docs})
-    except asyncio.TimeoutError:
-      docs = []
+  raw_langs_field = str(corrected.get("languages") or "")
+  if raw_langs_field.strip():
+    norm_langs_text, spoken_lang_meta = normalize_languages_text(raw_langs_field)
+    corrected["languages"] = norm_langs_text
+    stages["spoken_language_validator"] = spoken_lang_meta
+  else:
+    stages["spoken_language_validator"] = {"validated": [], "rejected": [], "count": 0}
 
+  lang_check = validate_language(language, corrected)
+  stages["language_validator"] = lang_check
+  lang_code = lang_check.get("code") or reng.bcp47(language)
+
+  job_early = _clean(corrected.get("job_title"))
+  category = reng.detect_category(job_early)
+  open_ctx = await retrieve_resume_context(
+    job_title=job_early,
+    skills=norm_skills_preview,
+    language=language,
+    category=category,
+    seed=seed,
+    use_rag=use_rag,
+  )
+  stages["open_word_banks"] = {
+    "sources": open_ctx["sources"],
+    "action_verbs": open_ctx["action_verbs"][:10],
+    "esco_category": open_ctx["esco_category"],
+    "kb_hits": len(open_ctx["kb_hits"]),
+    "language_code": open_ctx["language_bank"]["code"],
+  }
+  if open_ctx["skills"]:
+    stages["skill_normalizer"]["open_skill_hints"] = open_ctx["skills"][:8]
+
+  personal = parse_personal_info(corrected)
   profile_blob = " ".join(
-    str(payload.get(k) or "") for k in (
+    str(corrected.get(k) or "") for k in (
       "summary", "experience", "education", "skills", "projects",
       "certifications", "achievements", "languages",
     )
   )
-  preview_skills = list(dict.fromkeys(
-    (ner.get("entities") or {}).get("skills", [])
-    + extract_skills_from_narrative(profile_blob)
-    + _parse_skills_from_text(str(payload.get("skills") or ""))
-  ))
+  ner = parse_ner(corrected, personal)
+  personal = ner.get("personal") or personal
+  understanding = understand_profile(ner, personal, profile_blob)
+  understanding["open_summary_phrases"] = open_ctx.get("summary_phrases") or []
+  understanding["language_labels"] = open_ctx["language_bank"].get("section_labels") or {}
+  stages["ner_parser"] = {
+    "entity_count": ner.get("entity_count", 0),
+    "entities": ner.get("entities"),
+    "understanding": understanding,
+  }
 
-  raw_summary = str(payload.get("summary") or "").strip()
+  job = personal["job_title"]
+  docs = open_ctx["documents"]
+  rag_sources = [s for s in open_ctx["sources"] if s not in ("resume_knowledge", "esco", "onet")]
+
+  preview_skills = normalize_skills_list(list(dict.fromkeys(
+    norm_skills_preview + _parse_skills_from_text(skills_raw)
+  )))
+
+  raw_summary = str(corrected.get("summary") or "").strip()
   summary_draft = rewrite_summary_narrative(
     raw_summary,
     personal,
-    preview_skills or _skills_for(job, job),
+    preview_skills,
     understanding,
     seed,
   )
@@ -948,96 +958,116 @@ async def run_resume_pipeline(
     "personal": personal,
     "understanding": understanding,
     "skills": preview_skills,
-    "experience": payload.get("experience"),
-    "education": payload.get("education"),
+    "experience": corrected.get("experience"),
+    "education": corrected.get("education"),
     "language": language,
     "raw_summary": raw_summary,
+    "variation_seed": seed,
+    "open_phrases": open_ctx.get("summary_phrases") or [],
+    "action_verbs": open_ctx.get("action_verbs") or [],
   }
 
-  raw_experience = str(payload.get("experience") or "").strip()
-  used_narrative_exp = is_narrative_text(raw_experience)
-  if used_narrative_exp:
+  raw_experience = str(corrected.get("experience") or "").strip()
+  if is_minimal_experience(raw_experience):
+    exp_draft, exp_bullets = format_structured_experience(
+      raw_experience, job, preview_skills, seed,
+    )
+    used_narrative_exp = False
+  elif is_narrative_text(raw_experience):
     exp_draft, exp_bullets = rewrite_experience_narrative(raw_experience, job, seed)
+    used_narrative_exp = True
   else:
-    exp_draft, exp_bullets = optimize_experience(raw_experience, job, seed, improve=True)
-
-  projects_raw = str(payload.get("projects") or "").strip()
-  if is_narrative_text(projects_raw):
-    proj_draft = rewrite_projects_narrative(projects_raw, seed)
-  else:
-    proj_draft = correct_grammar(optimize_projects(projects_raw, seed))
+    exp_draft, exp_bullets = optimize_experience(
+      raw_experience, job, seed, improve=True,
+      verbs=open_ctx["action_verbs"], skills=preview_skills,
+    )
+    used_narrative_exp = False
 
   exp_ctx = {**llm_ctx, "draft": exp_draft, "job_title": job}
-  proj_ctx = {**llm_ctx, "draft": proj_draft, "projects": projects_raw}
+  projects_raw = str(corrected.get("projects") or "").strip()
+  projects_fallback = enhance_projects_section(projects_raw, job, preview_skills, seed)
+  proj_ctx = {**llm_ctx, "draft": projects_fallback, "projects": projects_raw}
 
   if llm_active:
     (summary, summary_llm), (experience, exp_llm), (projects_out, proj_llm) = await asyncio.gather(
       _llm_summary(llm, llm_ctx, summary_draft),
       _llm_experience(llm, exp_ctx, exp_draft),
-      _llm_projects(llm, proj_ctx, proj_draft),
+      _llm_projects(llm, proj_ctx, projects_fallback),
     )
   else:
     summary, summary_llm = summary_draft, False
     experience, exp_llm = exp_draft, False
-    projects_out, proj_llm = proj_draft, False
+    projects_out, proj_llm = projects_fallback, False
 
   stages["summary_generator"] = {
     "llm": summary_llm,
     "word_count": len(summary.split()),
-    "layer": "rewrite",
   }
 
   summary = correct_grammar(summary)
-  stages["grammar_corrector"] = {"fields_corrected": ["summary"]}
-
   experience = correct_grammar(experience)
-  exp_bullets = [ln if ln.startswith("-") else f"- {ln}" for ln in _lines(experience) if ln.startswith("-")]
-  stages["experience_rewriter"] = {"llm": exp_llm, "bullets": len(exp_bullets), "layer": "rewrite"}
 
-  if not used_narrative_exp:
-    experience, exp_bullets = enhance_bullets(experience, seed)
-  stages["bullet_enhancer"] = {"bullets": len(exp_bullets), "layer": "enhance"}
+  stages["experience_rewriter"] = {
+    "llm": exp_llm,
+    "bullets": len(exp_bullets),
+    "narrative_input": used_narrative_exp,
+  }
 
   projects_out = correct_grammar(projects_out)
-  stages["project_optimizer"] = {"llm": proj_llm, "lines": len(_lines(projects_out)), "layer": "rewrite"}
+  stages["project_enhancer"] = {"llm": proj_llm, "lines": len(_lines(projects_out))}
 
-  raw_ach = str(payload.get("achievements") or "").strip()
+  raw_ach = str(corrected.get("achievements") or "").strip()
   if is_narrative_text(raw_ach):
     achievements = correct_grammar(rewrite_achievements_narrative(raw_ach, seed))
   else:
     achievements = correct_grammar(rewrite_achievements(raw_ach, seed))
-  stages["achievement_rewriter"] = {"lines": len(_lines(achievements)), "layer": "rewrite"}
 
-  skills_list = parse_skills(payload.get("skills"), job, seed)
-  if not skills_list:
-    skills_list = preview_skills or _skills_for(job, job)
-  skill_groups = classify_skills(skills_list, job)
-  stages["skill_classifier"] = {**skill_groups, "count": len(skills_list)}
-
-  skills_list = deduplicate_skills(skills_list)
-  skill_groups = classify_skills(skills_list, job)
-  stages["skill_deduplicator"] = {"count": len(skills_list), "layer": "optimize"}
-
-  raw_lang = str(payload.get("languages") or "").strip()
-  languages = (
-    rewrite_languages_narrative(raw_lang)
-    if is_narrative_text(raw_lang) else format_languages(raw_lang)
-  ) if raw_lang else ""
-  stages["language_formatter"] = {"items": languages.count("-") if languages else 0}
-
-  raw_edu = str(payload.get("education") or "").strip()
+  raw_edu = str(corrected.get("education") or "").strip()
   education = (
     correct_grammar(rewrite_education_narrative(raw_edu))
     if is_narrative_text(raw_edu) else correct_grammar(process_education(raw_edu))
   ) if raw_edu else ""
-  raw_certs = str(payload.get("certifications") or "").strip()
+
+  raw_certs = str(corrected.get("certifications") or "").strip()
   certifications = (
     correct_grammar(rewrite_certifications_narrative(raw_certs))
     if is_narrative_text(raw_certs) else correct_grammar(process_certifications(raw_certs))
   ) if raw_certs else ""
 
-  skills_display = ", ".join(skills_list)
+  raw_lang = str(corrected.get("languages") or "").strip()
+  if raw_lang:
+    languages, lang_fmt_meta = format_languages_section(raw_lang)
+    stages["languages_formatter"] = lang_fmt_meta
+  else:
+    languages = ""
 
+  grammar_fields = correct_grammar_fields({
+    "summary": summary,
+    "experience": experience,
+    "projects": projects_out,
+    "education": education,
+    "certifications": certifications,
+    "achievements": achievements,
+    "languages": languages,
+  })
+  summary = grammar_fields["summary"]
+  experience = grammar_fields["experience"]
+  projects_out = grammar_fields["projects"]
+  education = grammar_fields["education"]
+  certifications = grammar_fields["certifications"]
+  achievements = grammar_fields["achievements"]
+  languages = grammar_fields["languages"]
+  stages["grammar_corrector"] = {"fields_corrected": list(grammar_fields.keys())}
+
+  skills_list = normalize_skills_list(preview_skills)
+  skill_groups = classify_skills(skills_list, job)
+  stages["skill_classifier"] = {**skill_groups, "count": len(skills_list)}
+
+  skills_list = deduplicate_skills(skills_list)
+  skill_groups = classify_skills(skills_list, job)
+  stages["skill_deduplicator"] = {"count": len(skills_list)}
+
+  skills_display = ", ".join(skills_list)
   data: dict[str, Any] = {
     "personal": personal,
     "summary": summary,
@@ -1053,7 +1083,6 @@ async def run_resume_pipeline(
   resume_md = render_template_output(
     data, personal, template=template, language=language, skill_groups=skill_groups,
   )
-  stages["template_renderer"] = {"template": template, "word_count": len(resume_md.split()), "layer": "format"}
 
   structured = {
     "full_name": personal["full_name"],
@@ -1075,7 +1104,6 @@ async def run_resume_pipeline(
   stages["resume_scorer"] = quality
 
   plain_text = build_export_plain_text(resume_md)
-
   pdf_bytes, pdf_err = generate_pdf_bytes(plain_text, personal["full_name"])
   docx_bytes, docx_err = generate_docx_bytes(plain_text)
   export: dict[str, Any] = {
@@ -1088,19 +1116,16 @@ async def run_resume_pipeline(
     export["pdf_base64"] = base64.b64encode(pdf_bytes).decode("ascii")
   if docx_bytes:
     export["docx_base64"] = base64.b64encode(docx_bytes).decode("ascii")
-  stages["pdf_docx_generator"] = export
-  stages["json_output"] = {
+
+  stages["output"] = {
     "ready": quality.get("resume_ready", False),
-    "llm_stages": {
-      "summary": summary_llm,
-      "experience": exp_llm,
-      "projects": proj_llm,
-    },
-    "layer": "output",
+    "template": template,
+    "word_count": len(resume_md.split()),
+    "export": export,
+    "llm_stages": {"summary": summary_llm, "experience": exp_llm, "projects": proj_llm},
   }
 
   category = reng.detect_category(job)
-  lang_code = reng.bcp47(language)
 
   return {
     "generator_version": GENERATOR_VERSION,
@@ -1146,7 +1171,7 @@ async def run_resume_pipeline(
       "understanding": understanding,
       "skill_groups": skill_groups,
       "retrieval": {"sources_used": rag_sources, "document_count": len(docs)},
-      "llm_used": llm_active,
+      "llm_used": llm_active and (summary_llm or exp_llm),
     },
     "rag": {"enabled": use_rag, "sources_used": rag_sources},
     "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),

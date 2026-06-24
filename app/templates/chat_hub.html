@@ -802,36 +802,9 @@
       return letter;
     }}
     function fmtResume(d) {{
-      const NL = String.fromCharCode(10);
-      const arch = d.architecture || {{}};
-      const q = d.quality || {{}};
-      const comp = (q.completeness_score === 0 || q.completeness_score) ? q.completeness_score : "—";
-      const layers = (arch.layers || []).join(" → ");
-      const lines = [
-        "Resume Builder · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
-        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
-        d.pipeline?.llm_used ? "LLM rewrite: summary + experience + projects" : "Rule-based rewrite (enable Use AI for LLM)",
-        q.resume_ready ? "Resume ready" : "",
-        "",
-        "### Pipeline Layers",
-        layers || "input → parse → understand → enhance → rewrite → optimize → format → output",
-        "",
-        "### Pipeline Architecture",
-        (arch.flow || []).join(" → ") || "—",
-        "",
-        "### Open Datasets",
-        Object.keys(arch.open_datasets || {{}}).join(", ") || "—",
-        "",
-        "### Score",
-        "Completeness: " + comp + "/100",
-        "",
-        "### Resume (Markdown)",
-        d.resume_markdown || d.resume_ai_text || "",
-        "",
-        (d.export?.pdf_available ? "_PDF export included in API response (base64)_" : ""),
-        (d.export?.docx_available ? "_DOCX export included in API response (base64)_" : "")
-      ];
-      return lines.filter(Boolean).join(NL);
+      const md = (d.resume_markdown || d.resume_ai_text || "").trim();
+      if (!md) return "No resume was generated.";
+      return md;
     }}
 
     document.getElementById("generateBtn").onclick = generate;

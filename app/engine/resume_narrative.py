@@ -5,16 +5,37 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.engine.resume_preprocess import (
+  extract_years_experience,
+  format_languages_section,
+  format_years_phrase,
+)
+
 _ACTION_VERBS = (
-  "Led", "Built", "Delivered", "Optimized", "Designed", "Implemented",
-  "Automated", "Developed", "Integrated", "Collaborated", "Managed", "Reduced",
+  "Developed", "Built", "Designed", "Implemented", "Delivered", "Optimized",
+  "Created", "Integrated", "Collaborated on", "Maintained",
 )
 
 _SKILL_CATALOG = (
   "Flutter", "Dart", "Python", "Java", "Kotlin", "Firebase", "React", "Angular",
-  "Android", "iOS", "REST APIs", "GraphQL", "Git", "GitHub", "Docker", "AWS",
-  "MySQL", "SQLite", "PostgreSQL", "GetX", "Provider", "MVVM", "Agile", "Scrum",
+  "Android", "iOS", "REST APIs", "GraphQL", "Git", "GitHub",
+  "MySQL", "SQLite", "PostgreSQL", "GetX", "Provider", "MVVM",
   "Android Studio", "VS Code", "Postman", "JavaScript", "TypeScript", "Node.js",
+)
+
+_RESUME_ACTION_VERBS = frozenset(
+  v.lower() for v in (
+    *_ACTION_VERBS,
+    "Led", "Managed", "Resolved", "Automated", "Improved", "Reduced", "Increased",
+    "Collaborated", "Fixed", "Used", "Worked", "Supported", "Enhanced",
+  )
+)
+
+_META_EXPERIENCE_RE = re.compile(
+  r"^(?:\d+(?:\.\d+)?\s*\+?\s*years?(?:\s+of)?(?:\s+experience)?|"
+  r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,]+\d{4}|"
+  r"\d{4}\s*[–\-]\s*(?:present|current|\w+)|present|current)$",
+  re.I,
 )
 
 _FIRST_PERSON_RE = re.compile(
@@ -65,7 +86,7 @@ def extract_skills_from_narrative(text: str) -> list[str]:
   low = text.lower()
   found: list[str] = []
   for skill in _SKILL_CATALOG:
-    if skill.lower() in low and skill not in found:
+    if re.search(rf"\b{re.escape(skill)}\b", low, re.I) and skill not in found:
       found.append(skill)
   for m in re.finditer(
     r"(?:experience with|skilled in|proficient in|using|use)\s+([^.]+)",
@@ -89,6 +110,104 @@ def _sentences(text: str) -> list[str]:
   return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text or "") if len(s.strip()) > 12]
 
 
+def is_meta_experience_line(line: str) -> bool:
+  ln = (line or "").strip()
+  if not ln:
+    return True
+  if _META_EXPERIENCE_RE.match(ln):
+    return True
+  if re.fullmatch(r"\d+(?:\.\d+)?\s*\+?\s*years?", ln, re.I):
+    return True
+  return False
+
+
+def line_has_action_verb(line: str) -> bool:
+  first = (line.split() or [""])[0].rstrip(".,;:-")
+  return first.lower() in _RESUME_ACTION_VERBS
+
+
+def is_minimal_experience(text: str) -> bool:
+  lines = [ln for ln in re.split(r"[\n;]+", text or "") if ln.strip()]
+  if not lines:
+    return True
+  content_lines = [ln.strip() for ln in lines if not is_meta_experience_line(ln.strip())]
+  return len(content_lines) == 0
+
+
+def _domain_work_phrase(domain: str, title: str, skills: list[str]) -> str:
+  low = f"{title} {domain}".lower()
+  if "flutter" in low or "mobile" in low:
+    return "developing cross-platform mobile applications using Flutter and Dart"
+  if "data" in low or "ml" in low:
+    return "building data-driven solutions and analytics workflows"
+  if "design" in low or "ux" in low:
+    return "designing intuitive user experiences and visual systems"
+  lead = skills[0] if skills else title
+  return f"delivering high-quality work as a {title} with strong command of {lead}"
+
+
+def build_role_experience_bullets(job_title: str, skills: list[str]) -> list[str]:
+  low = (job_title or "").lower()
+  stack = ", ".join(skills[:4]) if skills else "modern development tools"
+  if "flutter" in low or "mobile" in low:
+    return [
+      "Developed and maintained cross-platform mobile applications using Flutter and Dart.",
+      "Integrated REST APIs and Firebase services for authentication and real-time data synchronization.",
+      "Collaborated with backend developers and designers to deliver user-friendly applications.",
+      "Fixed bugs and optimized application performance to improve user experience.",
+      "Used Git for version control and participated in code reviews.",
+    ]
+  return [
+    f"Developed and delivered features as {job_title} using {stack}.",
+    "Collaborated with cross-functional teams to plan, build, test, and release software.",
+    "Resolved defects and improved application quality through debugging and code reviews.",
+    "Applied version control and documentation best practices for maintainable delivery.",
+  ]
+
+
+def parse_experience_header(text: str, job_title: str) -> tuple[str, str, str]:
+  raw = (text or "").strip()
+  company_m = re.search(
+    r"(?:at|@)\s+([A-Z][A-Za-z0-9&.,'()\- ]{2,80}(?:"
+    r"Pvt\.?\s*Ltd\.?|Ltd\.?|LLC|Inc\.?|Technologies|Solutions|Corp\.?)?)",
+    raw,
+    re.I,
+  )
+  date_m = re.search(
+    r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}"
+    r"(?:\s*[–\-]\s*(?:Present|Current|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}))?)",
+    raw,
+    re.I,
+  )
+  role_m = re.search(
+    r"(?:as|working as|worked as|position[:\s]+)\s*(?:a\s+)?([^,.|]+)",
+    raw,
+    re.I,
+  )
+  role = (role_m.group(1).strip() if role_m else job_title).strip()
+  company = (company_m.group(1).strip() if company_m else "").strip()
+  dates = (date_m.group(1).strip() if date_m else "").strip()
+  return role, company, dates
+
+
+def format_structured_experience(
+  text: str,
+  job_title: str,
+  skills: list[str],
+  seed: int,
+) -> tuple[str, list[str]]:
+  role, company, dates = parse_experience_header(text, job_title)
+  header_parts = [role]
+  if company:
+    header_parts.append(company)
+  if dates:
+    header_parts.append(dates)
+  header = "\n".join(header_parts)
+  bullets = build_role_experience_bullets(role, skills)
+  body = header + "\n\n" + "\n".join(f"- {b}" for b in bullets)
+  return body, bullets
+
+
 def rewrite_summary_narrative(
   existing: str,
   personal: dict[str, Any],
@@ -96,21 +215,24 @@ def rewrite_summary_narrative(
   understanding: dict[str, Any] | None,
   seed: int,
 ) -> str:
-  """Professional summary without echoing raw input."""
+  """Professional summary — recruiter tone, no third-person name, user skills only."""
   title = personal.get("job_title") or "Professional"
-  name = (personal.get("full_name") or "Candidate").split()[0]
-  skill_text = ", ".join(skills[:6]) if skills else "modern software delivery"
+  skill_text = ", ".join(skills[:8]) if skills else "relevant technologies"
   domain = (understanding or {}).get("domain", "software engineering")
-  seniority = (understanding or {}).get("seniority", "mid")
-  verb = _pick(_ACTION_VERBS, seed)
-  years = ""
-  if re.search(r"\b(2|3|4|5)\+?\s*years?\b", existing or "", re.I):
-    years = " with 2+ years of hands-on experience"
+  years = (understanding or {}).get("years_experience")
+  if years is None:
+    years = extract_years_experience(existing or "")
+  years_clause = ""
+  if years is not None:
+    label = int(years) if years == int(years) else years
+    years_clause = f" with {label} years of experience"
+
+  work_phrase = _domain_work_phrase(domain, title, skills)
   return (
-    f"{verb} {title}{years} focused on {domain}. Expertise in {skill_text}. "
-    f"Track record of shipping production features, integrating APIs and cloud services, "
-    f"and collaborating with cross-functional teams. {name} brings {seniority}-level ownership, "
-    f"clean code practices, and measurable impact for hiring workflows."
+    f"Results-driven {title}{years_clause} {work_phrase}. "
+    f"Skilled in {skill_text}. "
+    f"Experienced in building scalable applications, integrating cloud services, "
+    f"and collaborating with cross-functional teams to deliver high-quality software solutions."
   )
 
 
@@ -118,6 +240,8 @@ def rewrite_experience_narrative(text: str, job_title: str, seed: int) -> tuple[
   raw = (text or "").strip()
   if not raw:
     return "", []
+  if is_minimal_experience(raw):
+    return format_structured_experience(raw, job_title, [], seed)
 
   blocks = re.split(
     r"\s*(?:Before that|Previously|Earlier|Prior to that)[,.]?\s*",
@@ -173,9 +297,10 @@ def rewrite_experience_narrative(text: str, job_title: str, seed: int) -> tuple[
         continue
       if re.search(r"^(?:on|and|also|the)\b", sent, re.I):
         continue
-      verb = _pick(_ACTION_VERBS, seed + bi + si)
-      if not re.match(r"^[A-Z]", sent):
-        sent = f"{verb} {sent[0].lower() + sent[1:]}" if sent else sent
+      if is_meta_experience_line(sent):
+        continue
+      if not line_has_action_verb(sent):
+        sent = f"Developed {sent[0].lower() + sent[1:]}" if sent else sent
       bullet = f"- {sent.rstrip('.')}."
       if bullet not in bullets:
         bullets.append(bullet)
@@ -185,10 +310,11 @@ def rewrite_experience_narrative(text: str, job_title: str, seed: int) -> tuple[
         if re.search(r"(?:been working as|worked as|working as)\s", sent, re.I):
           continue
         sent = de_first_person(sent)
-        if len(sent) < 18:
+        if len(sent) < 18 or is_meta_experience_line(sent):
           continue
-        verb = _pick(_ACTION_VERBS, seed + bi + si + 5)
-        line = f"- {verb} {sent[0].lower() + sent[1:] if sent else sent}.".replace("..", ".")
+        line = f"- {sent.rstrip('.')}."
+        if not line_has_action_verb(sent):
+          line = f"- Developed {sent[0].lower() + sent[1:] if sent else sent}.".replace("..", ".")
         if line not in bullets:
           bullets.append(line)
         if len(bullets) >= 5:
@@ -196,10 +322,7 @@ def rewrite_experience_narrative(text: str, job_title: str, seed: int) -> tuple[
 
     bullets = bullets[:6]
     if not bullets:
-      bullets = [
-        f"- {_pick(_ACTION_VERBS, seed)} cross-platform features using modern tooling.",
-        f"- {_pick(_ACTION_VERBS, seed + 1)} APIs, cloud services, and version control in agile delivery.",
-      ]
+      bullets = [f"- {b}" for b in build_role_experience_bullets(role, [])]
 
     section = header + "\n\n" + "\n".join(bullets)
     sections.append(section)
@@ -258,7 +381,43 @@ def rewrite_education_narrative(text: str) -> str:
   return "\n".join(f"- {de_first_person(s)}" for s in _sentences(raw)[:4])
 
 
-def rewrite_projects_narrative(text: str, seed: int) -> str:
+def _project_paragraph(name: str, tech: str, job_title: str) -> str:
+  low = name.lower()
+  if "food" in low and "deliver" in low:
+    return (
+      f"Built a cross-platform food delivery application using {tech}. "
+      "Implemented customer, restaurant, and delivery modules with real-time order tracking, "
+      "notifications, and secure API integration."
+    )
+  if "e-commerce" in low or "ecommerce" in low or "commerce" in low:
+    return (
+      f"Developed an e-commerce application with product browsing, shopping cart, user authentication, "
+      f"and payment integration using {tech}. Improved application performance and user experience "
+      "through responsive UI design."
+    )
+  if "face" in low and "detect" in low:
+    return (
+      "Created a face detection application using machine learning techniques for image processing "
+      "and facial recognition. Integrated camera functionality and optimized detection accuracy."
+    )
+  if "todo" in low:
+    return (
+      f"Built a task management application using {tech} with CRUD workflows, local persistence, "
+      "and a responsive interface for daily productivity."
+    )
+  verb = "Built" if "app" in low else "Developed"
+  return (
+    f"{verb} {name} using {tech}. Delivered core features with a focus on performance, "
+    "maintainability, and user experience."
+  )
+
+
+def rewrite_projects_narrative(
+  text: str,
+  job_title: str,
+  skills: list[str],
+  seed: int,
+) -> str:
   raw = (text or "").strip()
   if not raw:
     return ""
@@ -271,31 +430,72 @@ def rewrite_projects_narrative(text: str, seed: int) -> str:
   if len(parts) <= 1:
     parts = _sentences(raw)
 
+  skill_hint = ", ".join(skills[:5]) if skills else "relevant technologies"
   out: list[str] = []
   for i, part in enumerate(parts[:5]):
     part = de_first_person(part)
     title_m = re.match(
-      r"(?:developed|built|created|made|designed)\s+(?:a|an)?\s*([^,.]+)",
+      r"(?:developed|built|created|made|designed)\s+(?:(?:an|a)\s+)?([^,.]+)",
       part,
       re.I,
     )
     title = (title_m.group(1).strip() if title_m else f"Project {i + 1}").strip()
     tech_m = re.findall(
-      r"\b(Flutter|Dart|Firebase|Python|REST APIs?|MySQL|SQLite|Android|iOS)\b",
+      r"\b(Flutter|Dart|Firebase|Python|REST APIs?|MySQL|SQLite|Android|iOS|JavaScript|Node\.js)\b",
       part,
       re.I,
     )
-    tech = ", ".join(dict.fromkeys(t.title() if t.lower() != "rest apis" else "REST APIs" for t in tech_m))
-    verb = _pick(_ACTION_VERBS, seed + i)
-    desc = part
-    if title_m:
-      desc = part[title_m.end():].strip(" .,-")
-    if not desc:
-      desc = part
-    header = f"**{title}**" + (f" | {tech}" if tech else "")
-    body = f"{verb} {desc[0].lower() + desc[1:] if desc and desc[0].isupper() else desc}.".replace("..", ".")
-    out.append(f"{header}\n\n{body}")
+    tech = ", ".join(
+      dict.fromkeys(t.title() if t.lower() != "rest apis" else "REST APIs" for t in tech_m)
+    ) or skill_hint
+    title = re.sub(r"\s+using\s+.+$", "", title, flags=re.I).strip()
+    paragraph = _project_paragraph(title, tech, job_title)
+    out.append(f"**{title}**\n{paragraph}")
   return "\n\n".join(out)
+
+
+def optimize_projects_structured(
+  text: str,
+  job_title: str,
+  skills: list[str],
+  seed: int,
+) -> str:
+  """Expand project lines into title + natural paragraph (no template verb spam)."""
+  lines = []
+  for ln in (text or "").splitlines():
+    ln = re.sub(r"^[\-\*\•\d]+[\).\s]+", "", ln.strip())
+    if ln:
+      lines.append(ln)
+  if not lines:
+    return ""
+
+  skill_hint = ", ".join(skills[:5]) if skills else "relevant technologies"
+  out: list[str] = []
+  for i, ln in enumerate(lines[:6]):
+    if "|" in ln:
+      name, tech = [p.strip() for p in ln.split("|", 1)]
+    elif "—" in ln:
+      name, tech = [p.strip() for p in ln.split("—", 1)]
+    else:
+      name, tech = ln.strip(), skill_hint
+    name = re.sub(r"\s+using\s+.+$", "", name, flags=re.I).strip()
+    paragraph = _project_paragraph(name, tech, job_title)
+    out.append(f"**{name}**\n{paragraph}")
+  return "\n\n".join(out)
+
+
+def enhance_projects_section(
+  text: str,
+  job_title: str,
+  skills: list[str],
+  seed: int,
+) -> str:
+  raw = (text or "").strip()
+  if not raw:
+    return ""
+  if is_narrative_text(raw):
+    return rewrite_projects_narrative(raw, job_title, skills, seed)
+  return optimize_projects_structured(raw, job_title, skills, seed)
 
 
 def rewrite_certifications_narrative(text: str) -> str:
@@ -337,20 +537,8 @@ def rewrite_achievements_narrative(text: str, seed: int) -> str:
 
 
 def rewrite_languages_narrative(text: str) -> str:
-  raw = (text or "").strip()
-  if not raw:
-    return ""
-  items: list[str] = []
-  if re.search(r"english", raw, re.I):
-    prof = "Native" if re.search(r"native english", raw, re.I) else "Professional Working Proficiency"
-    items.append(f"- English – {prof}")
-  if re.search(r"hindi", raw, re.I):
-    items.append("- Hindi – Native Proficiency")
-  if re.search(r"gujarati", raw, re.I):
-    items.append("- Gujarati – Native Proficiency")
-  if items:
-    return "\n".join(items)
-  return "\n".join(f"- {s.strip()}" for s in re.split(r"[,;\n]+", raw) if s.strip())
+  body, _ = format_languages_section(text)
+  return body
 
 
 def is_narrative_text(text: str) -> bool:
