@@ -22,6 +22,9 @@ class TitleMetaVariation(BaseModel):
   meta_length: int
   angle: str = ""
   quality_score: int = 0
+  seo_score: int = 0
+  ctr_score: int = 0
+  overall_score: int = 0
   seo_ready: bool = False
   issues: list[str] = Field(default_factory=list)
 

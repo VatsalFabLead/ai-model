@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TITLE_META_KB_PATH = PROJECT_ROOT / "data" / "title_meta_knowledge.jsonl"
 
 TITLE_MAX = 60
-META_MIN = 120
+META_MIN = 140
 META_MAX = 160
 
 _VALID_TONES = ["professional", "casual", "friendly", "formal"]
@@ -100,26 +100,15 @@ def supported_languages() -> list[dict[str, str]]:
 
 
 def quality_variation(title: str, meta: str, topic: str) -> dict[str, Any]:
-  issues: list[str] = []
-  score = 100
-  tl, ml = len(title), len(meta)
-  topic_l = topic.lower()
+  from app.engine.title_meta_enrichment import score_metadata_pair
 
-  if tl > TITLE_MAX:
-    issues.append("title_too_long"); score -= 15
-  elif tl < 25:
-    issues.append("title_short"); score -= 8
-  if ml > META_MAX:
-    issues.append("meta_too_long"); score -= 12
-  elif ml < META_MIN:
-    issues.append("meta_short"); score -= 12
-  if topic_l and topic_l.split()[0] not in title.lower():
-    issues.append("keyword_not_in_title_start"); score -= 10
-  if not any(c in meta for c in ".!?"):
-    issues.append("meta_no_cta_punctuation"); score -= 5
-
+  intent = {"primary": "informational", "ctr_pattern": "guide"}
+  scores = score_metadata_pair(title, meta, topic, intent, 0)
   return {
-    "quality_score": max(0, min(100, score)),
-    "seo_ready": score >= 75,
-    "issues": issues,
+    "quality_score": scores["overall_score"],
+    "seo_ready": scores["seo_ready"],
+    "issues": scores["issues"],
+    "seo_score": scores["seo_score"],
+    "ctr_score": scores["ctr_score"],
+    "overall_score": scores["overall_score"],
   }

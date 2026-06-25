@@ -18,7 +18,7 @@ SCHEMA_KB_PATH = PROJECT_ROOT / "data" / "schema_knowledge.jsonl"
 
 _SCHEMA_TYPES = [
   # Content & publishing
-  "Article", "NewsArticle", "Blog", "WebPage", "WebSite", "FAQPage", "HowTo",
+  "Article", "NewsArticle", "Blog", "BlogPosting", "WebPage", "WebSite", "FAQPage", "HowTo",
   "Review", "AggregateRating", "BreadcrumbList", "SitelinksSearchBox",
   # E-commerce & products
   "Product", "Offer", "Brand", "Store",
@@ -38,7 +38,7 @@ _CATEGORIES: dict[str, dict[str, Any]] = {
     "label": "Content & Publishing",
     "description": "Articles, blogs, news, FAQs, and how-to guides",
     "types": [
-      "Article", "NewsArticle", "Blog", "WebPage", "FAQPage", "HowTo",
+      "Article", "NewsArticle", "Blog", "BlogPosting", "WebPage", "FAQPage", "HowTo",
       "Review", "AggregateRating", "BreadcrumbList",
     ],
   },
@@ -96,6 +96,7 @@ _SCHEMA_HELP: dict[str, str] = {
   "Article": "Blog posts, guides, and editorial content",
   "NewsArticle": "Breaking news and journalism",
   "Blog": "Blog homepage or blog section",
+  "BlogPosting": "Individual blog post (Schema.org BlogPosting)",
   "WebPage": "Any standard web page",
   "WebSite": "Entire website metadata",
   "FAQPage": "Frequently asked questions page",
@@ -312,7 +313,13 @@ def sanitize_schema(obj: dict[str, Any], schema_type: str) -> dict[str, Any]:
 
   def _strip_empty(d: Any) -> Any:
     if isinstance(d, dict):
-      cleaned = {k: _strip_empty(v) for k, v in d.items() if v is not None and v != "" and v != []}
+      cleaned: dict[str, Any] = {}
+      for k, v in d.items():
+        if v is None or v == "":
+          continue
+        if v == [] and k != "itemListElement":
+          continue
+        cleaned[k] = _strip_empty(v)
       return cleaned
     if isinstance(d, list):
       return [_strip_empty(x) for x in d if x is not None and x != ""]
@@ -333,25 +340,22 @@ def apply_global_enrichment(
   labels = locale_labels(language)
 
   if schema_type in {
-    "Article", "NewsArticle", "Blog", "WebPage", "HowTo", "FAQPage",
+    "Article", "NewsArticle", "Blog", "BlogPosting", "WebPage", "HowTo", "FAQPage",
     "Product", "Course", "Recipe", "Event", "VideoObject", "Book", "Movie",
   }:
     schema.setdefault("inLanguage", lang)
 
   if schema_type in {"Article", "NewsArticle", "Blog", "WebPage"}:
     schema.setdefault("isAccessibleForFree", True)
-    if not schema.get("author"):
-      schema["author"] = {"@type": "Person", "name": labels["author"]}
-    if not schema.get("publisher"):
-      schema["publisher"] = {"@type": "Organization", "name": labels["publisher"]}
 
   if schema_type == "WebSite" and not schema.get("potentialAction"):
-    site_url = str(data.get("url") or schema.get("url") or "https://example.com")
-    schema["potentialAction"] = {
-      "@type": "SearchAction",
-      "target": f"{site_url.rstrip('/')}/search?q={{search_term_string}}",
-      "query-input": "required name=search_term_string",
-    }
+    site_url = data.get("url") or schema.get("url")
+    if site_url and "{{" not in str(site_url):
+      schema["potentialAction"] = {
+        "@type": "SearchAction",
+        "target": f"{str(site_url).rstrip('/')}/search?q={{search_term_string}}",
+        "query-input": "required name=search_term_string",
+      }
 
   if schema_type == "Organization" and not schema.get("logo") and data.get("logo"):
     schema["logo"] = str(data["logo"])

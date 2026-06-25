@@ -187,7 +187,13 @@
           {{ id: "name", label: "Name / title *", type: "text", required: true }},
         ],
         endpoint: "/schema-markup/generate",
-        build: (f, useAi) => ({{ schema_type: f.schema_type, name: f.name, data: {{}}, ai_enhance: useAi }}),
+        build: (f, useAi) => ({{
+          schema_type: f.schema_type,
+          name: f.name,
+          data: {{}},
+          ai_enhance: false,
+          use_rag: useAi
+        }}),
         format: fmtSchema
       }},
       {{ id: "email_new", label: "Email Assistant — New", desc: "Subject, tone, context",
@@ -419,7 +425,8 @@
         }} else {{
           const body = activeTool.build(fields, useAi);
           const timeoutMs = (activeTool.id === "resume" || activeTool.id === "cover_letter")
-            ? (useAi ? 180000 : 90000) : 120000;
+            ? (useAi ? 180000 : 90000)
+            : (activeTool.id === "schema" ? (useAi ? 45000 : 30000) : 120000);
           const {{ res, data }} = await fetchJson(API + activeTool.endpoint, {{
             method: "POST", headers: headers(), body: JSON.stringify(body)
           }}, timeoutMs);
@@ -672,7 +679,9 @@
       ];
       return lines.filter(Boolean).join(NL);
     }}
-    function fmtSchema(d) {{ return "**Type:** " + d.schema_type + "\\n**Score:** " + d.quality?.completeness_score + "/100\\n\\n```json\\n" + d.jsonld_string + "\\n```"; }}
+    function fmtSchema(d) {{
+      return d.jsonld_string || JSON.stringify(d.jsonld, null, 2);
+    }}
     function fmtEmail(d) {{ return "**Subject:** " + d.subject + "\\n**Tone:** " + d.tone + "\\n\\n" + d.email; }}
     function fmtPlagiarism(d) {{
       return d.summary + "\\nSimilarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
