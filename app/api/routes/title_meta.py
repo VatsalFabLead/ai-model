@@ -70,6 +70,7 @@ class TitleMetaResponse(BaseModel):
   variation_seed: int | None = None
   architecture: dict[str, Any] | None = None
   pipeline: dict[str, Any] | None = None
+  policy: dict[str, Any] | None = None
   rag: dict[str, Any] | None = None
   elapsed_ms: float | None = None
 

@@ -174,16 +174,74 @@ async def _fetch_wikipedia_titles(client: httpx.AsyncClient, seed: str, *, lang:
   return titles
 
 
-def _expansion_queries(seed: str, *, include_questions: bool, include_alphabet: bool) -> list[str]:
+def _query_seed(seed: str, context: dict[str, Any] | None = None) -> str:
+  """Short seed for suggest APIs — full seed is kept in pipeline output."""
+  if context:
+    parts = context.get("topic_parts") or []
+    if parts:
+      return _clean(parts[0])[:180]
+    core = context.get("core_topic")
+    if core:
+      return _clean(str(core))[:180]
+  if "," in seed:
+    return _clean(seed.split(",")[0])[:180]
+  return _clean(seed)[:180]
+
+
+def _infer_services_from_tokens(tokens: list[str]) -> list[str]:
+  joined = " ".join(tokens)
+  catalog: dict[str, list[str]] = {
+    "flutter": ["flutter app development", "flutter development company", "hire flutter developers"],
+    "mobile": ["mobile app development company", "mobile app development services"],
+    "erp": ["erp development company", "custom erp development"],
+    "crm": ["crm development services", "custom crm development"],
+    "ai": ["ai software development company", "ai development services"],
+    "software": ["custom software development", "software development company"],
+    "app": ["app development company", "custom app development"],
+  }
+  services: list[str] = []
+  for hint, phrases in catalog.items():
+    if hint in joined:
+      services.extend(phrases)
+  return services or [
+    "software development company",
+    "mobile app development company",
+    "custom software development",
+    "app development services",
+  ]
+
+
+def _expansion_queries(
+  seed: str,
+  *,
+  include_questions: bool,
+  include_alphabet: bool,
+  context: dict[str, Any] | None = None,
+) -> list[str]:
   seed = _clean(seed)
   queries = [seed]
-  if include_questions:
-    for prefix in _QUESTION_PREFIXES:
-      queries.append(f"{prefix} {seed}")
-  if include_alphabet:
-    for ch in _ALPHABET_SOUP:
+  ctx = context or {}
+  services = ctx.get("services") or _infer_services_from_tokens(
+    [t for t in re.findall(r"\w+", seed.lower()) if len(t) > 2]
+  )
+  brand = ctx.get("brand_name", seed)
+
+  if ctx.get("is_brand_seed") or len(seed.split()) >= 3:
+    for svc in services[:6]:
+      queries.append(svc)
+      if include_questions:
+        queries.append(f"how to choose {svc} company")
+        queries.append(f"best {svc}")
+        queries.append(f"hire {svc.split()[0]} developers")
+    queries.append(brand)
+  else:
+    if include_questions:
+      for prefix in _QUESTION_PREFIXES[:5]:
+        queries.append(f"{prefix} {seed}")
+  if include_alphabet and len(seed.split()) <= 3:
+    for ch in _ALPHABET_SOUP[:8]:
       queries.append(f"{seed} {ch}")
-  return queries
+  return list(dict.fromkeys(queries))
 
 
 async def discover_keywords(
@@ -193,6 +251,7 @@ async def discover_keywords(
   include_questions: bool = True,
   include_alphabet: bool = True,
   timeout: float = 8.0,
+  context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
   """Search multiple public sources and return ranked related keyword ideas."""
   seed = _clean(seed_keyword)
@@ -201,7 +260,10 @@ async def discover_keywords(
 
   hl = _hl_for_language(language)
   wiki_lang = hl if hl in {"en", "hi", "es", "fr", "de", "pt", "ar"} else "en"
-  expansions = _expansion_queries(seed, include_questions=include_questions, include_alphabet=include_alphabet)
+  query_seed = _query_seed(seed, context)
+  expansions = _expansion_queries(
+    query_seed, include_questions=include_questions, include_alphabet=include_alphabet, context=context,
+  )
 
   candidates: dict[str, KeywordCandidate] = {}
   sources_used: set[str] = set()
@@ -240,21 +302,21 @@ async def discover_keywords(
 
     async def _bing() -> None:
       try:
-        items = await _fetch_bing_suggest(client, seed)
+        items = await _fetch_bing_suggest(client, query_seed)
         _add_many(items, "bing_suggest")
       except Exception as exc:
         errors.append(f"bing:{type(exc).__name__}")
 
     async def _datamuse() -> None:
       try:
-        items = await _fetch_datamuse(client, seed)
+        items = await _fetch_datamuse(client, query_seed)
         _add_many(items, "datamuse")
       except Exception as exc:
         errors.append(f"datamuse:{type(exc).__name__}")
 
     async def _wiki() -> None:
       try:
-        items = await _fetch_wikipedia_titles(client, seed, lang=wiki_lang)
+        items = await _fetch_wikipedia_titles(client, query_seed, lang=wiki_lang)
         _add_many(items, "wikipedia")
       except Exception as exc:
         errors.append(f"wikipedia:{type(exc).__name__}")

@@ -15,16 +15,29 @@ router = APIRouter(prefix="/seo-keywords", tags=["seo-keywords"])
 
 class KeywordItem(BaseModel):
   keyword: str
-  search_volume: int
-  difficulty: int
-  cpc_usd: float
-  competition: int
+  category: str = "secondary"
+  topic_cluster: str = "General"
+  volume_estimate: str
+  volume_label: str
+  volume_range: str
+  difficulty_estimate: str
+  difficulty_label: str
+  cpc_estimate: str
+  cpc_label: str
+  cpc_range: str
+  competition_estimate: str
+  competition_label: str
   trend: str
+  trend_icon: str = "➜"
+  trend_monthly: list[int] = Field(default_factory=list)
+  trend_chart: str = ""
   intent: str
   relevance_score: int = 0
   sources: list[str] = Field(default_factory=list)
   seo_score: int = 0
   opportunity_score: int | None = None
+  opportunity_breakdown: dict[str, Any] | None = None
+  metrics_source: str = "ai_estimate"
 
 
 class DiscoveryMeta(BaseModel):
@@ -35,7 +48,12 @@ class DiscoveryMeta(BaseModel):
 
 
 class SeoKeywordRequest(BaseModel):
-  seed_keyword: str = Field(..., min_length=1, max_length=200, examples=["digital marketing"])
+  seed_keyword: str = Field(
+    ...,
+    min_length=1,
+    examples=["Fablead Developers Technolab"],
+    description="Seed keyword, topic, or full brief — no character limit",
+  )
   variations: int = Field(default=10, ge=10, le=50, description="10–50 unique keywords per request")
   max_items: int | None = Field(default=None, ge=10, le=50, description="Alias for variations")
   tone: str | None = Field(default=None, examples=["informative", "professional"])
@@ -51,15 +69,21 @@ class SeoKeywordRequest(BaseModel):
 class SeoKeywordResponse(BaseModel):
   seed_keyword: str
   count: int
-  summary: dict[str, int]
+  summary: dict[str, Any]
   keywords: list[KeywordItem]
+  keyword_categories: dict[str, list[KeywordItem]] | None = None
   discovery: DiscoveryMeta
   generator_version: str | None = None
   variation_seed: int | None = None
+  metrics_source: str | None = None
+  metrics_disclaimer: str | None = None
   architecture: dict[str, Any] | None = None
   pipeline: dict[str, Any] | None = None
   clusters: list[dict[str, Any]] | None = None
+  topic_clusters: dict[str, list[Any]] | None = None
   opportunities: list[dict[str, Any]] | None = None
+  output: dict[str, Any] | None = None
+  recommendations: list[str] | None = None
   seo_score: dict[str, Any] | None = None
   rag: dict[str, Any] | None = None
   elapsed_ms: float | None = None
@@ -75,9 +99,20 @@ async def keyword_version(_: str = Depends(verify_api_key)) -> dict[str, str]:
 
 @router.get("/pipeline")
 async def pipeline_architecture(_: str = Depends(verify_api_key)) -> dict[str, Any]:
-  from app.engine.seo_keyword_rag_pipeline import ARCHITECTURE_FLOW, OPEN_DATASET_TREE
+  from app.engine.seo_keyword_enrichment import ARCHITECTURE_FLOW, OPEN_DATASET_TREE
+  from app.engine.seo_keyword_domains import DOMAIN_CATALOG, DOMAIN_COUNT, MASTER_DOMAINS
+  from app.engine.seo_keyword_open_data import DATASET_STACK
+  from app.engine.seo_keyword_rag_pipeline import GENERATOR_VERSION
 
-  return {"flow": ARCHITECTURE_FLOW, "open_datasets": OPEN_DATASET_TREE}
+  return {
+    "version": GENERATOR_VERSION,
+    "flow": ARCHITECTURE_FLOW,
+    "open_datasets": OPEN_DATASET_TREE,
+    "dataset_stack": DATASET_STACK,
+    "domain_catalog": DOMAIN_CATALOG,
+    "domain_count": DOMAIN_COUNT,
+    "stages": len(ARCHITECTURE_FLOW),
+  }
 
 
 @router.post("/generate", response_model=SeoKeywordResponse)

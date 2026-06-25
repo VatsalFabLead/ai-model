@@ -93,8 +93,9 @@ async def generate(
   )
 
   items: list[dict[str, Any]] = list(result["variations"])
+  policy = result.get("policy") or {}
 
-  if use_ai and provider is not None and len(items) < n:
+  if use_ai and provider is not None and len(items) < n and not policy.get("safe_mode"):
     lang_line = f" Write in {language}." if language else ""
     try:
       raw = await provider.chat(
@@ -145,6 +146,7 @@ async def generate(
     "ai": {"enabled": use_ai, "model_used": ai_used},
     "generator_version": result.get("generator_version"),
     "variation_seed": result.get("variation_seed"),
+    "policy": policy,
     "architecture": result.get("architecture"),
     "pipeline": result.get("pipeline"),
     "rag": result.get("rag"),

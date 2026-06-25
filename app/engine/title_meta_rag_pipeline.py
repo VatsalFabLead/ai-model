@@ -34,14 +34,25 @@ from app.engine.title_meta_enrichment import (
   trim_title,
   validate_metadata_pair,
 )
+from app.engine.seo_keyword_enrichment import normalize_seed_typos
 
-GENERATOR_VERSION = "title-meta-rag-v3.0"
+from app.engine.title_meta_policy import (
+  analyze_topic_policy,
+  filter_policy_compliant,
+  generate_safe_variations,
+  validate_policy_compliance,
+)
+
+GENERATOR_VERSION = "title-meta-rag-v3.1"
 
 ARCHITECTURE_FLOW = [
   "input",
   "input_validator",
+  "spell_correction",
   "keyword_extractor",
   "entity_extractor",
+  "entity_disambiguation",
+  "policy_analyzer",
   "intent_detector",
   "content_analyzer",
   "serp_pattern_analyzer",
@@ -51,6 +62,7 @@ ARCHITECTURE_FLOW = [
   "length_validator",
   "duplicate_checker",
   "seo_scorer",
+  "policy_validator",
   "quality_validator",
   "final_output",
 ]
@@ -285,18 +297,41 @@ async def run_title_meta_pipeline(
   t0 = time.perf_counter()
   seed = effective_variation_seed(variation_seed)
   count = max(10, min(50, variations))
-  topic = _topic_clean(topic)
+  raw_topic = _topic_clean(topic)
+  corrected = normalize_seed_typos(raw_topic)
+  topic = corrected
   stages: dict[str, Any] = {}
 
   stages["input"] = {"topic": topic, "requested_variations": count}
   stages["input_validator"] = {"valid": bool(topic), "normalized": normalize_topic_phrase(topic)}
+  stages["spell_correction"] = {
+    "original": raw_topic,
+    "corrected": corrected,
+    "applied": corrected != raw_topic,
+  }
 
   kw = extract_keywords(topic)
   stages["keyword_extractor"] = kw
 
+  policy = analyze_topic_policy(topic, kw)
+  stages["policy_analyzer"] = {
+    "profile": policy["profile"],
+    "policy_status": policy["policy_status"],
+    "skip_open_retrieval": policy["skip_open_retrieval"],
+    "use_safe_templates": policy["use_safe_templates"],
+    "message": policy.get("message"),
+  }
+  stages["entity_disambiguation"] = {
+    "candidates": policy.get("entity_candidates", []),
+    "resolved": policy.get("resolved_entity"),
+    "method": policy.get("disambiguation_method"),
+    "confidence": policy.get("disambiguation", {}).get("confidence"),
+  }
+
   docs: list[OpenDoc] = []
   sources_used: list[str] = []
-  if use_rag:
+  rag_enabled = use_rag and not policy["skip_open_retrieval"]
+  if rag_enabled:
     try:
       docs = await asyncio.wait_for(
         retrieve_from_sources(topic, kw.get("secondary", []), _SOURCE_ROUTE[:3], per_source=1, seed=seed),
@@ -307,41 +342,60 @@ async def run_title_meta_pipeline(
       docs = []
     stages["source_router"] = {"sources": _SOURCE_ROUTE[:3], "datasets": OPEN_DATASET_TREE}
   else:
-    stages["source_router"] = {"sources": [], "fast_path": "local_templates", "datasets": OPEN_DATASET_TREE}
+    stages["source_router"] = {
+      "sources": [],
+      "fast_path": "safe_templates" if policy["use_safe_templates"] else "local_templates",
+      "datasets": OPEN_DATASET_TREE,
+      "skipped_reason": policy.get("message") or "policy_gate",
+    }
 
-  stages["retriever"] = {"document_count": len(docs), "sources_used": sources_used}
+  stages["retriever"] = {"document_count": len(docs), "sources_used": sources_used, "enabled": rag_enabled}
 
   entities = extract_entities(topic, docs)
+  if policy.get("resolved_entity"):
+    entities = list(dict.fromkeys([policy["resolved_entity"], *entities]))[:12]
   stages["entity_extractor"] = {"entities": entities}
 
   intent = detect_intent(topic, kw, category)
+  if policy["policy_status"] == "restricted_informational":
+    intent = {**intent, "primary": "informational", "policy_adjusted": True}
   stages["intent_detector"] = intent
 
-  serp = analyze_serp_patterns(docs, topic)
+  serp = analyze_serp_patterns(docs, topic) if docs else {
+    "patterns": ["informational_guide", "safety_overview"],
+    "recommended": ["informational_guide"],
+    "policy_mode": policy["profile"],
+  }
   stages["serp_pattern_analyzer"] = serp
   stages["content_analyzer"] = {
-    "profile": kw.get("profile"),
+    "profile": policy.get("profile") or kw.get("profile"),
     "long_tail": kw.get("long_tail", [])[:5],
+    "content_profile": policy.get("profile"),
   }
 
-  facts = sanitize_facts_from_docs(docs, topic) if docs else []
-  ctx = VariationContext(
-    topic=topic,
-    topic_title=topic_display(topic),
-    keywords=kw,
-    entities=entities,
-    intent=intent,
-    serp=serp,
-    tone=tone,
-    category=category,
-    seed=seed,
-    facts=facts,
-  )
+  if policy["use_safe_templates"]:
+    raw_items = generate_safe_variations(topic, policy, count=count + 5, seed=seed)
+    stages["title_generator"] = {"mode": "policy_safe", "candidates": len(raw_items)}
+    stages["meta_generator"] = {"mode": "informational_only", "tone": tone, "promotional": False}
+  else:
+    facts = sanitize_facts_from_docs(docs, topic) if docs else []
+    ctx = VariationContext(
+      topic=topic,
+      topic_title=topic_display(topic),
+      keywords=kw,
+      entities=entities,
+      intent=intent,
+      serp=serp,
+      tone=tone,
+      category=category,
+      seed=seed,
+      facts=facts,
+    )
+    raw_items = generate_variations(ctx, count + 5)
+    stages["title_generator"] = {"mode": "synthesized", "candidates": len(raw_items)}
+    stages["meta_generator"] = {"mode": "ctr_optimized", "tone": tone, "no_snippet_paste": True}
 
-  raw_items = generate_variations(ctx, count + 5)
-  stages["title_generator"] = {"mode": "synthesized", "candidates": len(raw_items)}
-  stages["meta_generator"] = {"mode": "ctr_optimized", "tone": tone, "no_snippet_paste": True}
-  stages["ctr_optimizer"] = {"applied": True, "cta_in_meta": True}
+  stages["ctr_optimizer"] = {"applied": not policy["use_safe_templates"], "cta_in_meta": not policy["block_promotional"]}
 
   raw_items, len_notes = validate_lengths(raw_items)
   stages["length_validator"] = {"adjusted": len(len_notes), "notes": len_notes[:5]}
@@ -349,7 +403,21 @@ async def run_title_meta_pipeline(
   raw_items, dup_removed = dedupe_variations(raw_items)
   stages["duplicate_checker"] = {"removed": dup_removed, "unique": len(raw_items)}
 
-  raw_items = score_variations(raw_items, topic, intent)
+  if not policy["use_safe_templates"]:
+    raw_items = score_variations(raw_items, topic, intent)
+
+  pre_policy = len(raw_items)
+  raw_items = filter_policy_compliant(raw_items, policy)
+  stages["policy_validator"] = {
+    "policy_status": policy["policy_status"],
+    "passed": len(raw_items),
+    "rejected": pre_policy - len(raw_items),
+    "block_promotional": policy.get("block_promotional", False),
+  }
+
+  if policy["use_safe_templates"] and len(raw_items) < count:
+    raw_items = generate_safe_variations(topic, policy, count=count + 5, seed=seed + 17)
+
   stages["seo_scorer"] = {
     "avg_overall": int(round(sum(v.get("overall_score", 0) for v in raw_items) / max(1, len(raw_items)))),
     "avg_seo": int(round(sum(v.get("seo_score", 0) for v in raw_items) / max(1, len(raw_items)))),
@@ -362,7 +430,10 @@ async def run_title_meta_pipeline(
     "min_score": 70,
     "rejected_pollution": sum(1 for v in raw_items if is_polluted_metadata(v.get("meta_description", ""))),
   }
-  stages["final_output"] = {"variation_count": len(final_items)}
+  stages["final_output"] = {
+    "variation_count": len(final_items),
+    "policy_status": policy["policy_status"],
+  }
 
   avg_quality = int(round(sum(v.get("overall_score", v.get("quality_score", 0)) for v in final_items) / max(1, len(final_items))))
 
@@ -377,6 +448,13 @@ async def run_title_meta_pipeline(
     "title_limit": tme.TITLE_MAX,
     "meta_min": tme.META_MIN,
     "meta_max": tme.META_MAX,
+    "policy": {
+      "status": policy["policy_status"],
+      "profile": policy["profile"],
+      "resolved_entity": policy.get("resolved_entity"),
+      "message": policy.get("message"),
+      "safe_mode": policy["use_safe_templates"],
+    },
     "quality": {
       "average_score": avg_quality,
       "seo_ready": avg_quality >= 75,
@@ -392,9 +470,11 @@ async def run_title_meta_pipeline(
       "entities": entities,
       "intent": intent,
       "serp_patterns": serp,
-      "retrieval": {"sources_used": sources_used, "document_count": len(docs)},
+      "policy": policy,
+      "disambiguation": policy.get("disambiguation"),
+      "retrieval": {"sources_used": sources_used, "document_count": len(docs), "enabled": rag_enabled},
     },
-    "rag": {"enabled": use_rag, "sources_used": sources_used},
+    "rag": {"enabled": rag_enabled, "sources_used": sources_used},
     "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
     "unlimited_outputs": True,
     "per_request_unique": True,

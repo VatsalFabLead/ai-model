@@ -79,8 +79,12 @@ async def generate_keywords(
   )
 
   items: list[dict[str, Any]] = list(result["keywords"])
+  entities_detected = (
+    result.get("pipeline", {}).get("entities")
+    or result.get("architecture", {}).get("stages", {}).get("named_entity_recognition", {}).get("entities")
+  )
 
-  if use_ai and provider is not None:
+  if use_ai and provider is not None and entities_detected:
     preview = ", ".join(k["keyword"] for k in items[:10])
     try:
       raw = await provider.chat(
@@ -93,14 +97,21 @@ async def generate_keywords(
         max_tokens=300,
         temperature=0.75,
       )
-      from app.engine.seo_keyword_rag_pipeline import build_keyword_row
+      from app.engine.seo_keyword_rag_pipeline import build_keyword_row, parse_input_context
 
       seed = result.get("variation_seed") or 0
       existing = {k["keyword"].lower() for k in items}
+      ctx = result.get("pipeline", {}).get("context") or parse_input_context(
+        seed_keyword, [], [],
+      )
       for i, kw in enumerate(_parse_ai_lines(raw, seed_keyword, 5)):
         if kw.lower() not in existing:
           row = build_keyword_row(
-            kw, seed=seed_keyword, sources=["ai"], relevance=50, variation_seed=seed + 900 + i,
+            kw,
+            context=ctx,
+            sources=["ai"],
+            relevance=50,
+            variation_seed=seed + 900 + i,
           )
           items.append(row)
           existing.add(kw.lower())
@@ -108,6 +119,8 @@ async def generate_keywords(
       result["ai"] = {"enabled": True, "model_used": True}
     except Exception:
       result["ai"] = {"enabled": True, "model_used": False}
+  elif use_ai and provider is not None:
+    result["ai"] = {"enabled": True, "model_used": False, "reason": "entities_required_before_llm"}
   else:
     result["ai"] = {"enabled": use_ai, "model_used": False}
 

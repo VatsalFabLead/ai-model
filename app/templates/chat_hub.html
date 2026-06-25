@@ -114,6 +114,7 @@
   <script>
     const API = "{api_prefix}";
     const TONES = ["professional", "casual", "friendly", "formal", "confident", "enthusiastic", "persuasive"];
+    const EMAIL_TONES = ["professional", "casual", "friendly", "formal"];
     const SCHEMA_TYPES = [
       "Article","Product","LocalBusiness","FAQPage","Organization","Recipe","Person",
       "WebSite","WebPage","Blog","NewsArticle","HowTo","Review","AggregateRating",
@@ -165,9 +166,9 @@
         }}),
         format: fmtTitleMeta
       }},
-      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "Seed keyword",
+      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "Seed keyword or topic brief",
         fields: [
-          {{ id: "seed_keyword", label: "Seed keyword *", type: "text", required: true }},
+          {{ id: "seed_keyword", label: "Seed keyword / topic *", type: "textarea", required: true, full: true }},
           {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
         ],
         endpoint: "/seo-keywords/generate",
@@ -199,7 +200,7 @@
       {{ id: "email_new", label: "Email Assistant — New", desc: "Subject, tone, context",
         fields: [
           {{ id: "subject", label: "Subject", type: "text" }},
-          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
           {{ id: "context", label: "Context / key points *", type: "textarea", required: true, full: true }},
         ],
         endpoint: "/email-assistant/new-email",
@@ -210,7 +211,7 @@
         fields: [
           {{ id: "original_email", label: "Original email *", type: "textarea", required: true, full: true }},
           {{ id: "reply_points", label: "Key points", type: "textarea", full: true }},
-          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
         ],
         endpoint: "/email-assistant/reply",
         build: (f) => ({{ original_email: f.original_email, reply_points: f.reply_points||"", tone: f.tone }}),
@@ -221,7 +222,7 @@
           {{ id: "company_name", label: "Company name *", type: "text", required: true }},
           {{ id: "purpose_offer", label: "Purpose / offer *", type: "textarea", required: true, full: true }},
           {{ id: "value_proposition", label: "Value proposition *", type: "textarea", required: true, full: true }},
-          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
         ],
         endpoint: "/email-assistant/cold-email",
         build: (f) => ({{ company_name: f.company_name, purpose_offer: f.purpose_offer, value_proposition: f.value_proposition, tone: f.tone }}),
@@ -647,42 +648,64 @@
     function fmtKeywords(d) {{
       const NL = String.fromCharCode(10);
       const arch = d.architecture || {{}};
-      const pipe = d.pipeline || {{}};
+      const out = d.output || {{}};
+      const ctx = out.context || {{}};
+      const fmtRow = (k) =>
+        "**" + (k.keyword || k) + "**" + (k.topic_cluster ? " [" + k.topic_cluster + "]" : "") +
+        (k.volume_label ? " · vol " + k.volume_label : "") +
+        (k.opportunity_score ? " · opp " + k.opportunity_score : "");
+      const kwList = (items) => (items || []).slice(0, 8).map(k => "- " + fmtRow(k)).join(NL);
       const lines = [
-        "SEO Keyword Generator · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        "SEO Keyword Generator · v" + (d.generator_version || "?"),
+        d.metrics_disclaimer || "",
         d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
         "",
-        "### Pipeline Architecture",
+        "### Pipeline (" + (arch.flow || []).length + " stages)",
         (arch.flow || []).join(" → "),
         "",
-        "### Open Datasets",
-        Object.keys(arch.open_datasets || {{}}).join(", "),
-        "",
-        "### Input Analysis",
-        "Seed: " + d.seed_keyword,
-        "Entities: " + ((pipe.entities || []).slice(0, 6).join(", ") || "—"),
-        "",
-        "### Intent Distribution",
-        JSON.stringify(pipe.intent_distribution || {{}}),
+        "### Context",
+        "Language: " + (ctx.language?.language || "—") + " · Market: " + (ctx.geo?.primary_market || "—"),
+        "Industry: " + (ctx.industry?.primary_industry || "—") + " · Intent: " + (ctx.seed_intent?.primary_intent || "—"),
+        "Entities: " + ((out.entities || d.pipeline?.entities || []).join(", ") || "—"),
+        "Topic clusters: " + ((ctx.topic_clusters || []).join(", ") || "—"),
         "",
         "### SEO Score",
-        "Overall: " + (d.seo_score?.overall || "—") + "/100 · Diversity: " + (d.seo_score?.diversity || "—"),
+        "Overall: " + (out.seo_score?.overall || d.seo_score?.overall || "—") + "/100",
         "",
-        "### Keywords (" + (d.count || 0) + ")",
-        (d.keywords||[]).map((k,i) =>
-          (i+1) + ". **" + k.keyword + "** · vol " + k.search_volume + " · diff " + k.difficulty +
-          " · CPC $" + k.cpc_usd + " · " + k.trend + " · " + k.intent + " · score " + (k.seo_score||"—")
-        ).join(NL),
+        "### Primary Keywords", kwList(out.primary_keywords) || "—",
+        "### Commercial Keywords", kwList(out.commercial_keywords) || "",
+        "### Question Keywords", kwList(out.question_keywords) || "",
+        "### LSI Keywords", kwList(out.lsi_keywords) || "",
+        "### Local Keywords", kwList(out.local_keywords) || "",
+        "### Trending Keywords", kwList(out.trending_keywords) || "",
+        "### Competitor Keywords", kwList(out.competitor_keywords) || "",
         "",
-        "### Top Opportunities",
-        (d.opportunities||[]).slice(0,5).map(o => "- " + o.keyword + " (" + o.opportunity_score + ")").join(NL) || "—"
+        "### Opportunity Keywords",
+        kwList(out.opportunity_keywords) || "—",
+        "",
+        "### Recommendations",
+        (d.recommendations || out.recommendations || []).map(r => "- " + r).join(NL) || "—",
+        "",
+        "### All Keywords (" + (d.count || 0) + ")",
+        (d.keywords||[]).map((k,i) => (i+1) + ". " + fmtRow(k)).join(NL)
       ];
       return lines.filter(Boolean).join(NL);
     }}
     function fmtSchema(d) {{
       return d.jsonld_string || JSON.stringify(d.jsonld, null, 2);
     }}
-    function fmtEmail(d) {{ return "**Subject:** " + d.subject + "\\n**Tone:** " + d.tone + "\\n\\n" + d.email; }}
+    function fmtEmail(d) {{
+      const sc = d.scores || d.quality || {{}};
+      const lines = [
+        "**Subject:** " + d.subject,
+        "**Tone:** " + d.tone,
+        sc.overall != null ? "**Quality:** " + sc.overall + "/100" : "",
+        d.reading_time_minutes ? "**Read time:** ~" + d.reading_time_minutes + " min" : "",
+        (d.subject_options && d.subject_options.length > 1) ? "**Alt subjects:** " + d.subject_options.slice(1, 4).join(" · ") : "",
+        (d.suggestions && d.suggestions.length) ? "**Tips:** " + d.suggestions.slice(0, 2).join(" · ") : ""
+      ].filter(Boolean);
+      return lines.join("\\n") + "\\n\\n" + d.email;
+    }}
     function fmtPlagiarism(d) {{
       return d.summary + "\\nSimilarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
     }}
