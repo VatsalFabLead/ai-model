@@ -122,17 +122,7 @@ async def generate(
 ) -> ResumeGenerateResponse:
   provider = None
   if payload.use_ai:
-    registry = request.app.state.registry
-    for key in ("custom", "gemma", "ollama", "llm"):
-      p = registry._providers.get(key)
-      if p and p.is_ready():
-        provider = p
-        break
-    if provider is None:
-      try:
-        provider = get_tool_provider(request)
-      except HTTPException:
-        pass
+    provider = get_tool_provider(request)
   try:
     result = await resume_builder.generate(
       provider,

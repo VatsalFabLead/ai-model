@@ -75,16 +75,28 @@ class ProviderRegistry:
 
   @property
   def provider(self) -> ModelProvider:
-    """Default provider (for health checks / legacy callers)."""
-    for key in ("gemma", "custom", "ollama", "llm"):
+    """Default provider (custom-nexus-v1 first)."""
+    for key in ("custom", "gemma", "ollama", "llm"):
       p = self._providers.get(key)
       if p and p.is_ready():
         return p
     raise RuntimeError("Provider registry is not initialized")
 
+  def get_provider_for_model(self, model: str | None = None) -> ModelProvider:
+    """Resolve provider from model id (custom-nexus-v1 → custom backend)."""
+    from app.services.backend_router import normalize_backend
+
+    backend = normalize_backend(model, "custom")
+    if backend == "auto":
+      return self.tool_provider()
+    provider = self._providers.get(backend)
+    if provider and provider.is_ready():
+      return provider
+    return self.tool_provider()
+
   def tool_provider(self) -> ModelProvider:
-    """Best backend for AI tools: Gemma + Nexus RAG, then fallbacks."""
-    for key in ("gemma", "ollama", "custom", "llm"):
+    """Best backend for AI tools: custom-nexus-v1 first, then fallbacks."""
+    for key in ("custom", "gemma", "ollama", "llm"):
       p = self._providers.get(key)
       if p and p.is_ready():
         return p

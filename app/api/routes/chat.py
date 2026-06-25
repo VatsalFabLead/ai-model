@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.core.security import verify_api_key
 from app.services.registry import ProviderRegistry
 
@@ -128,21 +129,35 @@ async def list_models(
   _: str = Depends(verify_api_key),
 ) -> dict:
   registry = _get_registry(request)
+  settings = get_settings()
   backends = registry.available_backends()
-  data = []
-  for b in backends:
+  data: list[dict] = []
+  # Primary product model id
+  if registry.is_ready():
     data.append({
-      "id": b,
+      "id": registry.model_id("custom"),
       "object": "model",
-      "owned_by": b,
+      "owned_by": "custom",
       "permission": [],
+      "description": "Nexus custom transformer — powers all AI tools",
     })
-  if not data:
+  else:
     data.append({
-      "id": registry.model_id(),
+      "id": settings.model_id,
       "object": "model",
       "owned_by": "custom",
       "permission": [],
     })
+  seen = {d["id"] for d in data}
+  for b in backends:
+    mid = registry.model_id(b)
+    if mid not in seen:
+      seen.add(mid)
+      data.append({
+        "id": mid,
+        "object": "model",
+        "owned_by": b,
+        "permission": [],
+      })
   data.append({"id": "auto", "object": "model", "owned_by": "router", "permission": []})
   return {"object": "list", "data": data}

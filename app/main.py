@@ -14,6 +14,7 @@ from app.api.routes import (
   email_assistant,
   health,
   model_test,
+  nexus,
   plagiarism_checker,
   post_scheduler,
   resume_builder,
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
   app.include_router(model_test.router)
   app.include_router(chat_page.router)
   app.include_router(chat.router, prefix=settings.api_prefix)
+  app.include_router(nexus.router, prefix=settings.api_prefix)
   app.include_router(plagiarism_checker.router, prefix=settings.api_prefix)
   app.include_router(post_scheduler.router, prefix=settings.api_prefix)
   app.include_router(schema_markup.router, prefix=settings.api_prefix)

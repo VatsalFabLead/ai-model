@@ -20,6 +20,10 @@
     .bar label {{ font-size: 0.68rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }}
     .bar input, .bar select {{ background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0.38rem 0.55rem; font-size: 0.82rem; }}
   .bar input[type=password], .bar input[type=text], .bar input[type=email] {{ min-width: 140px; }}
+    .key-wrap {{ display: flex; gap: 0.35rem; align-items: stretch; }}
+    .key-wrap input {{ flex: 1; min-width: 160px; }}
+    .eye-btn {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0 0.6rem; cursor: pointer; font-size: 0.95rem; }}
+    .eye-btn:hover {{ border-color: var(--accent); }}
     .layout {{ flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }}
     @media (max-width: 900px) {{ .layout {{ grid-template-columns: 1fr; }} .sidebar {{ max-height: 220px; overflow-y: auto; }} }}
     .sidebar {{ border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; padding: 0.5rem; }}
@@ -76,7 +80,7 @@
   <header>
     <div>
       <h1>{app_name}</h1>
-      <div class="meta">Nexus custom model + Gemma 4 · 100% free · no GPT · Claude · Gemini · Hugging Face API</div>
+      <div class="meta">Model <strong>{model_id}</strong> · Nexus custom transformer · one API key for all tools</div>
     </div>
     <a href="/model_test">Model test</a>
   </header>
@@ -84,13 +88,20 @@
   <div class="bar">
     <div>
       <label>API key</label>
-      <input id="apiKey" type="password" placeholder="Bearer token" style="width:220px" />
+      <div class="key-wrap">
+        <input id="apiKey" type="password" placeholder="Bearer token" style="width:220px" />
+        <button type="button" class="eye-btn" id="btnToggleKey" title="Show/hide API key" aria-label="Show API key">👁</button>
+      </div>
     </div>
     <div>
-      <label>Use AI (Gemma + Nexus)</label>
+      <label>Model ID</label>
+      <input id="modelId" type="text" value="{model_id}" readonly style="width:160px;opacity:0.85" />
+    </div>
+    <div>
+      <label>Use AI ({model_id})</label>
       <select id="useAi"><option value="true" selected>Yes</option><option value="false">Templates only</option></select>
     </div>
-    <div class="hint" style="align-self:center">No GPT · Claude · Gemini</div>
+    <div class="hint" style="align-self:center">Unified API: /v1/nexus/invoke</div>
   </div>
 
   <div class="layout">
@@ -113,6 +124,8 @@
 
   <script>
     const API = "{api_prefix}";
+    const MODEL_ID = "{model_id}";
+    const NEXUS_INVOKE = API + "/nexus/invoke";
     const TONES = ["professional", "casual", "friendly", "formal", "confident", "enthusiastic", "persuasive"];
     const EMAIL_TONES = ["professional", "casual", "friendly", "formal"];
     const SCHEMA_TYPES = [
@@ -124,6 +137,7 @@
 
     const TOOLS = [
       {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, tone",
+        nexusTool: "seo_content",
         fields: [
           {{ id: "topic", label: "Topic *", type: "text", required: true }},
           {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
@@ -137,6 +151,7 @@
         format: fmtSeoContent
       }},
       {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Optimize content",
+        nexusTool: "seo_optimizer",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
           {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
@@ -152,6 +167,7 @@
         format: fmtSeoOptimizer
       }},
       {{ id: "title_meta", label: "SEO Title & Meta", desc: "Target keyword / topic",
+        nexusTool: "title_meta",
         fields: [
           {{ id: "topic", label: "Target keyword / topic *", type: "text", required: true }},
           {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
@@ -167,6 +183,7 @@
         format: fmtTitleMeta
       }},
       {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "Seed keyword or topic brief",
+        nexusTool: "seo_keywords",
         fields: [
           {{ id: "seed_keyword", label: "Seed keyword / topic *", type: "textarea", required: true, full: true }},
           {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
@@ -183,6 +200,7 @@
         format: fmtKeywords
       }},
       {{ id: "schema", label: "Schema Markup Generator", desc: "JSON-LD structured data",
+        nexusTool: "schema_markup",
         fields: [
           {{ id: "schema_type", label: "Schema type *", type: "select", options: SCHEMA_TYPES, value: "Article" }},
           {{ id: "name", label: "Name / title *", type: "text", required: true }},
@@ -198,6 +216,7 @@
         format: fmtSchema
       }},
       {{ id: "email_new", label: "Email Assistant — New", desc: "Subject, tone, context",
+        nexusTool: "email_new",
         fields: [
           {{ id: "subject", label: "Subject", type: "text" }},
           {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
@@ -208,6 +227,7 @@
         format: fmtEmail
       }},
       {{ id: "email_reply", label: "Email Assistant — Reply", desc: "Email + key points + tone",
+        nexusTool: "email_reply",
         fields: [
           {{ id: "original_email", label: "Original email *", type: "textarea", required: true, full: true }},
           {{ id: "reply_points", label: "Key points", type: "textarea", full: true }},
@@ -218,6 +238,7 @@
         format: fmtEmail
       }},
       {{ id: "email_cold", label: "Email Assistant — Cold", desc: "Company, offer, value prop",
+        nexusTool: "email_cold",
         fields: [
           {{ id: "company_name", label: "Company name *", type: "text", required: true }},
           {{ id: "purpose_offer", label: "Purpose / offer *", type: "textarea", required: true, full: true }},
@@ -229,6 +250,7 @@
         format: fmtEmail
       }},
       {{ id: "plagiarism", label: "Copyright & Plagiarism Check", desc: "Content originality",
+        nexusTool: "plagiarism_check",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
         ],
@@ -237,6 +259,7 @@
         isPlagiarism: true
       }},
       {{ id: "cover_letter", label: "Professional Cover Letter AI", desc: "Role, company, experience",
+        nexusTool: "cover_letter",
         fields: [
           {{ id: "job_role", label: "Job role *", type: "text", required: true }},
           {{ id: "company_name", label: "Company name *", type: "text", required: true }},
@@ -255,6 +278,7 @@
         format: fmtCoverLetter
       }},
       {{ id: "resume", label: "Resume Builder", desc: "Full profile",
+        nexusTool: "resume_builder",
         fields: [
           {{ id: "full_name", label: "Full name *", type: "text", required: true }},
           {{ id: "job_title", label: "Job title *", type: "text", required: true }},
@@ -299,6 +323,19 @@
     const savedKey = sessionStorage.getItem("api_key");
     if (savedKey) keyEl.value = savedKey;
     keyEl.addEventListener("change", () => sessionStorage.setItem("api_key", keyEl.value));
+    document.getElementById("btnToggleKey").onclick = () => {{
+      const show = keyEl.type === "password";
+      keyEl.type = show ? "text" : "password";
+      document.getElementById("btnToggleKey").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+    }};
+
+    function nexusPayload(tool, input) {{
+      return {{ model: MODEL_ID, tool: tool, input: input }};
+    }}
+
+    function unwrapNexus(data) {{
+      return (data && data.result !== undefined) ? data.result : data;
+    }}
 
     TOOLS.forEach((tool, i) => {{
       const b = document.createElement("button");
@@ -412,36 +449,39 @@
       statusHint.textContent = "Generating…";
       try {{
         if (activeTool.isChat) {{
-          const {{ res, data }} = await fetchJson(API + activeTool.endpoint, {{
+          const {{ res, data }} = await fetchJson(NEXUS_INVOKE, {{
             method: "POST", headers: headers(),
-            body: JSON.stringify({{
-              model: fields.backend || "auto", backend: fields.backend || "auto",
+            body: JSON.stringify(nexusPayload("chat", {{
               messages: [{{ role: "user", content: fields.message }}],
               max_tokens: 768, temperature: 0.7
-            }})
+            }}))
           }}, 120000);
           if (!res.ok) throw new Error(data.detail || res.statusText);
-          const backend = res.headers.get("X-Nexus-Backend") || fields.backend;
-          addMsg("assistant", "[" + backend + "]\\n\\n" + activeTool.format(data));
+          const payload = unwrapNexus(data);
+          const backend = res.headers.get("X-Nexus-Backend") || payload.backend || MODEL_ID;
+          addMsg("assistant", "[" + backend + "]\\n\\n" + (payload.content || ""));
         }} else {{
-          const body = activeTool.build(fields, useAi);
+          const input = activeTool.build(fields, useAi);
+          const nexusTool = activeTool.nexusTool || activeTool.id;
           const timeoutMs = (activeTool.id === "resume" || activeTool.id === "cover_letter")
             ? (useAi ? 180000 : 90000)
             : (activeTool.id === "schema" ? (useAi ? 45000 : 30000) : 120000);
-          const {{ res, data }} = await fetchJson(API + activeTool.endpoint, {{
-            method: "POST", headers: headers(), body: JSON.stringify(body)
+          const {{ res, data }} = await fetchJson(NEXUS_INVOKE, {{
+            method: "POST", headers: headers(),
+            body: JSON.stringify(nexusPayload(nexusTool, input))
           }}, timeoutMs);
           if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
-          if (activeTool.id === "resume" && !data.generator_version) {{
-            data.generator_version = res.headers.get("X-Resume-Builder-Version") || data.generator_version;
+          const payload = unwrapNexus(data);
+          if (activeTool.id === "resume" && !payload.generator_version) {{
+            payload.generator_version = res.headers.get("X-Resume-Builder-Version") || payload.generator_version;
           }}
-          if (activeTool.id === "cover_letter" && !data.generator_version) {{
-            data.generator_version = res.headers.get("X-Cover-Letter-Version") || data.generator_version;
+          if (activeTool.id === "cover_letter" && !payload.generator_version) {{
+            payload.generator_version = res.headers.get("X-Cover-Letter-Version") || payload.generator_version;
           }}
           if (activeTool.isPlagiarism) {{
-            renderPlagiarismCard(data, fields.content);
+            renderPlagiarismCard(payload, fields.content);
           }} else {{
-            addMsg("assistant", activeTool.format(data));
+            addMsg("assistant", activeTool.format(payload));
           }}
         }}
       }} catch (e) {{
@@ -790,12 +830,13 @@
         btn.disabled = true;
         btn.textContent = "Rewriting…";
         try {{
-          const res = await fetch(API + "/plagiarism-check/remove", {{
+          const res = await fetch(NEXUS_INVOKE, {{
             method: "POST", headers: headers(),
-            body: JSON.stringify({{ content: fullContent }})
+            body: JSON.stringify(nexusPayload("plagiarism_remove", {{ content: fullContent }}))
           }});
-          const out = await res.json();
-          if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : JSON.stringify(out.detail));
+          const raw = await res.json();
+          if (!res.ok) throw new Error(typeof raw.detail === "string" ? raw.detail : JSON.stringify(raw.detail));
+          const out = unwrapNexus(raw);
           const after = out.after || {{}};
           const sim = after.similarity_percent ?? 0;
           const orig = after.original_percent ?? 0;

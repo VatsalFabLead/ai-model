@@ -22,6 +22,7 @@ async def chat_page() -> HTMLResponse:
     app_name=settings.app_name,
     api_prefix=settings.api_prefix,
     model_backend=settings.model_backend,
+    model_id=settings.model_id,
   )
   return HTMLResponse(
     content=body,

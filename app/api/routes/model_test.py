@@ -17,6 +17,7 @@ async def model_test_page() -> str:
     app_name=settings.app_name,
     api_prefix=settings.api_prefix,
     model_backend=settings.model_backend,
+    model_id=settings.model_id,
     app_env=settings.app_env,
   )
 
@@ -91,6 +92,19 @@ _HTML = """<!DOCTYPE html>
       padding: 0.6rem 0.75rem;
       font-size: 0.95rem;
     }}
+    .key-row {{ display: flex; gap: 0.5rem; align-items: stretch; }}
+    .key-row input {{ flex: 1; }}
+    .icon-btn {{
+      background: var(--border);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 0.85rem;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }}
+    .icon-btn:hover {{ filter: brightness(1.1); }}
     textarea {{ min-height: 80px; resize: vertical; font-family: inherit; }}
     button {{
       background: var(--accent);
@@ -148,8 +162,11 @@ _HTML = """<!DOCTYPE html>
 
     <div class="card">
       <label for="apiKey">API key (Bearer)</label>
-      <input id="apiKey" type="password" placeholder="change-me-to-a-strong-key" autocomplete="off" />
-      <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Saved in sessionStorage for this tab only.</p>
+      <div class="key-row">
+        <input id="apiKey" type="password" placeholder="change-me-to-a-strong-key" autocomplete="off" />
+        <button type="button" id="btnToggleKey" class="icon-btn" title="Show/hide API key" aria-label="Show API key">👁</button>
+      </div>
+      <p style="font-size:0.8rem;color:var(--muted);margin:0.5rem 0 0;">Saved in sessionStorage for this tab only. Powers all tools via <code>{model_id}</code>.</p>
     </div>
 
     <div class="card">
@@ -171,10 +188,16 @@ _HTML = """<!DOCTYPE html>
   </div>
   <script>
     const API_PREFIX = "{api_prefix}";
+    const MODEL_ID = "{model_id}";
     const keyInput = document.getElementById("apiKey");
     const saved = sessionStorage.getItem("api_key");
     if (saved) keyInput.value = saved;
     keyInput.addEventListener("change", () => sessionStorage.setItem("api_key", keyInput.value));
+    document.getElementById("btnToggleKey").onclick = () => {{
+      const show = keyInput.type === "password";
+      keyInput.type = show ? "text" : "password";
+      document.getElementById("btnToggleKey").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+    }};
 
     function headers() {{
       const h = {{ "Content-Type": "application/json" }};
@@ -195,7 +218,7 @@ _HTML = """<!DOCTYPE html>
         badge.textContent = ok ? "model ready" : "loading / unavailable";
         badge.className = "badge " + (ok ? "ok" : "warn");
         stats.innerHTML = [
-          ["Model ID", meta.model_id || "—"],
+          ["Model ID", meta.model_id || MODEL_ID || "—"],
           ["Backend", meta.model_backend],
           ["Environment", meta.environment],
           ["Health", health.status],
@@ -218,6 +241,7 @@ _HTML = """<!DOCTYPE html>
           method: "POST",
           headers: headers(),
           body: JSON.stringify({{
+            model: MODEL_ID,
             messages: [{{ role: "user", content: prompt }}],
             max_tokens: 256,
             temperature: 0.7,
