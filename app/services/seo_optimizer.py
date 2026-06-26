@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from app.engine import seo_optimizer_engine
+from app.engine.seo_optimizer_enrichment import parse_keywords_flexible, rewrite_content_for_keywords
 from app.engine.seo_optimizer_rag_pipeline import (
   is_optimizer_instruction_content,
   normalize_pasted_optimizer_content,
@@ -37,21 +38,7 @@ def supported_languages() -> list[dict[str, str]]:
 
 
 def _coerce_keywords(keywords: list[str] | str | None) -> list[str]:
-  if not keywords:
-    return []
-  if isinstance(keywords, str):
-    parts = keywords.split(",")
-  else:
-    parts = [str(k) for k in keywords]
-  seen: set[str] = set()
-  out: list[str] = []
-  for p in parts:
-    for piece in p.split(","):
-      piece = piece.strip()
-      if piece and piece.lower() not in seen:
-        seen.add(piece.lower())
-        out.append(piece)
-  return out
+  return parse_keywords_flexible(keywords)
 
 
 def _clean(text: str) -> str:
@@ -92,14 +79,17 @@ async def _enhance_with_ai(
   suggestions: list[str],
 ) -> tuple[str, list[str], bool]:
   tone_guide = seo_optimizer_engine.tone_hint(tone)
+  kw_line = ", ".join(keywords) if keywords else "infer from content"
   system_prompt = (
     f"You are an expert SEO editor ({tone} — {tone_guide}). "
-    f"Polish the OPTIMIZED draft using open-data evidence. Category: {category}.{lang_line} "
-    "Preserve facts from evidence; improve flow, headings, and SEO. Do not invent false claims. "
+    f"Rewrite and optimize the article for these target keywords: {kw_line}. "
+    f"Category: {category}.{lang_line} "
+    "Naturally weave every target keyword into headings, intro, body, and conclusion. "
+    "Preserve facts from the original; improve structure, depth, and SEO. Do not invent false claims. "
     "Respond EXACTLY as:\nOPTIMIZED:\n<markdown>\nSUGGESTIONS:\n- <item>\n..."
   )
   user_prompt = (
-    f"Keywords: {', '.join(keywords) or 'infer from content'}\n"
+    f"Target keywords (must all appear naturally): {kw_line}\n"
     f"Open-data evidence:\n{evidence[:2200]}\n\n"
     f"Original:\n{content[:1500]}\n\n"
     f"Draft to polish:\n{draft[:3500]}\n\n"
@@ -193,19 +183,25 @@ async def optimize(
     seo_before = seo_optimizer_engine.seo_score_from_analysis(original_metrics, issues_before)
     optimized = content
     suggestions = [i["message"] for i in issues_before]
-    optimized_metrics = original_metrics
-    issues_after = issues_before
-    seo_after = seo_before
+    if kws:
+      optimized, kw_notes = rewrite_content_for_keywords(
+        content, kws, topic=kws[0], seed=variation_seed,
+      )
+      suggestions = kw_notes + suggestions
+    optimized_metrics = seo_optimizer_engine.content_metrics(optimized)
+    issues_after = seo_optimizer_engine.analyze_issues(optimized, kws)
+    seo_after = seo_optimizer_engine.seo_score_from_analysis(optimized_metrics, issues_after)
     evidence = ""
 
-  if use_ai and provider is not None and rag_result:
+  if use_ai and provider is not None and (rag_result or kws):
     fast_path = (
       rag_result.get("architecture", {})
       .get("stages", {})
       .get("section_generator", {})
       .get("conservative_mode", False)
+      if rag_result else False
     )
-    if not fast_path:
+    if not fast_path or kws:
       lang_line = f" Language: {language} ({lang_code})." if language else ""
       try:
         optimized, suggestions, ai_used = await _enhance_with_ai(

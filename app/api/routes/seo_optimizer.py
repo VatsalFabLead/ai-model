@@ -30,7 +30,11 @@ class SeoIssue(BaseModel):
 
 class OptimizeRequest(BaseModel):
   content: str = Field(..., min_length=1, max_length=12000, description="Paste content to analyze and optimize")
-  keywords: list[str] | str | None = Field(default=None, examples=["ERP software, manufacturing ERP"])
+  keywords: list[str] | str | None = Field(
+    default=None,
+    description="Target keywords — comma, newline, semicolon, or pipe separated; any phrasing accepted",
+    examples=["ERP software, manufacturing ERP", "flutter app development"],
+  )
   tone: ToneOption = Field(default="professional", description="professional | casual | friendly | formal")
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
   category: str | None = Field(
@@ -116,7 +120,7 @@ class OptimizeResponse(BaseModel):
   keywords: list[str]
   ai: AiMeta
   use_rag: bool = True
-  generator_version: str = "seo-optimizer-rag-v5.1"
+  generator_version: str = "seo-optimizer-rag-v5.2"
   variation_seed: int | None = None
   rag: RagMeta | None = None
   pipeline: PipelineAnalysis | None = None

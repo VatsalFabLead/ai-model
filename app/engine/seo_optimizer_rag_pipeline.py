@@ -46,6 +46,7 @@ from app.engine.seo_optimizer_enrichment import (
   is_internal_suggestion,
   optimize_metadata_clean,
   parse_term_from_gap,
+  rewrite_content_for_keywords,
 )
 
 ARCHITECTURE_FLOW = [
@@ -54,6 +55,7 @@ ARCHITECTURE_FLOW = [
   "entity_extractor",
   "coverage_map",
   "gap_analysis",
+  "keyword_rewriter",
   "source_router",
   "retriever",
   "deduplication",
@@ -71,7 +73,7 @@ ARCHITECTURE_FLOW = [
   "final_article",
 ]
 
-GENERATOR_VERSION = "seo-optimizer-rag-v5.1"
+GENERATOR_VERSION = "seo-optimizer-rag-v5.2"
 
 _INSTRUCTION_MARKERS = (
   "you are an expert seo content optimizer",
@@ -178,7 +180,12 @@ def infer_keywords_from_content(content: str) -> list[str]:
   return list(dict.fromkeys(found))[:6]
 
 
-def normalize_keywords(content: str, keywords: list[str]) -> tuple[str, str, list[str]]:
+def normalize_keywords(
+  content: str,
+  keywords: list[str],
+  *,
+  user_supplied: bool = False,
+) -> tuple[str, str, list[str]]:
   """Return (short_primary, display_title, keyword_list)."""
   display = ""
   m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
@@ -192,7 +199,9 @@ def normalize_keywords(content: str, keywords: list[str]) -> tuple[str, str, lis
   raw_primary = kws[0] if kws else (display or infer_topic(content, []))
   short = raw_primary
 
-  if len(raw_primary) > 45 or raw_primary.count(" ") > 4:
+  if user_supplied and kws:
+    short = raw_primary if len(raw_primary) <= 72 else _clip(raw_primary, 72)
+  elif len(raw_primary) > 45 or raw_primary.count(" ") > 4:
     low = content.lower()
     if "flutter" in low:
       short = "Flutter app development"
@@ -207,7 +216,7 @@ def normalize_keywords(content: str, keywords: list[str]) -> tuple[str, str, lis
   else:
     kws[0] = short
 
-  if "flutter" in content.lower():
+  if not user_supplied and "flutter" in content.lower():
     kws = [k for k in kws if "erp" not in k.lower() and "enterprise resource" not in k.lower()]
 
   return short, display or short, kws
@@ -1962,7 +1971,10 @@ async def run_optimizer_rag_pipeline(
   seed = effective_variation_seed(variation_seed)
   client_seed = make_variation_seed(variation_seed) if variation_seed is not None else None
   t0 = time.perf_counter()
-  short_topic, display_title, kws = normalize_keywords(content, keywords)
+  user_supplied_kws = bool(keywords)
+  short_topic, display_title, kws = normalize_keywords(
+    content, keywords, user_supplied=user_supplied_kws,
+  )
   topic = short_topic
   anchors = derive_anchor_terms(content, short_topic, kws)
   strong = is_content_already_strong(content)
@@ -2076,6 +2088,21 @@ async def run_optimizer_rag_pipeline(
   stages["gap_fill"] = {"terms_added": terms_added, "count": len(terms_added)}
   working_content = gap_filled
 
+  if kws:
+    working_content, kw_rewrite_notes = rewrite_content_for_keywords(
+      working_content,
+      kws,
+      topic=short_topic,
+      seed=seed + 401,
+    )
+    stages["keyword_rewriter"] = {
+      "target_keywords": kws,
+      "applied": True,
+      "notes": kw_rewrite_notes[:8],
+    }
+  else:
+    stages["keyword_rewriter"] = {"applied": False}
+
   # Section planner + generator
   section_plan = plan_sections(working_content, kws, gaps, coverage_map, seed=seed)
   stages["section_planner"] = {"sections": section_plan}
@@ -2089,7 +2116,11 @@ async def run_optimizer_rag_pipeline(
     seed=seed,
   )
 
-  draft, gen_suggestions = polish_strong_content(
+  gen_suggestions: list[str] = []
+  if kws and stages.get("keyword_rewriter", {}).get("notes"):
+    gen_suggestions.extend(stages["keyword_rewriter"]["notes"])
+
+  draft, polish_suggestions = polish_strong_content(
     working_content,
     short_topic=short_topic,
     keywords=kws,
@@ -2099,6 +2130,7 @@ async def run_optimizer_rag_pipeline(
     ctx=vctx,
     skip_variation_rebuild=bool(terms_added),
   )
+  gen_suggestions.extend(polish_suggestions)
   gen_suggestions.insert(0, f"Gap fill added {len(terms_added)} section(s) from coverage analysis.")
   stages["section_generator"] = {
     "planned_sections": len(section_plan),
