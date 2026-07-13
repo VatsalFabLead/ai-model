@@ -154,7 +154,7 @@
         nexusTool: "seo_optimizer",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
-          {{ id: "keywords", label: "Target keywords (any format)", type: "text", placeholder: "keyword one, keyword two" }},
+          {{ id: "keywords", label: "Target keywords (comma, line, or semicolon-separated)", type: "textarea", full: true }},
         ],
         endpoint: "/seo-optimizer/optimize",
         build: (f, useAi) => ({{

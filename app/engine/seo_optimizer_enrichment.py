@@ -30,18 +30,7 @@ def is_internal_suggestion(text: str) -> bool:
 
 
 def _term_in_text(term: str, text: str) -> bool:
-  low = text.lower()
-  t = term.lower().strip()
-  if not t:
-    return False
-  if t in low:
-    return True
-  tokens = [w for w in re.findall(r"\w+", t) if len(w) > 2]
-  if not tokens:
-    tokens = re.findall(r"\w+", t)
-  if not tokens:
-    return False
-  return sum(1 for tok in tokens if tok in low) >= max(1, len(tokens) - 1)
+  return bool(re.search(rf"\b{re.escape(term.lower())}\b", text.lower()))
 
 
 def _clip(text: str, n: int = 400) -> str:
@@ -65,9 +54,23 @@ def extract_gap_terms(
   gaps: list[dict[str, str]],
   coverage_map: dict[str, Any],
   keywords: list[str],
+  *,
+  article: str = "",
 ) -> list[str]:
   terms: list[str] = []
   seen: set[str] = set()
+  body = article or ""
+  # User-supplied keywords missing from content are highest priority
+  for kw in keywords[:12]:
+    if not kw or len(kw.strip()) < 2:
+      continue
+    k = kw.strip().lower()
+    if k in seen:
+      continue
+    if body and _term_in_text(kw, body):
+      continue
+    seen.add(k)
+    terms.append(kw.strip())
   for term in coverage_map.get("missing_terms", []) or []:
     k = term.lower()
     if k not in seen and len(term) > 2 and not is_internal_suggestion(term):
@@ -210,7 +213,7 @@ def fill_content_gaps(
   """Inject real H2 sections for missing terms — never paste gap suggestions."""
   facts = facts or []
   profile = detect_topic_profile(topic, keywords, article)
-  terms = extract_gap_terms(gaps, coverage_map, keywords)
+  terms = extract_gap_terms(gaps, coverage_map, keywords, article=article)
   added: list[str] = []
   blocks: list[str] = []
 
@@ -246,6 +249,73 @@ def fill_content_gaps(
     article = article.rstrip() + "\n\n" + injection
 
   return article.strip(), added
+
+
+def regenerate_keyword_optimized_content(
+  content: str,
+  keywords: list[str],
+  *,
+  tone: str = "professional",
+  seed: int = 0,
+) -> tuple[str, list[str]]:
+  """Rewrite content around user-supplied keywords — works with any topic/input."""
+  if not content.strip():
+    return content, []
+  if not keywords:
+    return content.strip(), []
+
+  suggestions: list[str] = []
+  primary = keywords[0].strip()
+  topic = primary
+  text = content.strip()
+  profile = detect_topic_profile(topic, keywords, text)
+
+  if not re.search(r"^#\s+", text, re.MULTILINE):
+    title = primary.title() if len(primary) < 80 else _clip(primary, 70)
+    text = f"# {title}\n\n{text}"
+    suggestions.append("Added H1 title from primary keyword.")
+
+  paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip() and not p.startswith("#")]
+  first_para = paras[0] if paras else text[:500]
+  if primary and not _term_in_text(primary, first_para[:500]):
+    opener = {
+      "professional": f"**{primary}** is central to this guide. ",
+      "casual": f"Let's talk about **{primary}** — ",
+      "friendly": f"Here's a clear look at **{primary}**. ",
+      "formal": f"This document addresses **{primary}** in detail. ",
+    }.get(tone, f"**{primary}** — ")
+    if paras:
+      text = text.replace(first_para, opener + first_para, 1)
+    else:
+      text = f"{text}\n\n{opener.strip()}"
+    suggestions.append(f"Wove primary keyword '{primary}' into the introduction.")
+
+  for i, kw in enumerate(keywords[1:10]):
+    kw = kw.strip()
+    if not kw or _term_in_text(kw, text):
+      continue
+    block = generate_section_for_term(kw, topic, keywords, profile=profile, seed=seed + i + 7)
+    text = text.rstrip() + "\n\n" + block
+    suggestions.append(f"Added optimized section for keyword: {kw}")
+
+  takeaways = build_key_takeaways(topic, keywords, text, [k for k in keywords if not _term_in_text(k, text)])
+  if takeaways and "## Key Takeaways" not in text:
+    block = "## Key Takeaways\n\n" + "\n".join(f"- {t}" for t in takeaways[:5]) + "\n"
+    if re.search(r"^##\s+conclusion\b", text, re.I | re.M):
+      text = re.sub(r"^(##\s+conclusion\b)", block + "\n\\1", text, count=1, flags=re.I | re.M)
+    else:
+      text = text.rstrip() + "\n\n" + block
+    suggestions.append("Added keyword-aware key takeaways.")
+
+  if primary and not _term_in_text(primary, text[-600:]):
+    text = text.rstrip() + (
+      f"\n\n## Summary\n\n"
+      f"Effective **{primary}** content balances clarity, depth, and search intent. "
+      f"Use the sections above to improve rankings and reader value.\n"
+    )
+    suggestions.append("Added summary reinforcing primary keyword.")
+
+  return text.strip(), suggestions
 
 
 def build_key_takeaways(
@@ -468,124 +538,3 @@ def filter_content_pools(sentences: list[str], bullets: list[str]) -> tuple[list
   clean_s = [s for s in sentences if s and not is_internal_suggestion(s)]
   clean_b = [b for b in bullets if b and not is_internal_suggestion(b)]
   return clean_s, clean_b
-
-
-def parse_keywords_flexible(keywords: list[str] | str | None) -> list[str]:
-  """Accept keywords in any common format: comma, newline, semicolon, pipe, bullets."""
-  if not keywords:
-    return []
-  raw_parts: list[str] = []
-  if isinstance(keywords, str):
-    raw_parts = re.split(r"[\n\r;|]+", keywords)
-  else:
-    for item in keywords:
-      raw_parts.extend(re.split(r"[\n\r;|]+", str(item)))
-  seen: set[str] = set()
-  out: list[str] = []
-  for part in raw_parts:
-    for piece in re.split(r",", part):
-      piece = re.sub(r"^[\-\*•\d]+[\).\s]+", "", piece.strip())
-      piece = piece.strip().strip('"').strip("'")
-      if not piece or len(piece) < 2:
-        continue
-      key = piece.lower()
-      if key not in seen:
-        seen.add(key)
-        out.append(piece)
-  return out[:20]
-
-
-def rewrite_content_for_keywords(
-  content: str,
-  keywords: list[str],
-  *,
-  topic: str = "",
-  seed: int = 0,
-) -> tuple[str, list[str]]:
-  """Regenerate SEO-optimized body using target keywords — works on any content/keyword input."""
-  suggestions: list[str] = []
-  kws = [k.strip() for k in keywords if k and k.strip()]
-  if not kws:
-    return content.strip(), suggestions
-
-  text = (content or "").strip()
-  primary = kws[0]
-  display_topic = topic or primary
-  profile = detect_topic_profile(display_topic, kws, text)
-
-  # H1 — keyword-rich title
-  if not re.search(r"^#\s+", text, re.MULTILINE):
-    title = primary[0].upper() + primary[1:] if primary else display_topic.title()
-    text = f"# {title}\n\n{text}"
-    suggestions.append(f"Added H1 title targeting '{primary}'.")
-  elif primary and not _term_in_text(primary, text.split("\n", 1)[0]):
-    text = re.sub(
-      r"^#\s+.+$",
-      f"# {primary.title()}: Complete Guide",
-      text,
-      count=1,
-      flags=re.MULTILINE,
-    )
-    suggestions.append(f"Aligned H1 with primary keyword '{primary}'.")
-
-  paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip() and not p.strip().startswith("#")]
-  if paras and primary and not _term_in_text(primary, paras[0][:500]):
-    lead = (
-      f"**{primary.title()}** is a core focus of this guide. "
-      f"Whether you are researching {display_topic} or improving existing pages, "
-      f"this optimized article explains what matters and how to apply it effectively.\n\n"
-    )
-    text = text.replace(paras[0], lead + paras[0], 1)
-    suggestions.append(f"Wove primary keyword '{primary}' into the introduction.")
-
-  # Secondary keywords — dedicated H2 sections when missing
-  added_sections: list[str] = []
-  for i, kw in enumerate(kws[1:10]):
-    if _term_in_text(kw, text):
-      continue
-    section = generate_section_for_term(
-      kw, display_topic, kws, profile=profile, facts=[], seed=seed + i + 7,
-    )
-    added_sections.append(section)
-    suggestions.append(f"Added section for target keyword '{kw}'.")
-
-  if added_sections:
-    block = "\n\n".join(added_sections)
-    if re.search(r"^##\s+conclusion\b", text, re.I | re.M):
-      text = re.sub(r"^(##\s+conclusion\b)", block + "\n\n\\1", text, count=1, flags=re.I | re.M)
-    elif re.search(r"^##\s+frequently asked questions\b", text, re.I | re.M):
-      text = re.sub(r"^(##\s+frequently asked questions\b)", block + "\n\n\\1", text, count=1, flags=re.I | re.M)
-    else:
-      text = text.rstrip() + "\n\n" + block
-
-  # Key takeaways from keywords
-  if kws and "## Key Takeaways" not in text and "## Quick Takeaways" not in text:
-    bullets = [f"Understand how **{k}** fits into your {display_topic} strategy." for k in kws[:6]]
-    block = "## Key Takeaways\n\n" + "\n".join(f"- {b}" for b in bullets) + "\n\n"
-    if re.search(r"^##\s+conclusion\b", text, re.I | re.M):
-      text = re.sub(r"^(##\s+conclusion\b)", block + "\\1", text, count=1, flags=re.I | re.M)
-    else:
-      text = text.rstrip() + "\n\n" + block
-    suggestions.append("Added Key Takeaways aligned to target keywords.")
-
-  # Conclusion with primary keyword
-  if primary and not re.search(r"^##\s+conclusion\b", text, re.I | re.M):
-    secondary = ", ".join(kws[1:4]) if len(kws) > 1 else display_topic
-    text = text.rstrip() + (
-      f"\n\n## Conclusion\n\n"
-      f"Optimizing for **{primary}** alongside related topics like {secondary} "
-      f"strengthens topical relevance, readability, and search performance. "
-      f"Review this content regularly and update sections as your {display_topic} strategy evolves.\n"
-    )
-    suggestions.append("Added keyword-rich conclusion section.")
-  elif primary and not _term_in_text(primary, text[-600:]):
-    text = re.sub(
-      r"(##\s+Conclusion[\s\S]*)$",
-      lambda m: m.group(1).rstrip() + f" Prioritize **{primary}** in future updates for stronger rankings.\n",
-      text,
-      count=1,
-      flags=re.I,
-    )
-    suggestions.append("Reinforced primary keyword in conclusion.")
-
-  return text.strip(), suggestions
