@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{APP_NAME}} — API Reference</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --sidebar: #111827;
+      --panel: #1e293b;
+      --panel2: #243044;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent-dim: #1d4ed8;
+      --get: #22c55e;
+      --post: #3b82f6;
+      --put: #f59e0b;
+      --delete: #ef4444;
+      --code-bg: #0b1220;
+      --success-bg: #052e16;
+      --success-border: #166534;
+      --error-bg: #450a0a;
+      --error-border: #991b1b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .topbar {
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--sidebar);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .topbar h1 { margin: 0; font-size: 1.15rem; color: var(--accent); font-weight: 700; }
+    .topbar .links { display: flex; gap: 1rem; font-size: 0.82rem; flex-wrap: wrap; }
+    .topbar a { color: var(--muted); text-decoration: none; }
+    .topbar a:hover { color: var(--accent); }
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      min-height: 0;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { max-height: 280px; border-right: none; border-bottom: 1px solid var(--border); }
+    }
+    .sidebar {
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .search-wrap { padding: 0.85rem; border-bottom: 1px solid var(--border); }
+    .search-wrap input {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.55rem 0.75rem;
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .nav-scroll { flex: 1; overflow-y: auto; padding: 0.5rem 0; }
+    .module-title {
+      padding: 0.65rem 1rem 0.35rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      width: 100%;
+      padding: 0.5rem 1rem;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      font-size: 0.8rem;
+      border-left: 3px solid transparent;
+    }
+    .nav-item:hover { background: var(--panel); }
+    .nav-item.active {
+      background: var(--panel);
+      border-left-color: var(--accent);
+      color: #fff;
+    }
+    .nav-item .path {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.74rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .method {
+      flex-shrink: 0;
+      font-size: 0.62rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      padding: 0.18rem 0.38rem;
+      border-radius: 4px;
+      min-width: 42px;
+      text-align: center;
+    }
+    .method.GET { background: rgba(34,197,94,.18); color: var(--get); }
+    .method.POST { background: rgba(59,130,246,.18); color: var(--post); }
+    .method.PUT { background: rgba(245,158,11,.18); color: var(--put); }
+    .method.DELETE { background: rgba(239,68,68,.18); color: var(--delete); }
+    .main {
+      overflow-y: auto;
+      padding: 1.5rem 2rem 3rem;
+      min-height: 0;
+    }
+    .hero h2 { margin: 0 0 0.5rem; font-size: 1.75rem; font-weight: 700; }
+    .hero p { margin: 0 0 1rem; color: var(--muted); line-height: 1.6; max-width: 720px; }
+    .base-urls {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+      font-size: 0.85rem;
+    }
+    .base-urls span { color: var(--muted); }
+    .base-urls code {
+      background: var(--panel);
+      padding: 0.2rem 0.5rem;
+      border-radius: 5px;
+      color: var(--accent);
+      font-size: 0.82rem;
+    }
+    .endpoint-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-top: 1rem;
+    }
+    .endpoint-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .endpoint-header .method { font-size: 0.75rem; padding: 0.3rem 0.55rem; min-width: 52px; }
+    .endpoint-url {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 1rem;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .endpoint-desc { color: var(--muted); line-height: 1.55; margin-bottom: 1.25rem; font-size: 0.92rem; }
+    .auth-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+    .auth-badge.required { background: rgba(239,68,68,.15); color: #fca5a5; }
+    .auth-badge.none { background: rgba(34,197,94,.15); color: #86efac; }
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin: 1.25rem 0 0.6rem;
+    }
+    .headers-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .header-pill {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.65rem;
+      font-family: Consolas, monospace;
+      font-size: 0.78rem;
+      color: #93c5fd;
+    }
+    table.fields {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    table.fields th {
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      background: var(--panel2);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+    table.fields td {
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    table.fields tr:last-child td { border-bottom: none; }
+    table.fields .fname {
+      font-family: Consolas, monospace;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+    table.fields .ftype { color: #93c5fd; font-family: Consolas, monospace; font-size: 0.8rem; }
+    table.fields .freq-yes { color: #f87171; font-weight: 600; font-size: 0.8rem; }
+    table.fields .freq-no { color: var(--muted); font-size: 0.8rem; }
+    .response-block {
+      border-radius: 10px;
+      margin-bottom: 0.85rem;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .response-block.success { border-color: var(--success-border); }
+    .response-block.error { border-color: var(--error-border); }
+    .response-head {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .response-block.success .response-head { background: var(--success-bg); color: #86efac; }
+    .response-block.error .response-head { background: var(--error-bg); color: #fca5a5; }
+    .status-code {
+      font-family: Consolas, monospace;
+      font-weight: 800;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.78rem;
+    }
+    .response-block.success .status-code { background: rgba(34,197,94,.25); }
+    .response-block.error .status-code { background: rgba(239,68,68,.25); }
+    pre.json {
+      margin: 0;
+      padding: 1rem;
+      background: var(--code-bg);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.78rem;
+      line-height: 1.55;
+      overflow-x: auto;
+      color: #cbd5e1;
+    }
+    .hidden { display: none !important; }
+    .empty-state { color: var(--muted); padding: 2rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1>{{APP_NAME}} — API Reference</h1>
+    <div class="links">
+      <a href="/docs" target="_blank">Swagger UI</a>
+      <a href="/chat_page">Tools Hub</a>
+      <a href="/health">Health</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="search-wrap">
+        <input type="search" id="filter" placeholder="Filter endpoints..." autocomplete="off" />
+      </div>
+      <nav class="nav-scroll" id="nav"></nav>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="hero" id="hero">
+        <h2>Custom Model API Reference</h2>
+        <p>
+          Production REST API for <strong>custom-nexus-v1</strong>. All <code>{{API_PREFIX}}</code> routes require
+          <code>Authorization: Bearer YOUR_API_KEY</code> unless noted. Use the unified
+          <code>{{API_PREFIX}}/nexus/invoke</code> endpoint or call tool routes directly.
+        </p>
+        <div class="base-urls">
+          <div><span>Local Base URL</span><br><code>http://127.0.0.1:8000</code></div>
+          <div><span>Live Base URL (Render)</span><br><code>{{LIVE_BASE}}</code></div>
+        </div>
+      </div>
+      <div id="detail"></div>
+    </main>
+  </div>
+
+  <script>
+    const API_PREFIX = "{{API_PREFIX}}";
+    const LIVE_BASE = "{{LIVE_BASE}}";
+
+    const ENDPOINTS = [
+      /* ── Health ── */
+      {
+        id: "health",
+        module: "Health",
+        method: "GET",
+        path: "/health",
+        auth: false,
+        description: "Health check for Render and load balancers. Returns model readiness status. No authentication required.",
+        headers: [{ name: "Accept", value: "application/json" }],
+        body: [],
+        success: [{
+          status: 200,
+          label: "OK — model ready",
+          body: { status: "ok", model_ready: true, model_id: "custom-nexus-v1" }
+        }, {
+          status: 200,
+          label: "OK — model loading",
+          body: { status: "loading", model_ready: false, model_id: null }
+        }],
+        errors: []
+      },
+      {
+        id: "root",
+        module: "Health",
+        method: "GET",
+        path: "/",
+        auth: false,
+        description: "Service root with links to documentation and main endpoints.",
+        headers: [],
+        body: [],
+        success: [{
+          status: 200,
+          label: "OK",
+          body: {
+            service: "Custom Model API",
+            docs: "/docs",
+            api_reference: "/api-docs",
+            health: "/health",
+            chat: "/v1/chat/completions"
+          }
+        }],
+        errors: []
+      },
+
+      /* ── Chat ── */
+      {
+        id: "chat-completions",
+        module: "Chat",
+        method: "POST",
+        path: API_PREFIX + "/chat/completions",
+        auth: true,
+        description: "OpenAI-compatible chat completions powered by custom-nexus-v1. Streaming is not supported.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "messages", type: "array", required: true, desc: "Array of {role, content}. Roles: user, assistant, system." },
+          { field: "model", type: "string", required: false, desc: "Model ID. Default: custom-nexus-v1" },
+          { field: "max_tokens", type: "integer", required: false, desc: "1–2048" },
+          { field: "temperature", type: "float", required: false, desc: "0.0–2.0" },
+          { field: "top_p", type: "float", required: false, desc: "0.0–1.0" },
+          { field: "stream", type: "boolean", required: false, desc: "Must be false" },
+          { field: "backend", type: "string", required: false, desc: "custom | ollama | llm | auto" }
+        ],
+        success: [{
+          status: 200,
+          label: "Chat completion",
+          body: {
+            id: "chatcmpl-abc123",
+            object: "chat.completion",
+            created: 1710000000,
+            model: "custom-nexus-v1",
+            choices: [{ index: 0, message: { role: "assistant", content: "Hello! How can I help you today?" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 12, completion_tokens: 10, total_tokens: 22 }
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Bad Request", body: { detail: "messages field required" } },
+          { status: 501, label: "Not Implemented", body: { detail: "Streaming not yet enabled; set stream=false" } },
+          { status: 503, label: "Service Unavailable", body: { detail: "Model is loading or unavailable" } },
+          { status: 500, label: "Server Error", body: { detail: "Inference failed: <reason>" } }
+        ]
+      },
+      {
+        id: "models",
+        module: "Chat",
+        method: "GET",
+        path: API_PREFIX + "/models",
+        auth: true,
+        description: "List available model IDs including custom-nexus-v1 and optional backends.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{
+          status: 200,
+          label: "Model list",
+          body: {
+            object: "list",
+            data: [
+              { id: "custom-nexus-v1", object: "model", owned_by: "custom" },
+              { id: "auto", object: "model", owned_by: "router" }
+            ]
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }
+        ]
+      },
+
+      /* ── Nexus ── */
+      {
+        id: "nexus-status",
+        module: "Nexus (Unified API)",
+        method: "GET",
+        path: API_PREFIX + "/nexus/status",
+        auth: true,
+        description: "Returns model readiness, full tool catalog, and invoke/chat URLs.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{
+          status: 200,
+          label: "Nexus status",
+          body: {
+            model_id: "custom-nexus-v1",
+            model_ready: true,
+            tools: [{ id: "seo_content", label: "SEO Content Generator", endpoint: "/seo-content/generate" }],
+            invoke_url: "/v1/nexus/invoke",
+            chat_url: "/v1/chat/completions"
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }
+        ]
+      },
+      {
+        id: "nexus-tools",
+        module: "Nexus (Unified API)",
+        method: "GET",
+        path: API_PREFIX + "/nexus/tools",
+        auth: true,
+        description: "List all tools available via /nexus/invoke.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{
+          status: 200,
+          label: "Tool catalog",
+          body: {
+            model: "custom-nexus-v1",
+            count: 13,
+            tools: [
+              { id: "chat", label: "Chat completions" },
+              { id: "seo_content", label: "SEO Content Generator" },
+              { id: "seo_optimizer", label: "SEO Content Optimizer" }
+            ]
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }
+        ]
+      },
+      {
+        id: "nexus-invoke",
+        module: "Nexus (Unified API)",
+        method: "POST",
+        path: API_PREFIX + "/nexus/invoke",
+        auth: true,
+        description: "Single entry point for all AI tools. Pass tool id and tool-specific input object.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "model", type: "string", required: false, desc: "Use custom-nexus-v1 (default)" },
+          { field: "tool", type: "string", required: true, desc: "Tool id: seo_content, chat, email_new, resume_builder, etc." },
+          { field: "input", type: "object", required: true, desc: "Tool-specific payload (see each tool module)" }
+        ],
+        success: [{
+          status: 200,
+          label: "Tool result",
+          body: {
+            model: "custom-nexus-v1",
+            tool: "seo_content",
+            result: { topic: "Email marketing", article: "...", seo_score: 85 },
+            elapsed_ms: 2340.5
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Unknown tool", body: { detail: "Unknown tool 'foo'. Valid: chat, seo_content, ..." } },
+          { status: 503, label: "Model unavailable", body: { detail: "Model is loading or unavailable" } },
+          { status: 500, label: "Tool failed", body: { detail: "Tool invocation failed: <reason>" } }
+        ]
+      },
+
+      /* ── SEO Content ── */
+      {
+        id: "seo-content-generate",
+        module: "SEO Content",
+        method: "POST",
+        path: API_PREFIX + "/seo-content/generate",
+        auth: true,
+        description: "Generate a full SEO article with metadata, outline, FAQs, and quality score.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "topic", type: "string", required: true, desc: "Article topic (1–300 chars)" },
+          { field: "keywords", type: "string | array", required: false, desc: "Target keywords" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | friendly | formal" },
+          { field: "word_count", type: "integer", required: false, desc: "100–2500, default 1000" },
+          { field: "category", type: "string", required: false, desc: "blog_article, how_to_guide, listicle, etc." },
+          { field: "language", type: "string", required: false, desc: "English, Hindi, Spanish, etc." },
+          { field: "use_ai", type: "boolean", required: false, desc: "Default true" },
+          { field: "use_rag", type: "boolean", required: false, desc: "Default true" },
+          { field: "discover_keywords", type: "boolean", required: false, desc: "Auto-discover keywords from web" }
+        ],
+        success: [{
+          status: 200,
+          label: "Article generated",
+          body: {
+            topic: "Email marketing basics",
+            title: "Email Marketing Basics: A Complete Guide",
+            article: "# Email Marketing Basics\n\n...",
+            word_count: 980,
+            quality: { seo_score: 88, seo_ready: true, issues: [] },
+            generator_version: "seo-content-rag-v4.1"
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "topic is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "SEO content generation failed: <reason>" } }
+        ]
+      },
+      {
+        id: "seo-content-categories",
+        module: "SEO Content",
+        method: "GET",
+        path: API_PREFIX + "/seo-content/categories",
+        auth: true,
+        description: "List supported content categories.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{ status: 200, label: "Categories", body: { categories: ["blog_article", "how_to_guide", "listicle"], count: 3 } }],
+        errors: [{ status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }]
+      },
+
+      /* ── SEO Optimizer ── */
+      {
+        id: "seo-optimizer-optimize",
+        module: "SEO Optimizer",
+        method: "POST",
+        path: API_PREFIX + "/seo-optimizer/optimize",
+        auth: true,
+        description: "Analyze and optimize existing content. Returns optimized text, SEO scores, suggestions, FAQs, and internal links.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "content", type: "string", required: true, desc: "Content to optimize (1–12000 chars)" },
+          { field: "keywords", type: "string | array", required: false, desc: "Target keywords" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | friendly | formal" },
+          { field: "language", type: "string", required: false, desc: "Output language" },
+          { field: "category", type: "string", required: false, desc: "Default blog_article" },
+          { field: "use_ai", type: "boolean", required: false, desc: "Default true" },
+          { field: "use_rag", type: "boolean", required: false, desc: "Default true" }
+        ],
+        success: [{
+          status: 200,
+          label: "Content optimized",
+          body: {
+            seo_score_before: 62,
+            seo_score_after: 89,
+            improvement: 27,
+            optimized_content: "# Optimized Article\n\n...",
+            keywords: ["ERP software", "manufacturing"],
+            suggestions: ["Add H2 for key benefits"],
+            generator_version: "seo-optimizer-rag-v5.1"
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "content is required" } },
+          { status: 500, label: "Optimization failed", body: { detail: "SEO optimization failed: <reason>" } }
+        ]
+      },
+      {
+        id: "seo-optimizer-pipeline",
+        module: "SEO Optimizer",
+        method: "GET",
+        path: API_PREFIX + "/seo-optimizer/pipeline",
+        auth: true,
+        description: "Returns RAG pipeline architecture and dataset routing info.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{ status: 200, label: "Pipeline info", body: { flow: ["keyword_analysis", "entity_extraction", "retrieval"], datasets: ["Wikipedia", "Wikidata"] } }],
+        errors: [{ status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }]
+      },
+
+      /* ── Title & Meta ── */
+      {
+        id: "title-meta-generate",
+        module: "Title & Meta",
+        method: "POST",
+        path: API_PREFIX + "/title-meta/generate",
+        auth: true,
+        description: "Generate 10–50 unique SEO title and meta description variations.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "topic", type: "string", required: true, desc: "Page topic (1–300 chars)" },
+          { field: "variations", type: "integer", required: false, desc: "10–50, default 10" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | friendly | formal" },
+          { field: "category", type: "string", required: false, desc: "blog_article, product_page, etc." },
+          { field: "use_ai", type: "boolean", required: false, desc: "Default false" },
+          { field: "use_rag", type: "boolean", required: false, desc: "Default true" }
+        ],
+        success: [{
+          status: 200,
+          label: "Variations generated",
+          body: {
+            topic: "Electric Vehicles in India",
+            variation_count: 10,
+            variations: [
+              { title: "Electric Vehicles in India: 2026 Guide", title_length: 38, meta_description: "Discover the best EVs...", meta_length: 145, seo_score: 92 }
+            ],
+            quality: { average_score: 88, seo_ready: true, all_ready: true }
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "topic is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Title meta generation failed: <reason>" } }
+        ]
+      },
+
+      /* ── SEO Keywords ── */
+      {
+        id: "seo-keywords-generate",
+        module: "SEO Keywords",
+        method: "POST",
+        path: API_PREFIX + "/seo-keywords/generate",
+        auth: true,
+        description: "Generate keyword list with volume, difficulty, intent, and trend data.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "seed_keyword", type: "string", required: true, desc: "Seed keyword or topic" },
+          { field: "variations", type: "integer", required: false, desc: "10–50 keywords, default 10" },
+          { field: "discover_web", type: "boolean", required: false, desc: "Google/Bing suggest, default true" },
+          { field: "use_ai", type: "boolean", required: false, desc: "Default false" },
+          { field: "use_rag", type: "boolean", required: false, desc: "Default true" }
+        ],
+        success: [{
+          status: 200,
+          label: "Keywords generated",
+          body: {
+            seed_keyword: "digital marketing",
+            count: 10,
+            keywords: [
+              { keyword: "digital marketing strategy", volume_label: "High", difficulty_label: "Medium", intent: "informational", seo_score: 85 }
+            ],
+            discovery: { enabled: true, sources_used: ["google_suggest", "wikipedia"] }
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "seed_keyword is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Keyword generation failed: <reason>" } }
+        ]
+      },
+
+      /* ── Schema Markup ── */
+      {
+        id: "schema-markup-generate",
+        module: "Schema Markup",
+        method: "POST",
+        path: API_PREFIX + "/schema-markup/generate",
+        auth: true,
+        description: "Generate Schema.org JSON-LD markup for any supported type.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "schema_type", type: "string", required: true, desc: "Article, Product, FAQPage, LocalBusiness, etc." },
+          { field: "name", type: "string", required: true, desc: "Entity name (1–300 chars)" },
+          { field: "data", type: "object", required: false, desc: "Additional schema properties" },
+          { field: "language", type: "string", required: false, desc: "English, Hindi, etc." },
+          { field: "ai_enhance", type: "boolean", required: false, desc: "Default false" },
+          { field: "use_rag", type: "boolean", required: false, desc: "Default false" }
+        ],
+        success: [{
+          status: 200,
+          label: "JSON-LD generated",
+          body: {
+            schema_type: "Article",
+            language: "English",
+            jsonld: { "@context": "https://schema.org", "@type": "Article", "headline": "Email Marketing Guide" },
+            jsonld_string: "{\"@context\":\"https://schema.org\",...}",
+            quality: { completeness_score: 92, seo_ready: true, missing_recommended_fields: [] }
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "schema_type is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Schema generation failed: <reason>" } }
+        ]
+      },
+      {
+        id: "schema-markup-types",
+        module: "Schema Markup",
+        method: "GET",
+        path: API_PREFIX + "/schema-markup/types",
+        auth: true,
+        description: "List all supported Schema.org types.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{ status: 200, label: "Types", body: { types: [{ type: "Article", category: "content" }], count: 25 } }],
+        errors: [{ status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }]
+      },
+
+      /* ── Email Assistant ── */
+      {
+        id: "email-new",
+        module: "Email Assistant",
+        method: "POST",
+        path: API_PREFIX + "/email-assistant/new-email",
+        auth: true,
+        description: "Compose a new email from subject and context/key points.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "subject", type: "string", required: false, desc: "Email subject line" },
+          { field: "context", type: "string", required: true, desc: "Context / key points (1–3000 chars)" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | friendly | formal" }
+        ],
+        success: [{
+          status: 200,
+          label: "Email generated",
+          body: {
+            mode: "new_email",
+            subject: "Project Update — Revised Timeline",
+            tone: "professional",
+            email: "Dear Client,\n\nI wanted to inform you...",
+            word_count: 142,
+            quality: { overall: 88, grammar: 92, spam: 95 },
+            generator_version: "email-assistant-v5.2"
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "context is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "New email generation failed: <reason>" } }
+        ]
+      },
+      {
+        id: "email-reply",
+        module: "Email Assistant",
+        method: "POST",
+        path: API_PREFIX + "/email-assistant/reply",
+        auth: true,
+        description: "Generate a reply to an existing email.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "original_email", type: "string", required: true, desc: "Original email text (1–6000 chars)" },
+          { field: "reply_points", type: "string", required: false, desc: "Key points for the reply" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | friendly | formal" }
+        ],
+        success: [{
+          status: 200,
+          label: "Reply generated",
+          body: { mode: "reply", subject: "Re: Release Timeline", email: "Thank you for reaching out...", word_count: 98 }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "original_email is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Reply generation failed: <reason>" } }
+        ]
+      },
+      {
+        id: "email-cold",
+        module: "Email Assistant",
+        method: "POST",
+        path: API_PREFIX + "/email-assistant/cold-email",
+        auth: true,
+        description: "Generate a cold outreach email for a target company.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "company_name", type: "string", required: true, desc: "Target company name" },
+          { field: "purpose_offer", type: "string", required: true, desc: "Purpose or offer" },
+          { field: "value_proposition", type: "string", required: true, desc: "Value proposition" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | friendly | formal" }
+        ],
+        success: [{
+          status: 200,
+          label: "Cold email generated",
+          body: { mode: "cold_email", subject: "Partnership Opportunity — Acme Corp", email: "Hi there,\n\nI noticed...", word_count: 156 }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "company_name is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Cold email generation failed: <reason>" } }
+        ]
+      },
+
+      /* ── Plagiarism ── */
+      {
+        id: "plagiarism-check",
+        module: "Plagiarism Checker",
+        method: "POST",
+        path: API_PREFIX + "/plagiarism-check/check",
+        auth: true,
+        description: "Scan content for similarity against indexed sources. Minimum 40 characters.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "content", type: "string", required: true, desc: "Text to scan (40–50000 chars)" }
+        ],
+        success: [{
+          status: 200,
+          label: "Scan complete",
+          body: {
+            word_count: 320,
+            similarity_percent: 18,
+            original_percent: 82,
+            originality_score: 82,
+            risk_level: "low",
+            likely_original: true,
+            summary: "Content appears largely original.",
+            matched_segments: [],
+            suggestions: []
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "content must be at least 40 characters" } }
+        ]
+      },
+      {
+        id: "plagiarism-remove",
+        module: "Plagiarism Checker",
+        method: "POST",
+        path: API_PREFIX + "/plagiarism-check/remove",
+        auth: true,
+        description: "Rewrite plagiarized content to improve originality.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "content", type: "string", required: true, desc: "Text to rewrite (40–50000 chars)" }
+        ],
+        success: [{
+          status: 200,
+          label: "Content rewritten",
+          body: {
+            original_content: "...",
+            rewritten_content: "...",
+            similarity_percent_before: 45,
+            similarity_percent_after: 12,
+            improvement: 33,
+            summary: "Similarity reduced from 45% to 12%."
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "content must be at least 40 characters" } },
+          { status: 500, label: "Rewrite failed", body: { detail: "Rewrite failed: <reason>" } }
+        ]
+      },
+
+      /* ── Resume Builder ── */
+      {
+        id: "resume-generate",
+        module: "Resume Builder",
+        method: "POST",
+        path: API_PREFIX + "/resume-builder/generate",
+        auth: true,
+        description: "Generate a professional resume in markdown with AI-enhanced sections.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "full_name", type: "string", required: true, desc: "Full name" },
+          { field: "job_title", type: "string", required: true, desc: "Target job title" },
+          { field: "email", type: "string", required: true, desc: "Email address" },
+          { field: "phone", type: "string", required: true, desc: "Phone number" },
+          { field: "linkedin", type: "string", required: false, desc: "LinkedIn URL" },
+          { field: "experience", type: "string", required: false, desc: "Work experience" },
+          { field: "education", type: "string", required: false, desc: "Education" },
+          { field: "template", type: "string", required: false, desc: "modern | classic | executive | minimal | creative" },
+          { field: "use_ai", type: "boolean", required: false, desc: "Default true" }
+        ],
+        success: [{
+          status: 200,
+          label: "Resume generated",
+          body: {
+            full_name: "Jane Doe",
+            job_title: "Flutter Developer",
+            resume_markdown: "# Jane Doe\n\n## Experience\n...",
+            word_count: 420,
+            quality: { completeness_score: 90, resume_ready: true },
+            generator_version: "resume-rag-v3.1"
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "full_name is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Resume generation failed: <reason>" } }
+        ]
+      },
+
+      /* ── Cover Letter ── */
+      {
+        id: "cover-letter-generate",
+        module: "Cover Letter",
+        method: "POST",
+        path: API_PREFIX + "/cover-letter/generate",
+        auth: true,
+        description: "Generate a tailored professional cover letter.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "job_role", type: "string", required: true, desc: "Target job role" },
+          { field: "company_name", type: "string", required: true, desc: "Target company" },
+          { field: "skills_experience", type: "string", required: true, desc: "Skills and experience summary" },
+          { field: "tone", type: "string", required: false, desc: "professional, enthusiastic, confident" },
+          { field: "use_ai", type: "boolean", required: false, desc: "Default true" }
+        ],
+        success: [{
+          status: 200,
+          label: "Cover letter generated",
+          body: {
+            job_role: "Senior Software Engineer",
+            company_name: "Microsoft",
+            cover_letter: "Dear Hiring Manager,\n\nI am excited to apply...",
+            quality: { quality_score: 91, word_count: 340, letter_ready: true }
+          }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "job_role is required" } },
+          { status: 500, label: "Generation failed", body: { detail: "Cover letter generation failed: <reason>" } }
+        ]
+      },
+
+      /* ── Post Scheduler ── */
+      {
+        id: "post-scheduler-content",
+        module: "Post Scheduler",
+        method: "POST",
+        path: API_PREFIX + "/post-scheduler/suggest-content",
+        auth: true,
+        description: "AI-generated social media post copy for a platform.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "platform", type: "string", required: true, desc: "instagram | linkedin | twitter | tiktok" },
+          { field: "topic", type: "string", required: true, desc: "Post topic" },
+          { field: "tone", type: "string", required: false, desc: "professional | casual | funny" },
+          { field: "include_emojis", type: "boolean", required: false, desc: "Default true" }
+        ],
+        success: [{
+          status: 200,
+          label: "Content suggested",
+          body: { platform: "linkedin", content: "Launching a product? Here are 5 tips...", char_count: 245, char_limit: 3000 }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "platform is required" } },
+          { status: 500, label: "Suggestion failed", body: { detail: "Content suggestion failed: <reason>" } }
+        ]
+      },
+      {
+        id: "post-scheduler-hashtags",
+        module: "Post Scheduler",
+        method: "POST",
+        path: API_PREFIX + "/post-scheduler/suggest-hashtags",
+        auth: true,
+        description: "Generate hashtag suggestions for a platform and topic.",
+        headers: [
+          { name: "Authorization", value: "Bearer YOUR_API_KEY" },
+          { name: "Content-Type", value: "application/json" }
+        ],
+        body: [
+          { field: "platform", type: "string", required: false, desc: "Default instagram" },
+          { field: "topic", type: "string", required: true, desc: "Post topic" },
+          { field: "count", type: "integer", required: false, desc: "1–30 hashtags" }
+        ],
+        success: [{
+          status: 200,
+          label: "Hashtags suggested",
+          body: { platform: "instagram", hashtags: ["#digitalmarketing", "#seo", "#content"], text: "#digitalmarketing #seo #content" }
+        }],
+        errors: [
+          { status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } },
+          { status: 400, label: "Validation error", body: { detail: "topic is required" } }
+        ]
+      },
+      {
+        id: "post-scheduler-platforms",
+        module: "Post Scheduler",
+        method: "GET",
+        path: API_PREFIX + "/post-scheduler/platforms",
+        auth: true,
+        description: "List supported social media platforms.",
+        headers: [{ name: "Authorization", value: "Bearer YOUR_API_KEY" }],
+        body: [],
+        success: [{ status: 200, label: "Platforms", body: { platforms: ["instagram", "linkedin", "twitter", "tiktok"] } }],
+        errors: [{ status: 401, label: "Unauthorized", body: { detail: "Invalid or missing API key" } }]
+      }
+    ];
+
+  </script>
+
+  <script>
+    const navEl = document.getElementById("nav");
+    const detailEl = document.getElementById("detail");
+    const heroEl = document.getElementById("hero");
+    const filterEl = document.getElementById("filter");
+    let activeId = null;
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function formatJson(obj) {
+      return JSON.stringify(obj, null, 2);
+    }
+
+    function buildNav(filter) {
+      const q = (filter || "").trim().toLowerCase();
+      navEl.innerHTML = "";
+      const modules = [...new Set(ENDPOINTS.map(e => e.module))];
+      modules.forEach(mod => {
+        const items = ENDPOINTS.filter(e => {
+          if (e.module !== mod) return false;
+          if (!q) return true;
+          const hay = (e.method + " " + e.path + " " + e.description + " " + mod).toLowerCase();
+          return hay.includes(q);
+        });
+        if (!items.length) return;
+        const title = document.createElement("div");
+        title.className = "module-title";
+        title.textContent = mod;
+        navEl.appendChild(title);
+        items.forEach(ep => {
+          const btn = document.createElement("button");
+          btn.className = "nav-item" + (ep.id === activeId ? " active" : "");
+          btn.dataset.id = ep.id;
+          btn.innerHTML =
+            '<span class="method ' + ep.method + '">' + ep.method + '</span>' +
+            '<span class="path">' + escapeHtml(ep.path) + '</span>';
+          btn.addEventListener("click", () => selectEndpoint(ep.id));
+          navEl.appendChild(btn);
+        });
+      });
+      if (!navEl.children.length) {
+        navEl.innerHTML = '<div class="empty-state">No endpoints match your filter.</div>';
+      }
+    }
+
+    function renderFields(body) {
+      if (!body || !body.length) {
+        return '<p style="color:var(--muted);font-size:0.85rem;margin:0">No request body.</p>';
+      }
+      let rows = body.map(f =>
+        '<tr>' +
+        '<td class="fname">' + escapeHtml(f.field) + '</td>' +
+        '<td class="ftype">' + escapeHtml(f.type) + '</td>' +
+        '<td class="' + (f.required ? 'freq-yes' : 'freq-no') + '">' + (f.required ? 'Yes' : 'No') + '</td>' +
+        '<td>' + escapeHtml(f.desc) + '</td>' +
+        '</tr>'
+      ).join("");
+      return '<table class="fields"><thead><tr>' +
+        '<th>Field</th><th>Type</th><th>Required</th><th>Description</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function renderResponses(list, kind) {
+      if (!list || !list.length) {
+        return '<p style="color:var(--muted);font-size:0.85rem;margin:0">None documented.</p>';
+      }
+      return list.map(r =>
+        '<div class="response-block ' + kind + '">' +
+        '<div class="response-head">' +
+        '<span class="status-code">' + r.status + '</span>' +
+        '<span>' + escapeHtml(r.label) + '</span>' +
+        '</div>' +
+        '<pre class="json">' + escapeHtml(formatJson(r.body)) + '</pre>' +
+        '</div>'
+      ).join("");
+    }
+
+    function selectEndpoint(id) {
+      activeId = id;
+      const ep = ENDPOINTS.find(e => e.id === id);
+      if (!ep) return;
+      heroEl.classList.add("hidden");
+      buildNav(filterEl.value);
+
+      const fullUrl = LIVE_BASE + ep.path;
+      const headers = ep.headers && ep.headers.length
+        ? ep.headers.map(h => '<span class="header-pill">' + escapeHtml(h.name + ": " + h.value) + '</span>').join("")
+        : '<span style="color:var(--muted);font-size:0.85rem">None required</span>';
+
+      detailEl.innerHTML =
+        '<div class="endpoint-card">' +
+        '<div class="endpoint-header">' +
+        '<span class="method ' + ep.method + '">' + ep.method + '</span>' +
+        '<span class="endpoint-url">' + escapeHtml(ep.path) + '</span>' +
+        '</div>' +
+        '<div style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">Full URL: <code style="color:#93c5fd">' + escapeHtml(fullUrl) + '</code></div>' +
+        '<span class="auth-badge ' + (ep.auth ? 'required' : 'none') + '">' +
+        (ep.auth ? 'Auth Required — Bearer API Key' : 'No Auth Required') +
+        '</span>' +
+        '<p class="endpoint-desc">' + escapeHtml(ep.description) + '</p>' +
+        '<div class="section-title">Headers</div>' +
+        '<div class="headers-list">' + headers + '</div>' +
+        (ep.method === "POST" || ep.method === "PUT" ? (
+          '<div class="section-title">Request Body</div>' + renderFields(ep.body)
+        ) : '') +
+        '<div class="section-title">Success Responses</div>' +
+        renderResponses(ep.success, 'success') +
+        '<div class="section-title">Error Responses</div>' +
+        renderResponses(ep.errors, 'error') +
+        '</div>';
+
+      detailEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    filterEl.addEventListener("input", () => buildNav(filterEl.value));
+
+    buildNav("");
+    selectEndpoint(ENDPOINTS[0].id);
+  </script>
+</body>
+</html>

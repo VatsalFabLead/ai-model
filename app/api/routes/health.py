@@ -18,6 +18,7 @@ async def root() -> dict:
   return {
     "service": "Custom Model API",
     "docs": "/docs",
+    "api_reference": "/api-docs",
     "health": "/health",
     "chat": "/v1/chat/completions",
   }

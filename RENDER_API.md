@@ -8,6 +8,7 @@ Production API for **custom-nexus-v1**, deployed on [Render](https://render.com)
 | **Base URL** | `https://ai-model-api-2906.onrender.com` |
 | **API prefix** | `/v1` |
 | **Interactive docs** | `https://ai-model-api-2906.onrender.com/docs` |
+| **HTML API reference** | `https://ai-model-api-2906.onrender.com/api-docs` |
 | **OpenAPI JSON** | `https://ai-model-api-2906.onrender.com/openapi.json` |
 | **Health check** | `GET /health` (no auth) |
 | **Model ID** | `custom-nexus-v1` |
