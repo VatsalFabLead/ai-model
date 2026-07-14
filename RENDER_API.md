@@ -150,7 +150,7 @@ Response shape:
 |-------|------|----------|-------|
 | `messages` | array | Yes | `{role, content}` — roles: `user`, `assistant`, `system` |
 | `model` | string | No | Default: `custom-nexus-v1` |
-| `max_tokens` | int | No | 1–2048 |
+| `max_tokens` | int | No | 1–7000 |
 | `temperature` | float | No | 0.0–2.0 |
 | `top_p` | float | No | 0.0–1.0 |
 | `stream` | bool | No | Must be `false` (streaming not supported) |

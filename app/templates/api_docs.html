@@ -371,7 +371,7 @@
         body: [
           { field: "messages", type: "array", required: true, desc: "Array of {role, content}. Roles: user, assistant, system." },
           { field: "model", type: "string", required: false, desc: "Model ID. Default: custom-nexus-v1" },
-          { field: "max_tokens", type: "integer", required: false, desc: "1–2048" },
+          { field: "max_tokens", type: "integer", required: false, desc: "1–7000" },
           { field: "temperature", type: "float", required: false, desc: "0.0–2.0" },
           { field: "top_p", type: "float", required: false, desc: "0.0–1.0" },
           { field: "stream", type: "boolean", required: false, desc: "Must be false" },
