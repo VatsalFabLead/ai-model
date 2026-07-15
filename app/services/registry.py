@@ -131,6 +131,14 @@ class ProviderRegistry:
       (m.get("content", "") for m in reversed(cleaned) if m.get("role") == "user"),
       "",
     )
+
+    from app.engine.conversation import detect_smalltalk
+
+    smalltalk = detect_smalltalk(last_user)
+    if smalltalk:
+      self._last_backend = "chat"
+      return smalltalk, "chat"
+
     if is_gold_price_query(last_user):
       live = await fetch_gold_price_context(last_user)
       if live:

@@ -381,11 +381,15 @@ class CustomModelProvider(ModelProvider):
     if retry and not _weak_generation(retry, detailed=detailed) and not is_low_quality_output(retry):
       return _format_answer(self._settings, retry, detailed=detailed)
 
-    return (
-      "I could not produce a confident answer through inference yet. "
-      "Please run: python scripts/train_worldwide.py --epochs 12\n"
-      "Then restart the server with: python run.py"
-    )
+    # Inference was weak — answer directly from retrieved context so the user
+    # still gets a helpful, human-readable reply instead of a training hint.
+    from app.engine.conversation import FRIENDLY_FALLBACK, synthesize_from_context
+
+    synthesized = synthesize_from_context(last_user, tool_context)
+    if synthesized:
+      return synthesized
+
+    return FRIENDLY_FALLBACK
 
   def model_id(self) -> str:
     return self._engine.model_id

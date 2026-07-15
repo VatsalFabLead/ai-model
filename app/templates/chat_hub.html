@@ -319,6 +319,7 @@
     ];
 
     let activeTool = TOOLS[0];
+    let chatHistory = [];
     const nav = document.getElementById("toolNav");
     const formEl = document.getElementById("toolForm");
     const titleEl = document.getElementById("toolTitle");
@@ -451,24 +452,33 @@
       }}
       statusHint.textContent = "";
       const useAi = useAiEl.value === "true";
-      const summary = activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
+      const summary = activeTool.isChat
+        ? fields.message
+        : activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
       addMsg("user", summary);
       genBtn.disabled = true;
       statusHint.textContent = "Generating…";
       try {{
         if (activeTool.isChat) {{
+          chatHistory.push({{ role: "user", content: fields.message }});
           const {{ res, data }} = await fetchJson(API + "/chat/completions", {{
             method: "POST", headers: headers(),
             body: JSON.stringify({{
               model: MODEL_ID,
-              messages: [{{ role: "user", content: fields.message }}],
+              messages: chatHistory.slice(-12),
               max_tokens: 768, temperature: 0.7
             }})
           }}, 180000);
-          if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
+          if (!res.ok) {{
+            chatHistory.pop();
+            throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
+          }}
           const backend = res.headers.get("X-Nexus-Backend") || MODEL_ID;
           const content = data.choices?.[0]?.message?.content || "";
+          chatHistory.push({{ role: "assistant", content: content }});
           addMsg("assistant", "[" + backend + "]\\n\\n" + content);
+          const msgEl = document.getElementById("f_message");
+          if (msgEl) msgEl.value = "";
         }} else {{
           const input = activeTool.build(fields, useAi);
           const nexusTool = activeTool.nexusTool || activeTool.id;
@@ -890,7 +900,7 @@
     }}
 
     document.getElementById("generateBtn").onclick = generate;
-    document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; }};
+    document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; chatHistory = []; }};
     selectTool(TOOLS[0], nav.querySelector(".tool-btn"));
   </script>
 </body>
