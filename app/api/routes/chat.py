@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.core.security import verify_api_key
+from app.services.chat_tools import maybe_handle_tool
 from app.services.registry import ProviderRegistry
 
 router = APIRouter(tags=["chat"])
@@ -21,7 +22,14 @@ class ChatCompletionRequest(BaseModel):
     default=None,
     description="Backend: custom | ollama | llm | auto. Or prompt prefix: /ollama your question",
   )
-  messages: list[ChatMessage]
+  messages: list[ChatMessage] = Field(
+    ...,
+    description=(
+      "All AI tools work inside chat via slash commands: /seo-content, /seo-optimizer, "
+      "/title-meta, /keywords, /schema, /email-new, /email-reply, /email-cold, "
+      "/plagiarism, /rewrite, /cover-letter, /resume. Send '/tools' for usage."
+    ),
+  )
   max_tokens: int | None = Field(default=None, ge=1, le=7000)
   temperature: float | None = Field(default=None, ge=0.0, le=2.0)
   top_p: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -72,6 +80,35 @@ async def chat_completions(
     raise HTTPException(status_code=503, detail="Model is loading or unavailable")
 
   messages = [m.model_dump() for m in payload.messages]
+
+  # All AI tools are available inside chat — /seo-content, /keywords,
+  # /email-new, /resume, /cover-letter, ... (send /tools for the full list).
+  try:
+    tool_reply = await maybe_handle_tool(registry, messages)
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=f"Tool invocation failed: {exc}") from exc
+  if tool_reply is not None:
+    content, backend_used = tool_reply
+    response.headers["X-Nexus-Backend"] = backend_used
+    prompt_chars = sum(len(m["content"]) for m in messages)
+    return ChatCompletionResponse(
+      id=f"chatcmpl-{uuid.uuid4().hex[:24]}",
+      created=int(time.time()),
+      model=get_settings().model_id,
+      choices=[
+        ChatChoice(
+          index=0,
+          message=ChatMessage(role="assistant", content=content),
+          finish_reason="stop",
+        )
+      ],
+      usage=UsageInfo(
+        prompt_tokens=max(1, prompt_chars // 4),
+        completion_tokens=max(1, len(content) // 4),
+        total_tokens=max(2, (prompt_chars + len(content)) // 4),
+      ),
+    )
+
   kwargs: dict = {}
   if payload.max_tokens is not None:
     kwargs["max_tokens"] = payload.max_tokens

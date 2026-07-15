@@ -308,6 +308,14 @@
         }}),
         format: fmtResume
       }},
+      {{ id: "chat", label: "Chat / Completions", desc: "Free chat + /tools commands",
+        isChat: true,
+        fields: [
+          {{ id: "message", label: "Message *", type: "textarea", required: true, full: true,
+             placeholder: "Ask anything — or run a tool: /tools, /email-new …, /keywords …, /cover-letter …" }},
+        ],
+        endpoint: "/chat/completions"
+      }},
     ];
 
     let activeTool = TOOLS[0];
@@ -449,17 +457,18 @@
       statusHint.textContent = "Generating…";
       try {{
         if (activeTool.isChat) {{
-          const {{ res, data }} = await fetchJson(NEXUS_INVOKE, {{
+          const {{ res, data }} = await fetchJson(API + "/chat/completions", {{
             method: "POST", headers: headers(),
-            body: JSON.stringify(nexusPayload("chat", {{
+            body: JSON.stringify({{
+              model: MODEL_ID,
               messages: [{{ role: "user", content: fields.message }}],
               max_tokens: 768, temperature: 0.7
-            }}))
-          }}, 120000);
-          if (!res.ok) throw new Error(data.detail || res.statusText);
-          const payload = unwrapNexus(data);
-          const backend = res.headers.get("X-Nexus-Backend") || payload.backend || MODEL_ID;
-          addMsg("assistant", "[" + backend + "]\\n\\n" + (payload.content || ""));
+            }})
+          }}, 180000);
+          if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
+          const backend = res.headers.get("X-Nexus-Backend") || MODEL_ID;
+          const content = data.choices?.[0]?.message?.content || "";
+          addMsg("assistant", "[" + backend + "]\\n\\n" + content);
         }} else {{
           const input = activeTool.build(fields, useAi);
           const nexusTool = activeTool.nexusTool || activeTool.id;
