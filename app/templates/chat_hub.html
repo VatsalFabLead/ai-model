@@ -25,7 +25,6 @@
     .eye-btn {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0 0.6rem; cursor: pointer; font-size: 0.95rem; }}
     .eye-btn:hover {{ border-color: var(--accent); }}
     .layout {{ flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }}
-    @media (max-width: 900px) {{ .layout {{ grid-template-columns: 1fr; }} .sidebar {{ max-height: 220px; overflow-y: auto; }} }}
     .sidebar {{ border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; padding: 0.5rem; }}
     .tool-btn {{ width: 100%; text-align: left; background: transparent; border: 1px solid transparent; color: var(--text); padding: 0.55rem 0.65rem; border-radius: 8px; cursor: pointer; font-size: 0.82rem; margin-bottom: 0.25rem; }}
     .tool-btn:hover {{ background: var(--panel2); }}
@@ -74,6 +73,47 @@
     .plag-seg {{ background: #faf5ff; border: 1px solid #ede9fe; border-radius: 8px; padding: 0.55rem 0.7rem; margin-bottom: 0.45rem; font-size: 0.82rem; }}
     .plag-seg .tag {{ color: #7c3aed; font-weight: 600; font-size: 0.72rem; }}
     .plag-rewrite {{ margin-top: 1rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 0.85rem; color: #064e3b; font-size: 0.88rem; white-space: pre-wrap; }}
+
+    /* ---------- Tablet: sidebar becomes a horizontal chip strip ---------- */
+    @media (max-width: 900px) {{
+      .layout {{ grid-template-columns: 1fr; grid-template-rows: auto 1fr; }}
+      .sidebar {{
+        display: flex; flex-direction: row; gap: 0.35rem;
+        overflow-x: auto; overflow-y: hidden; max-height: none;
+        border-right: none; border-bottom: 1px solid var(--border);
+        -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+      }}
+      .tool-btn {{
+        flex: 0 0 auto; width: auto; margin-bottom: 0;
+        white-space: nowrap; border-color: var(--border);
+      }}
+      .form-panel {{ max-height: 52vh; }}
+    }}
+
+    /* ---------- Phone: stack everything, full-width controls ---------- */
+    @media (max-width: 640px) {{
+      header {{ padding: 0.6rem 0.75rem; gap: 0.4rem; }}
+      header h1 {{ font-size: 0.95rem; }}
+      header .meta {{ font-size: 0.65rem; }}
+      .bar {{ padding: 0.5rem 0.75rem; gap: 0.5rem; }}
+      .bar > div {{ flex: 1 1 100%; }}
+      .bar > .hint {{ display: none; }}
+      .bar input, .bar select {{ width: 100% !important; min-width: 0; font-size: 16px; }}
+      .key-wrap input {{ min-width: 0; }}
+      .tool-btn {{ font-size: 0.78rem; padding: 0.5rem 0.6rem; }}
+      .tool-btn small {{ font-size: 0.62rem; }}
+      .form-panel {{ padding: 0.75rem; }}
+      .grid {{ grid-template-columns: 1fr; gap: 0.5rem; }}
+      .field input, .field select, .field textarea {{ font-size: 16px; }}
+      .actions {{ flex-wrap: wrap; }}
+      .actions .btn {{ flex: 1 1 auto; padding: 0.65rem 0.9rem; }}
+      #messages {{ padding: 0.75rem; }}
+      .msg {{ max-width: 100%; font-size: 0.86rem; }}
+      .plag-card {{ padding: 0.8rem; }}
+      .plag-gauge-row {{ gap: 0.75rem; }}
+      .plag-btns {{ flex-direction: column; }}
+      .plag-btn {{ width: 100%; }}
+    }}
   </style>
 </head>
 <body>
@@ -358,6 +398,7 @@
       activeTool = tool;
       document.querySelectorAll(".tool-btn").forEach(x => x.classList.remove("active"));
       btn.classList.add("active");
+      btn.scrollIntoView({{ inline: "center", block: "nearest", behavior: "smooth" }});
       titleEl.textContent = tool.label;
       renderForm(tool);
     }}
