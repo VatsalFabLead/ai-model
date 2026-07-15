@@ -125,8 +125,6 @@
   <script>
     const API = "{api_prefix}";
     const MODEL_ID = "{model_id}";
-    const NL1 = String.fromCharCode(10);
-    const NL2 = NL1 + NL1;
     const NEXUS_INVOKE = API + "/nexus/invoke";
     const TONES = ["professional", "casual", "friendly", "formal", "confident", "enthusiastic", "persuasive"];
     const EMAIL_TONES = ["professional", "casual", "friendly", "formal"];
@@ -468,9 +466,8 @@
             }})
           }}, 180000);
           if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
-          const backend = res.headers.get("X-Nexus-Backend") || MODEL_ID;
           const content = data.choices?.[0]?.message?.content || "";
-          addMsg("assistant", "[" + backend + "]" + NL2 + content);
+          addMsg("assistant", content);
         }} else {{
           const input = activeTool.build(fields, useAi);
           const nexusTool = activeTool.nexusTool || activeTool.id;
@@ -755,10 +752,10 @@
         (d.subject_options && d.subject_options.length > 1) ? "**Alt subjects:** " + d.subject_options.slice(1, 4).join(" · ") : "",
         (d.suggestions && d.suggestions.length) ? "**Tips:** " + d.suggestions.slice(0, 2).join(" · ") : ""
       ].filter(Boolean);
-      return lines.join(NL1) + NL2 + d.email;
+      return lines.join("\\n") + "\\n\\n" + d.email;
     }}
     function fmtPlagiarism(d) {{
-      return d.summary + NL1 + "Similarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
+      return d.summary + "\\nSimilarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
     }}
 
     function plagGaugeSvg(pct) {{
@@ -860,8 +857,8 @@
             '<div><strong>' + orig + '%</strong> Original content</div>';
           const rw = wrap.querySelector("[data-rewrite]");
           rw.style.display = "block";
-          const ok = (sim <= 12 ? "✓ No significant similarity detected." : "✓ Rewrite complete.") + NL2;
-          rw.textContent = ok + out.summary + NL2 + out.rewritten_content;
+          const ok = sim <= 12 ? "✓ No significant similarity detected.\\n\\n" : "✓ Rewrite complete.\\n\\n";
+          rw.textContent = ok + out.summary + "\\n\\n" + out.rewritten_content;
           const contentEl = document.getElementById("f_content");
           if (contentEl) contentEl.value = out.rewritten_content;
           btn.textContent = sim <= 12 ? "Done — original" : ("Done — " + orig + "% original");

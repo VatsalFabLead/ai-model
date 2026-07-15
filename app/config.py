@@ -31,26 +31,6 @@ class Settings(BaseSettings):
   ollama_host: str = Field(default="http://localhost:11434", alias="OLLAMA_HOST")
   ollama_model: str = Field(default="qwen2.5:0.5b", alias="OLLAMA_MODEL")
 
-  # Hosted LLM — any OpenAI-compatible chat API (Groq free tier, Gemini, OpenRouter).
-  # Used first for general chat so /chat/completions answers like ChatGPT.
-  hosted_llm_enabled: bool = Field(default=False, alias="HOSTED_LLM_ENABLED")
-  hosted_llm_base_url: str = Field(
-    default="https://api.groq.com/openai/v1",
-    alias="HOSTED_LLM_BASE_URL",
-  )
-  hosted_llm_api_key: str = Field(default="", alias="HOSTED_LLM_API_KEY")
-  hosted_llm_model: str = Field(default="llama-3.3-70b-versatile", alias="HOSTED_LLM_MODEL")
-  hosted_llm_timeout: float = Field(default=60.0, alias="HOSTED_LLM_TIMEOUT")
-  hosted_llm_system_prompt: str = Field(
-    default=(
-      "You are Nexus, a helpful, knowledgeable AI assistant. Answer every question "
-      "clearly and thoroughly in well-structured markdown — coding, math, science, "
-      "business, writing, and general knowledge. Be conversational but precise. "
-      "Never mention which underlying model or provider powers you."
-    ),
-    alias="HOSTED_LLM_SYSTEM_PROMPT",
-  )
-
   # Gemma 4 — free local: model.safetensors in GEMMA_MODEL_DIR (no Hugging Face API).
   gemma_enabled: bool = Field(default=True, alias="GEMMA_ENABLED")
   gemma_model_dir: Path = Field(default=Path("D:/Gemma 4"), alias="GEMMA_MODEL_DIR")
@@ -72,6 +52,29 @@ class Settings(BaseSettings):
       "Never mention GPT, Claude, Gemini, or Hugging Face."
     ),
     alias="GEMMA_SYSTEM_PROMPT",
+  )
+
+  # Hosted LLM (OpenAI-compatible API) for ChatGPT-quality conversation.
+  # Free options: Groq (console.groq.com), OpenRouter, Google AI Studio.
+  hosted_llm_enabled: bool = Field(default=False, alias="HOSTED_LLM_ENABLED")
+  hosted_llm_base_url: str = Field(
+    default="https://api.groq.com/openai/v1",
+    alias="HOSTED_LLM_BASE_URL",
+  )
+  hosted_llm_api_key: str = Field(default="", alias="HOSTED_LLM_API_KEY")
+  hosted_llm_model: str = Field(default="llama-3.3-70b-versatile", alias="HOSTED_LLM_MODEL")
+  hosted_llm_timeout: float = Field(default=60.0, alias="HOSTED_LLM_TIMEOUT")
+  # Use the hosted LLM first for general chat (tools keep using the custom model).
+  hosted_chat_first: bool = Field(default=True, alias="HOSTED_CHAT_FIRST")
+  hosted_system_prompt: str = Field(
+    default=(
+      "You are Nexus (custom-nexus-v1), a friendly, knowledgeable AI assistant. "
+      "Hold natural human-like conversations: answer questions on any topic clearly "
+      "and thoroughly, use well-structured markdown when helpful, and keep small talk "
+      "warm and brief. Never mention Groq, Llama, OpenAI, Google, Gemini, or any "
+      "underlying model or provider — you are Nexus."
+    ),
+    alias="HOSTED_SYSTEM_PROMPT",
   )
 
   # Free open-source local model (GGUF via llama.cpp). Not GPT/Claude/Gemini.

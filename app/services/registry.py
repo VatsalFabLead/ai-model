@@ -21,6 +21,10 @@ class ProviderRegistry:
     self._last_backend: str = settings.model_backend
 
   def _create_provider(self, backend: str) -> ModelProvider:
+    if backend == "hosted":
+      from app.services.hosted_provider import HostedLLMProvider
+
+      return HostedLLMProvider(self._settings)
     if backend == "gemma":
       from app.services.gemma_provider import GemmaProvider
 
@@ -33,10 +37,6 @@ class ProviderRegistry:
       from app.services.llm_provider import LocalLLMProvider
 
       return LocalLLMProvider(self._settings)
-    if backend == "hosted":
-      from app.services.hosted_provider import HostedLLMProvider
-
-      return HostedLLMProvider(self._settings)
     return CustomModelProvider(self._settings)
 
   async def _ensure_loaded(self, backend: str) -> ModelProvider | None:
@@ -59,7 +59,7 @@ class ProviderRegistry:
   async def startup(self) -> None:
     default = self._settings.model_backend.lower().strip()
     await self._ensure_loaded("custom")
-    if self._settings.hosted_llm_enabled and self._settings.hosted_llm_api_key:
+    if self._settings.hosted_llm_enabled:
       await self._ensure_loaded("hosted")
     if self._settings.gemma_enabled:
       await self._ensure_loaded("gemma")
@@ -149,13 +149,58 @@ class ProviderRegistry:
         self._last_backend = "title_meta"
         return text, "title_meta"
 
+    # ChatGPT-quality general conversation: prefer the hosted LLM for normal
+    # chat when enabled. Explicit /custom prefix or backend=custom still goes
+    # to the custom model; all tools are unaffected (they use tool_provider).
+    if self._use_hosted_first(chosen, messages, backend):
+      hosted = await self._ensure_loaded("hosted")
+      if hosted and hosted.is_ready():
+        try:
+          text = await hosted.chat(cleaned, **kwargs)
+          if text.strip():
+            self._last_backend = "hosted"
+            return text, "hosted"
+        except Exception:
+          pass  # fall through to the custom model
+
     if chosen == "auto":
       text, used = await self._chat_auto(cleaned, **kwargs)
     else:
       text, used = await self._chat_one(chosen, cleaned, **kwargs)
 
+    # Rescue low-quality custom output with the hosted LLM when available.
+    if used == "custom" and self._settings.hosted_llm_enabled and is_low_quality_output(text):
+      hosted = await self._ensure_loaded("hosted")
+      if hosted and hosted.is_ready():
+        try:
+          better = await hosted.chat(cleaned, **kwargs)
+          if better.strip():
+            self._last_backend = "hosted"
+            return better, "hosted"
+        except Exception:
+          pass
+
     self._last_backend = used
     return text, used
+
+  def _use_hosted_first(
+    self,
+    chosen: str,
+    messages: list[dict[str, str]],
+    explicit_backend: str | None,
+  ) -> bool:
+    if not (self._settings.hosted_llm_enabled and self._settings.hosted_chat_first):
+      return False
+    if chosen == "hosted":
+      return True
+    if chosen not in ("custom", "auto"):
+      return False
+    if (explicit_backend or "").strip().lower() == "custom":
+      return False
+    from app.services.backend_router import parse_prompt_backend
+
+    from_prompt, _ = parse_prompt_backend(messages)
+    return from_prompt != "custom"
 
   async def _chat_one(
     self,
@@ -192,10 +237,9 @@ class ProviderRegistry:
 
   async def _chat_auto(self, messages: list[dict[str, str]], **kwargs) -> tuple[str, str]:
     errors: list[str] = []
-    # Hosted LLM first (ChatGPT-class answers for any question), then local fallbacks.
     order = ["custom", "gemma", "ollama"]
-    if self._settings.hosted_llm_enabled and self._settings.hosted_llm_api_key:
-      order.insert(0, "hosted")
+    if self._settings.hosted_llm_enabled:
+      order.insert(1, "hosted")
     if self._settings.llm_backend_enabled:
       order.append("llm")
     for backend in order:
@@ -227,7 +271,7 @@ class ProviderRegistry:
 
 def _backend_hint(backend: str) -> str:
   if backend == "hosted":
-    return "set HOSTED_LLM_ENABLED=true and HOSTED_LLM_API_KEY (Groq/Gemini/OpenRouter key)"
+    return "set HOSTED_LLM_API_KEY (free key: https://console.groq.com)"
   if backend == "gemma":
     return (
       f"place model.safetensors in {get_settings().gemma_model_dir} "

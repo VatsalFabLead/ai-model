@@ -1,13 +1,19 @@
-"""Hosted LLM provider — any OpenAI-compatible chat API (Groq, Gemini, OpenRouter).
+"""Hosted LLM provider — OpenAI-compatible API for human-quality conversation.
 
-Gives /chat/completions real ChatGPT-class answers for general conversation.
-Configure via env:
+Works with any OpenAI-compatible endpoint. Free options:
+  Groq       https://api.groq.com/openai/v1     (llama-3.3-70b-versatile)
+  OpenRouter https://openrouter.ai/api/v1        (many :free models)
+  Gemini     https://generativelanguage.googleapis.com/v1beta/openai
+             (gemini-2.0-flash)
+
+Configure via .env / Render environment:
   HOSTED_LLM_ENABLED=true
-  HOSTED_LLM_BASE_URL=https://api.groq.com/openai/v1        (Groq — free tier)
-    or https://generativelanguage.googleapis.com/v1beta/openai (Gemini)
-    or https://openrouter.ai/api/v1                          (OpenRouter)
+  HOSTED_LLM_BASE_URL=https://api.groq.com/openai/v1
   HOSTED_LLM_API_KEY=<your key>
-  HOSTED_LLM_MODEL=llama-3.3-70b-versatile                   (or gemini-2.5-flash, ...)
+  HOSTED_LLM_MODEL=llama-3.3-70b-versatile
+
+Replies are branded as the custom Nexus model; the real backend is reported
+only in the X-Nexus-Backend response header.
 """
 
 from __future__ import annotations
@@ -25,9 +31,12 @@ class HostedLLMProvider(ModelProvider):
 
   async def load(self) -> None:
     if not self._settings.hosted_llm_enabled:
-      raise RuntimeError("Hosted LLM is disabled (set HOSTED_LLM_ENABLED=true)")
-    if not self._settings.hosted_llm_api_key:
-      raise RuntimeError("HOSTED_LLM_API_KEY is not set")
+      raise RuntimeError("Hosted LLM disabled — set HOSTED_LLM_ENABLED=true")
+    if not self._settings.hosted_llm_api_key.strip():
+      raise RuntimeError(
+        "HOSTED_LLM_API_KEY is not set. Get a free key at https://console.groq.com "
+        "(or OpenRouter / Google AI Studio) and add it to the environment."
+      )
     self._ready = True
 
   async def unload(self) -> None:
@@ -36,41 +45,46 @@ class HostedLLMProvider(ModelProvider):
   def is_ready(self) -> bool:
     return self._ready
 
-  def model_id(self) -> str:
-    return self._settings.hosted_llm_model
-
   async def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
-    payload_messages = list(messages)
-    if not any(m.get("role") == "system" for m in payload_messages):
-      payload_messages.insert(
-        0,
-        {"role": "system", "content": self._settings.hosted_llm_system_prompt},
-      )
+    has_system = any(m.get("role") == "system" for m in messages)
+    full_messages: list[dict[str, str]] = []
+    if not has_system:
+      full_messages.append({
+        "role": "system",
+        "content": self._settings.hosted_system_prompt,
+      })
+    full_messages.extend(
+      {"role": m.get("role", "user"), "content": m.get("content", "")}
+      for m in messages
+    )
 
-    body: dict = {
+    payload: dict = {
       "model": self._settings.hosted_llm_model,
-      "messages": payload_messages,
-      "max_tokens": int(kwargs.get("max_tokens") or 1024),
-      "temperature": float(kwargs.get("temperature") or 0.7),
+      "messages": full_messages,
+      "stream": False,
     }
+    if kwargs.get("max_tokens") is not None:
+      payload["max_tokens"] = int(kwargs["max_tokens"])
+    if kwargs.get("temperature") is not None:
+      payload["temperature"] = float(kwargs["temperature"])
     if kwargs.get("top_p") is not None:
-      body["top_p"] = float(kwargs["top_p"])
+      payload["top_p"] = float(kwargs["top_p"])
 
-    url = self._settings.hosted_llm_base_url.rstrip("/") + "/chat/completions"
+    base = self._settings.hosted_llm_base_url.rstrip("/")
     headers = {
-      "Authorization": f"Bearer {self._settings.hosted_llm_api_key}",
+      "Authorization": f"Bearer {self._settings.hosted_llm_api_key.strip()}",
       "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(timeout=self._settings.hosted_llm_timeout) as client:
-      res = await client.post(url, json=body, headers=headers)
-    if res.status_code != 200:
-      detail = res.text[:300]
-      raise RuntimeError(f"Hosted LLM error {res.status_code}: {detail}")
-    data = res.json()
+      r = await client.post(f"{base}/chat/completions", json=payload, headers=headers)
+      r.raise_for_status()
+      data = r.json()
+
     choices = data.get("choices") or []
     if not choices:
-      raise RuntimeError("Hosted LLM returned no choices")
-    content = (choices[0].get("message") or {}).get("content") or ""
-    if not content.strip():
-      raise RuntimeError("Hosted LLM returned empty content")
-    return content.strip()
+      raise RuntimeError(f"Hosted LLM returned no choices: {data}")
+    return (choices[0].get("message", {}).get("content") or "").strip()
+
+  def model_id(self) -> str:
+    # Branded as the product model; real backend shows in X-Nexus-Backend.
+    return self._settings.model_id
