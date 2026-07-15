@@ -33,7 +33,15 @@ services:
       - key: CORS_ORIGINS
         value: "*"
       - key: MODEL_BACKEND
-        value: custom
+        value: auto
+      - key: HOSTED_LLM_ENABLED
+        value: "true"
+      - key: HOSTED_LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: HOSTED_LLM_MODEL
+        value: llama-3.3-70b-versatile
+      - key: HOSTED_LLM_API_KEY
+        sync: false
       - key: GEMMA_ENABLED
         value: "false"
       - key: LLM_BACKEND_ENABLED

@@ -15,10 +15,10 @@ from __future__ import annotations
 import copy
 import re
 
-VALID_BACKENDS = frozenset({"custom", "gemma", "ollama", "llm", "auto"})
+VALID_BACKENDS = frozenset({"custom", "gemma", "ollama", "llm", "hosted", "auto"})
 
 _PREFIX_RE = re.compile(
-  r"^(?:/)?@?(custom|gemma|ollama|llm|auto)\b[:\s,-]*",
+  r"^(?:/)?@?(custom|gemma|ollama|llm|hosted|auto)\b[:\s,-]*",
   re.IGNORECASE,
 )
 
@@ -42,6 +42,8 @@ def normalize_backend(name: str | None, default: str) -> str:
     return "ollama"
   if "gemma" in low:
     return "gemma"
+  if "hosted" in low or "groq" in low or "gemini" in low or "openrouter" in low:
+    return "hosted"
   if low.endswith(".gguf") or low.startswith("llm") or low.startswith("qwen"):
     return "llm"
   return default if default in VALID_BACKENDS else "auto"

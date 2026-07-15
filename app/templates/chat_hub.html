@@ -125,6 +125,8 @@
   <script>
     const API = "{api_prefix}";
     const MODEL_ID = "{model_id}";
+    const NL1 = String.fromCharCode(10);
+    const NL2 = NL1 + NL1;
     const NEXUS_INVOKE = API + "/nexus/invoke";
     const TONES = ["professional", "casual", "friendly", "formal", "confident", "enthusiastic", "persuasive"];
     const EMAIL_TONES = ["professional", "casual", "friendly", "formal"];
@@ -319,7 +321,6 @@
     ];
 
     let activeTool = TOOLS[0];
-    let chatHistory = [];
     const nav = document.getElementById("toolNav");
     const formEl = document.getElementById("toolForm");
     const titleEl = document.getElementById("toolTitle");
@@ -452,33 +453,24 @@
       }}
       statusHint.textContent = "";
       const useAi = useAiEl.value === "true";
-      const summary = activeTool.isChat
-        ? fields.message
-        : activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
+      const summary = activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
       addMsg("user", summary);
       genBtn.disabled = true;
       statusHint.textContent = "Generating…";
       try {{
         if (activeTool.isChat) {{
-          chatHistory.push({{ role: "user", content: fields.message }});
           const {{ res, data }} = await fetchJson(API + "/chat/completions", {{
             method: "POST", headers: headers(),
             body: JSON.stringify({{
               model: MODEL_ID,
-              messages: chatHistory.slice(-12),
+              messages: [{{ role: "user", content: fields.message }}],
               max_tokens: 768, temperature: 0.7
             }})
           }}, 180000);
-          if (!res.ok) {{
-            chatHistory.pop();
-            throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
-          }}
+          if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
           const backend = res.headers.get("X-Nexus-Backend") || MODEL_ID;
           const content = data.choices?.[0]?.message?.content || "";
-          chatHistory.push({{ role: "assistant", content: content }});
-          addMsg("assistant", "[" + backend + "]\\n\\n" + content);
-          const msgEl = document.getElementById("f_message");
-          if (msgEl) msgEl.value = "";
+          addMsg("assistant", "[" + backend + "]" + NL2 + content);
         }} else {{
           const input = activeTool.build(fields, useAi);
           const nexusTool = activeTool.nexusTool || activeTool.id;
@@ -763,10 +755,10 @@
         (d.subject_options && d.subject_options.length > 1) ? "**Alt subjects:** " + d.subject_options.slice(1, 4).join(" · ") : "",
         (d.suggestions && d.suggestions.length) ? "**Tips:** " + d.suggestions.slice(0, 2).join(" · ") : ""
       ].filter(Boolean);
-      return lines.join("\\n") + "\\n\\n" + d.email;
+      return lines.join(NL1) + NL2 + d.email;
     }}
     function fmtPlagiarism(d) {{
-      return d.summary + "\\nSimilarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
+      return d.summary + NL1 + "Similarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
     }}
 
     function plagGaugeSvg(pct) {{
@@ -868,8 +860,8 @@
             '<div><strong>' + orig + '%</strong> Original content</div>';
           const rw = wrap.querySelector("[data-rewrite]");
           rw.style.display = "block";
-          const ok = sim <= 12 ? "✓ No significant similarity detected.\\n\\n" : "✓ Rewrite complete.\\n\\n";
-          rw.textContent = ok + out.summary + "\\n\\n" + out.rewritten_content;
+          const ok = (sim <= 12 ? "✓ No significant similarity detected." : "✓ Rewrite complete.") + NL2;
+          rw.textContent = ok + out.summary + NL2 + out.rewritten_content;
           const contentEl = document.getElementById("f_content");
           if (contentEl) contentEl.value = out.rewritten_content;
           btn.textContent = sim <= 12 ? "Done — original" : ("Done — " + orig + "% original");
@@ -900,7 +892,7 @@
     }}
 
     document.getElementById("generateBtn").onclick = generate;
-    document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; chatHistory = []; }};
+    document.getElementById("clearBtn").onclick = () => {{ messagesEl.innerHTML = ""; }};
     selectTool(TOOLS[0], nav.querySelector(".tool-btn"));
   </script>
 </body>

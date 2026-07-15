@@ -33,6 +33,10 @@ class ProviderRegistry:
       from app.services.llm_provider import LocalLLMProvider
 
       return LocalLLMProvider(self._settings)
+    if backend == "hosted":
+      from app.services.hosted_provider import HostedLLMProvider
+
+      return HostedLLMProvider(self._settings)
     return CustomModelProvider(self._settings)
 
   async def _ensure_loaded(self, backend: str) -> ModelProvider | None:
@@ -55,6 +59,8 @@ class ProviderRegistry:
   async def startup(self) -> None:
     default = self._settings.model_backend.lower().strip()
     await self._ensure_loaded("custom")
+    if self._settings.hosted_llm_enabled and self._settings.hosted_llm_api_key:
+      await self._ensure_loaded("hosted")
     if self._settings.gemma_enabled:
       await self._ensure_loaded("gemma")
     if default == "ollama":
@@ -107,7 +113,7 @@ class ProviderRegistry:
 
   def available_backends(self) -> list[str]:
     return [
-      b for b in ("custom", "gemma", "ollama", "llm")
+      b for b in ("custom", "hosted", "gemma", "ollama", "llm")
       if self._providers.get(b) and self._providers[b].is_ready()
     ]
 
@@ -131,14 +137,6 @@ class ProviderRegistry:
       (m.get("content", "") for m in reversed(cleaned) if m.get("role") == "user"),
       "",
     )
-
-    from app.engine.conversation import detect_smalltalk
-
-    smalltalk = detect_smalltalk(last_user)
-    if smalltalk:
-      self._last_backend = "chat"
-      return smalltalk, "chat"
-
     if is_gold_price_query(last_user):
       live = await fetch_gold_price_context(last_user)
       if live:
@@ -194,7 +192,10 @@ class ProviderRegistry:
 
   async def _chat_auto(self, messages: list[dict[str, str]], **kwargs) -> tuple[str, str]:
     errors: list[str] = []
+    # Hosted LLM first (ChatGPT-class answers for any question), then local fallbacks.
     order = ["custom", "gemma", "ollama"]
+    if self._settings.hosted_llm_enabled and self._settings.hosted_llm_api_key:
+      order.insert(0, "hosted")
     if self._settings.llm_backend_enabled:
       order.append("llm")
     for backend in order:
@@ -225,6 +226,8 @@ class ProviderRegistry:
 
 
 def _backend_hint(backend: str) -> str:
+  if backend == "hosted":
+    return "set HOSTED_LLM_ENABLED=true and HOSTED_LLM_API_KEY (Groq/Gemini/OpenRouter key)"
   if backend == "gemma":
     return (
       f"place model.safetensors in {get_settings().gemma_model_dir} "
