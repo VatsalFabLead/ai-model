@@ -152,7 +152,8 @@ class ProviderRegistry:
     # ChatGPT-quality general conversation: prefer the hosted LLM for normal
     # chat when enabled. Explicit /custom prefix or backend=custom still goes
     # to the custom model; all tools are unaffected (they use tool_provider).
-    if self._use_hosted_first(chosen, messages, backend):
+    explicit_custom = self._is_explicit_custom(messages, backend)
+    if self._use_hosted_first(chosen, explicit_custom):
       hosted = await self._ensure_loaded("hosted")
       if hosted and hosted.is_ready():
         try:
@@ -168,8 +169,14 @@ class ProviderRegistry:
     else:
       text, used = await self._chat_one(chosen, cleaned, **kwargs)
 
-    # Rescue low-quality custom output with the hosted LLM when available.
-    if used == "custom" and self._settings.hosted_llm_enabled and is_low_quality_output(text):
+    # Rescue low-quality custom output with the hosted LLM when available
+    # (unless the caller explicitly asked for the custom model).
+    if (
+      used == "custom"
+      and not explicit_custom
+      and self._settings.hosted_llm_enabled
+      and is_low_quality_output(text)
+    ):
       hosted = await self._ensure_loaded("hosted")
       if hosted and hosted.is_ready():
         try:
@@ -183,24 +190,24 @@ class ProviderRegistry:
     self._last_backend = used
     return text, used
 
-  def _use_hosted_first(
+  def _is_explicit_custom(
     self,
-    chosen: str,
     messages: list[dict[str, str]],
     explicit_backend: str | None,
   ) -> bool:
+    if (explicit_backend or "").strip().lower() == "custom":
+      return True
+    from app.services.backend_router import parse_prompt_backend
+
+    from_prompt, _ = parse_prompt_backend(messages)
+    return from_prompt == "custom"
+
+  def _use_hosted_first(self, chosen: str, explicit_custom: bool) -> bool:
     if not (self._settings.hosted_llm_enabled and self._settings.hosted_chat_first):
       return False
     if chosen == "hosted":
       return True
-    if chosen not in ("custom", "auto"):
-      return False
-    if (explicit_backend or "").strip().lower() == "custom":
-      return False
-    from app.services.backend_router import parse_prompt_backend
-
-    from_prompt, _ = parse_prompt_backend(messages)
-    return from_prompt != "custom"
+    return chosen in ("custom", "auto") and not explicit_custom
 
   async def _chat_one(
     self,
