@@ -19,7 +19,7 @@ from app.engine.resume_rag_pipeline import (
 from app.services.provider_base import ModelProvider
 
 _MAX_TOKENS = 420
-_AI_TIMEOUT_SEC = 35.0
+_AI_TIMEOUT_SEC = 60.0
 
 
 def _clean(text: str) -> str:

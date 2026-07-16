@@ -31,8 +31,8 @@ class SchemaMarkupRequest(BaseModel):
     description="Page language — sets inLanguage and localized labels",
   )
   ai_enhance: bool = Field(
-    default=False,
-    description="Enhance via your local custom model + schema training knowledge",
+    default=True,
+    description="Enhance via hosted LLM + custom model (same quality path as Chat)",
   )
   use_rag: bool = Field(
     default=False,

@@ -44,7 +44,8 @@ _VALID_TOOLS = frozenset(t["id"] for t in NEXUS_TOOL_CATALOG)
 def _provider(registry: ProviderRegistry, model: str, *, use_ai: bool = True) -> ModelProvider | None:
   if not use_ai:
     return None
-  return registry.get_provider_for_model(model)
+  # Same quality path as Chat/Completions: hosted LLM first, custom fallback.
+  return registry.tool_provider()
 
 
 async def invoke_nexus_tool(
@@ -105,7 +106,7 @@ async def invoke_nexus_tool(
       variation_seed=inp.get("variation_seed"),
     )
   elif tool_id == "title_meta":
-    use_ai = bool(inp.get("use_ai", False))
+    use_ai = bool(inp.get("use_ai", True))
     result = await title_meta.generate(
       _provider(registry, model, use_ai=use_ai),
       topic=inp["topic"],
@@ -116,7 +117,7 @@ async def invoke_nexus_tool(
       variation_seed=inp.get("variation_seed"),
     )
   elif tool_id == "seo_keywords":
-    use_ai = bool(inp.get("use_ai", False))
+    use_ai = bool(inp.get("use_ai", True))
     result = await seo_keyword.generate_keywords(
       _provider(registry, model, use_ai=use_ai),
       seed_keyword=inp["seed_keyword"],
@@ -128,18 +129,18 @@ async def invoke_nexus_tool(
       variation_seed=inp.get("variation_seed"),
     )
   elif tool_id == "schema_markup":
-    provider = registry.get_provider_for_model(model)
+    provider = registry.tool_provider()
     result = await schema_markup.generate_schema_markup(
       provider,
       schema_type=inp["schema_type"],
       name=inp["name"],
       data=inp.get("data") or {},
       language=inp.get("language"),
-      ai_enhance=bool(inp.get("ai_enhance", False)),
+      ai_enhance=bool(inp.get("ai_enhance", True)),
       use_rag=bool(inp.get("use_rag", False)),
     )
   elif tool_id == "email_new":
-    provider = registry.get_provider_for_model(model)
+    provider = registry.tool_provider()
     result = await email_assistant.generate_new_email(
       provider,
       subject=inp.get("subject", ""),
@@ -147,7 +148,7 @@ async def invoke_nexus_tool(
       tone=inp.get("tone"),
     )
   elif tool_id == "email_reply":
-    provider = registry.get_provider_for_model(model)
+    provider = registry.tool_provider()
     result = await email_assistant.generate_reply_email(
       provider,
       original_email=inp["original_email"],
@@ -155,7 +156,7 @@ async def invoke_nexus_tool(
       tone=inp.get("tone"),
     )
   elif tool_id == "email_cold":
-    provider = registry.get_provider_for_model(model)
+    provider = registry.tool_provider()
     result = await email_assistant.generate_cold_email(
       provider,
       company_name=inp["company_name"],
@@ -166,7 +167,7 @@ async def invoke_nexus_tool(
   elif tool_id == "plagiarism_check":
     result = await plagiarism_checker.check_content(content=inp["content"])
   elif tool_id == "plagiarism_remove":
-    provider = registry.get_provider_for_model(model)
+    provider = registry.tool_provider()
     result = await plagiarism_checker.remove_plagiarism(provider, content=inp["content"])
   elif tool_id == "cover_letter":
     use_ai = bool(inp.get("use_ai", True))

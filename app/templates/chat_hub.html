@@ -141,7 +141,7 @@
       <label>Use AI ({model_id})</label>
       <select id="useAi"><option value="true" selected>Yes</option><option value="false">Templates only</option></select>
     </div>
-    <div class="hint" style="align-self:center">Unified API: /v1/nexus/invoke</div>
+    <div class="hint" style="align-self:center">AI quality: hosted LLM + custom-nexus-v1 · /v1/nexus/invoke</div>
   </div>
 
   <div class="layout">
@@ -216,7 +216,7 @@
         build: (f, useAi) => ({{
           topic: f.topic,
           variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
-          use_ai: false,
+          use_ai: useAi,
           use_rag: true,
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
@@ -232,7 +232,7 @@
         build: (f, useAi) => ({{
           seed_keyword: f.seed_keyword,
           variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
-          use_ai: false,
+          use_ai: useAi,
           use_rag: true,
           discover_web: true,
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
@@ -250,7 +250,7 @@
           schema_type: f.schema_type,
           name: f.name,
           data: {{}},
-          ai_enhance: false,
+          ai_enhance: useAi,
           use_rag: useAi
         }}),
         format: fmtSchema

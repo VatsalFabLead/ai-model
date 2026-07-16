@@ -89,11 +89,16 @@ class ProviderRegistry:
     raise RuntimeError("Provider registry is not initialized")
 
   def get_provider_for_model(self, model: str | None = None) -> ModelProvider:
-    """Resolve provider from model id (custom-nexus-v1 → custom backend)."""
+    """Resolve provider from model id.
+
+    Product model ids (custom-nexus-v1 / custom / auto) use tool_provider so
+    every AI tool gets the same hosted-LLM quality path as Chat/Completions.
+    Explicit backends (hosted, ollama, …) still resolve directly.
+    """
     from app.services.backend_router import normalize_backend
 
     backend = normalize_backend(model, "custom")
-    if backend == "auto":
+    if backend in ("auto", "custom"):
       return self.tool_provider()
     provider = self._providers.get(backend)
     if provider and provider.is_ready():
@@ -101,12 +106,30 @@ class ProviderRegistry:
     return self.tool_provider()
 
   def tool_provider(self) -> ModelProvider:
-    """Best backend for AI tools: custom-nexus-v1 first, then fallbacks."""
-    for key in ("custom", "gemma", "ollama", "llm"):
+    """Best backend for AI tools — hosted LLM first (like chat), then custom."""
+    from app.services.cascading_provider import CascadingProvider
+
+    order: list[str] = []
+    if self._settings.hosted_llm_enabled and self._settings.hosted_tools_first:
+      order.append("hosted")
+    order.extend(["custom", "gemma", "ollama"])
+    if self._settings.llm_backend_enabled:
+      order.append("llm")
+    # If hosted-first is off but hosted is enabled, still allow it as last resort.
+    if self._settings.hosted_llm_enabled and "hosted" not in order:
+      order.append("hosted")
+
+    providers: list[ModelProvider] = []
+    for key in order:
       p = self._providers.get(key)
       if p and p.is_ready():
-        return p
-    return self.provider
+        providers.append(p)
+
+    if not providers:
+      return self.provider
+    if len(providers) == 1:
+      return providers[0]
+    return CascadingProvider(providers, model_id=self._settings.model_id)
 
   def is_ready(self) -> bool:
     return any(p and p.is_ready() for p in self._providers.values())
@@ -226,7 +249,7 @@ class ProviderRegistry:
   async def _title_meta_reply(self, query: str) -> str | None:
     from app.services import title_meta
 
-    provider = await self._ensure_loaded("custom")
+    provider = self.tool_provider()
     if not provider or not provider.is_ready():
       return None
     topic = extract_title_meta_topic(query)

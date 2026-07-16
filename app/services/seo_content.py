@@ -26,7 +26,7 @@ _GENERIC_HEADINGS = {
   "getting started", "background", "conclusion", "about",
 }
 
-_AI_TIMEOUT_SEC = 14.0
+_AI_TIMEOUT_SEC = 45.0
 
 
 def supported_categories() -> list[dict[str, str]]:

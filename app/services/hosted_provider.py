@@ -46,13 +46,12 @@ class HostedLLMProvider(ModelProvider):
     return self._ready
 
   async def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+    # Tools pass system_prompt=…; chat uses the default Nexus prompt.
+    system = (kwargs.get("system_prompt") or "").strip() or self._settings.hosted_system_prompt
     has_system = any(m.get("role") == "system" for m in messages)
     full_messages: list[dict[str, str]] = []
     if not has_system:
-      full_messages.append({
-        "role": "system",
-        "content": self._settings.hosted_system_prompt,
-      })
+      full_messages.append({"role": "system", "content": system})
     full_messages.extend(
       {"role": m.get("role", "user"), "content": m.get("content", "")}
       for m in messages

@@ -63,9 +63,12 @@ class Settings(BaseSettings):
   )
   hosted_llm_api_key: str = Field(default="", alias="HOSTED_LLM_API_KEY")
   hosted_llm_model: str = Field(default="llama-3.3-70b-versatile", alias="HOSTED_LLM_MODEL")
-  hosted_llm_timeout: float = Field(default=60.0, alias="HOSTED_LLM_TIMEOUT")
-  # Use the hosted LLM first for general chat (tools keep using the custom model).
+  hosted_llm_timeout: float = Field(default=90.0, alias="HOSTED_LLM_TIMEOUT")
+  # Use the hosted LLM first for general chat.
   hosted_chat_first: bool = Field(default=True, alias="HOSTED_CHAT_FIRST")
+  # Use the hosted LLM first for all AI tools (SEO, email, resume, etc.).
+  # Falls back to the custom model if the hosted API fails.
+  hosted_tools_first: bool = Field(default=True, alias="HOSTED_TOOLS_FIRST")
   hosted_system_prompt: str = Field(
     default=(
       "You are Nexus (custom-nexus-v1), a friendly, knowledgeable AI assistant. "

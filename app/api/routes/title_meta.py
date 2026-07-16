@@ -49,7 +49,7 @@ class TitleMetaRequest(BaseModel):
     default="blog_article",
     examples=["blog_article", "product_page", "landing_page", "local_business", "how_to"],
   )
-  use_ai: bool = Field(default=False, description="Optional polish via custom local model")
+  use_ai: bool = Field(default=True, description="Polish via hosted LLM + custom model (same path as Chat)")
   use_rag: bool = Field(default=True, description="Use open-dataset SERP/evidence routing")
   variation_seed: int | None = Field(default=None, description="Omit for unique output each request")
 

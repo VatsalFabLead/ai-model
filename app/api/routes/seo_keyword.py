@@ -58,7 +58,7 @@ class SeoKeywordRequest(BaseModel):
   max_items: int | None = Field(default=None, ge=10, le=50, description="Alias for variations")
   tone: str | None = Field(default=None, examples=["informative", "professional"])
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
-  use_ai: bool = Field(default=False, description="Optional enrichment via local model")
+  use_ai: bool = Field(default=True, description="Enrich via hosted LLM + custom model (same path as Chat)")
   use_rag: bool = Field(default=True, description="Use open-dataset evidence routing")
   discover_web: bool = Field(default=True, description="Google/Bing suggest, Datamuse, Wikipedia")
   include_questions: bool = Field(default=True)
