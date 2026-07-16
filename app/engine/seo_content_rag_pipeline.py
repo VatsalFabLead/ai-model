@@ -61,7 +61,7 @@ from app.engine.seo_retrieval_engine import (
   generate_safe_metadata,
 )
 
-GENERATOR_VERSION = "seo-content-rag-v4.1"
+GENERATOR_VERSION = "seo-content-rag-v4.2"
 
 ARCHITECTURE_FLOW = [
   "input",
@@ -592,13 +592,31 @@ def run_context_aware_writing_stage(
 def generate_featured_snippet(topic: str, primary: str, facts: list[Any], intent: str) -> str:
   if facts:
     base = getattr(facts[0], "text", str(facts[0]))
-  elif intent == "informational":
-    base = (
-      f"{primary.title()} covers fundamentals, best practices, and practical steps "
-      f"related to {topic}."
-    )
   else:
-    base = f"Learn how {primary} applies to {topic} with actionable, search-aligned guidance."
+    primary_clean = (primary or topic or "").strip()
+    topic_clean = (topic or primary_clean).strip()
+    same = primary_clean.lower() == topic_clean.lower()
+    if intent == "informational":
+      if same:
+        base = (
+          f"{topic_clean} is a practical subject covering fundamentals, "
+          f"best practices, beginner tips, and strategies for better results."
+        )
+      else:
+        base = (
+          f"{primary_clean.title()} covers fundamentals, best practices, and practical steps "
+          f"related to {topic_clean}."
+        )
+    elif same:
+      base = (
+        f"This guide explains {topic_clean} with actionable tips, common mistakes to avoid, "
+        f"and steps you can apply right away."
+      )
+    else:
+      base = (
+        f"Learn practical ways to use {primary_clean} for {topic_clean}, "
+        f"with clear tips and search-friendly guidance."
+      )
   words = base.split()
   if len(words) > 55:
     base = " ".join(words[:55]).rstrip(".,;") + "."
@@ -613,7 +631,10 @@ def generate_content_table(
 ) -> str:
   if category not in ("listicle", "how_to_guide", "blog_article"):
     return ""
-  rows = [e for e in entities[:4] if e] or keywords[1:5]
+  rows = [e for e in entities[:6] if e and len(e) < 40 and "generate" not in e.lower()] or [
+    k for k in keywords[1:6] if k and "generate" not in k.lower()
+  ]
+  rows = [r for r in rows if r.lower() != (topic or "").lower()][:4]
   if len(rows) < 2:
     return ""
   header = "| Aspect | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"

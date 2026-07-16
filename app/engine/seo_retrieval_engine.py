@@ -360,8 +360,8 @@ def assign_facts_to_sections(
         break
     if not chosen:
       chosen = (
-        f"When exploring {heading.lower()}, focus on verified information about "
-        f"{primary} and avoid unrelated sources."
+        f"{heading} for {primary}: cover the essentials, practical examples, "
+        f"and what beginners should prioritize first."
       )
     assignments[heading] = chosen
   return assignments

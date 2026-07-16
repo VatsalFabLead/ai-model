@@ -545,8 +545,8 @@ def expand_article_depth(
         )
       else:
         extra += (
-          f"For {primary}, {h3.lower()} plays a key role in successful {topic} outcomes. "
-          "Apply industry best practices and measure results over time."
+          f"Break down {h3.lower()} with concrete examples tied to {primary}. "
+          f"Note what to measure, what to avoid, and one practical next step."
         )
       if locations and h3.lower() == "location":
         extra += f" Popular areas include {', '.join(locations[:5])}."
