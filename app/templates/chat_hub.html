@@ -806,12 +806,12 @@
         (d.recommendations || out.recommendations || []).map(r => "- " + r).join(NL) || "—",
         "",
         "### All Keywords (" + (d.count || 0) + ")",
-        (d.keywords||[]).map((k,i) => {
+        (d.keywords||[]).map((k,i) => {{
           const base = (i+1) + ". " + fmtRow(k);
           const why = k.reason ? NL + "   → " + k.reason : "";
           const sim = k.semantic_similarity != null ? " · sim " + k.semantic_similarity : "";
           return base + sim + why;
-        }).join(NL)
+        }}).join(NL)
       ];
       return lines.filter(Boolean).join(NL);
     }}
