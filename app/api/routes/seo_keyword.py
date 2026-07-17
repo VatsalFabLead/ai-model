@@ -38,6 +38,9 @@ class KeywordItem(BaseModel):
   opportunity_score: int | None = None
   opportunity_breakdown: dict[str, Any] | None = None
   metrics_source: str = "ai_estimate"
+  semantic_similarity: int | None = None
+  confidence_score: int | None = None
+  reason: str | None = None
 
 
 class DiscoveryMeta(BaseModel):

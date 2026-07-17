@@ -1,7 +1,7 @@
-"""Content-first SEO Keyword Strategist — hosted-LLM JSON generation.
+"""Content-first SEO Keyword Strategist v2 — elite hosted-LLM JSON generation.
 
-Follows topical authority / intent / entity rules. Never invents industries
-or entities not present in the provided title/content.
+Relevance over volume. Never invents entities/industries. Validates semantic
+similarity ≥ 80 before keeping a keyword.
 """
 
 from __future__ import annotations
@@ -13,41 +13,87 @@ from typing import Any
 
 from app.services.provider_base import ModelProvider
 
-STRATEGIST_VERSION = "seo-keyword-strategist-v1"
+STRATEGIST_VERSION = "seo-keyword-strategist-v2"
+MIN_SEMANTIC_SIMILARITY = 80
 
-_SYSTEM = """You are an expert SEO strategist with deep knowledge of Google Search, topical authority, semantic SEO, keyword clustering, and search intent analysis.
+_SYSTEM = """You are an elite SEO Strategist with expertise in Google Search, semantic SEO, topical authority, keyword research, search intent analysis, and content optimization.
 
-Your task is to generate highly relevant SEO keywords for the provided content.
+Your objective is to generate highly relevant SEO keywords that maximize topical relevance, search visibility, and organic ranking potential.
 
-IMPORTANT RULES
-1. Generate keywords ONLY related to the given title and content.
-2. Never hallucinate industries, companies, locations, products, or entities.
-3. Do NOT generate generic AI keywords unless they directly match the topic.
-4. If the article is a blog, prioritize informational keywords.
-5. If the article is a product page, prioritize commercial keywords.
-6. If the article is a service page, prioritize transactional keywords.
-7. Local SEO keywords should ONLY be generated when the content is location-dependent.
-8. Do not generate keywords like "near me", "company", "agency", "services", "providers" unless the content actually discusses those topics.
-9. Every keyword must be semantically related to the article.
-10. Remove duplicate or overly similar keywords.
+## Core Principles
+1. Prioritize relevance over search volume.
+2. Every keyword must directly relate to the article's primary topic.
+3. Never generate keywords from unrelated industries.
+4. Never hallucinate entities, brands, companies, locations, or products.
+5. Avoid generic keywords unless they accurately describe the article.
+6. Think like an SEO strategist, not a keyword expander.
+7. Generate keywords that users would realistically search to find this content.
+8. Prefer topical authority over keyword stuffing.
+9. Diversify keyword lengths (short, medium, long-tail).
+10. Reject weak semantic matches.
+
+## Quality Rules
+Each keyword must satisfy ALL:
+- High semantic similarity to article (semantic_similarity >= 80)
+- Matches search intent
+- Natural search phrase
+- Grammatically correct
+- Not duplicated
+- Not overly generic
+- Not keyword stuffed
+
+Reject keywords like: "AI company", "AI services", "AI agency", "AI near me"
+unless the article is actually about companies or services.
+
+If the article is educational, prefer: how, what, why, guide, examples, best practices, techniques.
+
+Local keywords ONLY if the article is location-specific.
+Commercial / competitor keywords ONLY when products/services are discussed.
+
+## Long-tail
+Good: "AI vulnerability prioritization", "How AI identifies vulnerabilities"
+Bad: "Artificial Intelligence", "Best AI", "AI Company", "AI Services"
+
+Distribute metric estimates realistically — do NOT assign the same score to every keyword.
+Never prioritize search volume over relevance.
 
 Return JSON only. No markdown fences. No commentary.
 Use this exact schema:
 {
   "classification": {
+    "main_topic": "string",
+    "secondary_topics": ["string"],
+    "user_intent": "string",
+    "target_audience": "string",
     "content_type": "Blog|Tutorial|News|Landing Page|Product Page|Service Page|Documentation|Comparison",
     "search_intent": "Informational|Commercial Investigation|Transactional|Navigational",
-    "industry": "string from content only"
+    "industry": "string from content only",
+    "confidence": {
+      "main_topic": 0,
+      "content_type": 0,
+      "search_intent": 0,
+      "industry": 0,
+      "target_audience": 0
+    }
   },
   "entities": {
-    "products": [],
     "technologies": [],
-    "concepts": [],
-    "standards": [],
     "frameworks": [],
+    "programming_languages": [],
+    "standards": [],
+    "security_concepts": [],
+    "products": [],
     "companies": [],
-    "protocols": [],
-    "security_terms": []
+    "ai_models": [],
+    "cloud_platforms": [],
+    "protocols": []
+  },
+  "topic_graph": {
+    "primary_topic": "string",
+    "supporting_topics": ["string"],
+    "related_concepts": ["string"],
+    "synonyms": ["string"],
+    "semantic_relationships": [{"from": "string", "to": "string", "relation": "string"}]
   },
   "topics": ["5-15 topics ranked by relevance"],
   "keyword_groups": {
@@ -57,30 +103,38 @@ Use this exact schema:
     "question_keywords": ["up to 10"],
     "lsi_keywords": ["up to 20"],
     "trending_variations": ["up to 10"],
-    "commercial_keywords": ["only if applicable, else []"],
-    "local_keywords": ["only if location evidence in content, else []"],
-    "competitor_keywords": ["only if applicable, else []"],
-    "opportunity_keywords": ["high-opportunity phrases"]
+    "commercial_keywords": [],
+    "local_keywords": [],
+    "competitor_keywords": [],
+    "opportunity_keywords": []
   },
-  "keyword_metrics": [
+  "keywords": [
     {
       "keyword": "string",
+      "intent": "Informational|Commercial Investigation|Transactional|Navigational",
       "search_volume": "Very Low|Low|Medium|High",
       "keyword_difficulty": "Easy|Medium|Hard",
       "competition": "Low|Medium|High",
-      "opportunity_score": 0
+      "opportunity_score": 0,
+      "semantic_similarity": 0,
+      "confidence_score": 0,
+      "reason": "1 sentence why this keyword is relevant",
+      "category": "primary|secondary|long_tail|questions|lsi|trending|commercial|local|competitor|opportunity"
     }
   ],
   "clusters": {
     "Cluster Name": ["keyword1", "keyword2"]
   },
+  "recommendations": ["string"],
   "validation": {
-    "rejected_examples": [],
-    "kept_count": 0
+    "rejected_examples": [{"keyword": "string", "reason": "string"}],
+    "kept_count": 0,
+    "min_similarity": 80
   }
 }
 
-Include every unique keyword in keyword_metrics. opportunity_score is 0-100 (qualitative AI estimate only).
+Include EVERY kept keyword in the "keywords" array with unique, realistic metric scores.
+Remove any keyword with semantic_similarity below 80 before returning.
 """
 
 _VOLUME_MAP = {
@@ -123,9 +177,11 @@ _INTENT_MAP = {
   "navigational": "navigational",
 }
 
-_GENERIC_BANNED = (
-  "near me", " hire ", "agency", " providers", "development company",
-  "software development company", "ai development services",
+_FOREIGN_LEAK = (
+  "healthcare", "telemedicine", "hipaa", "hospital management", "medical software",
+  "machine learning development", "ai development services", "hire flutter",
+  "software development company", "iot healthcare", "patient monitoring",
+  "ai company", "ai services", "ai agency", "ai near me",
 )
 
 
@@ -151,15 +207,12 @@ def _norm_kw(kw: str) -> str:
   return _clean(kw).lower().strip(" .,;:\"'")
 
 
-_FOREIGN_LEAK = (
-  "healthcare", "telemedicine", "hipaa", "hospital management", "medical software",
-  "machine learning development", "ai development services", "hire flutter",
-  "software development company", "iot healthcare", "patient monitoring",
-)
-
-
-def _is_banned_generic(kw: str, content_low: str) -> bool:
+def _is_banned_generic(kw: str, content_low: str, *, informational: bool) -> bool:
   k = f" {_norm_kw(kw)} "
+  banned_ai = ("ai company", "ai services", "ai agency", "ai near me", "best ai", "artificial intelligence company")
+  for ban in banned_ai:
+    if ban in k and ban not in content_low and "company" not in content_low and "agency" not in content_low:
+      return True
   if "near me" in k and "near me" not in content_low and not re.search(
     r"\b(city|town|location|local|in [a-z]{3,}|pune|mumbai|delhi|india|usa|london)\b",
     content_low,
@@ -168,10 +221,8 @@ def _is_banned_generic(kw: str, content_low: str) -> bool:
   for ban in ("agency", "providers", "hire developers", "software development company"):
     if ban in k and ban not in content_low:
       return True
-  if re.search(r"\b(company|services)\b", k) and not re.search(r"\b(company|services|service)\b", content_low):
-    if "company" in k and "company" not in content_low:
-      return True
-    if "services" in k and not re.search(r"\bservices?\b", content_low):
+  if informational and re.search(r"\b(company|services|agency|providers|hire)\b", k):
+    if not re.search(r"\b(company|services|agency|service|hire|provider)\b", content_low):
       return True
   for leak in _FOREIGN_LEAK:
     if leak in k and leak not in content_low:
@@ -187,12 +238,10 @@ def _semantic_ok(kw: str, anchors: set[str], content_low: str) -> bool:
     return True
   if toks & anchors:
     return True
-  # Prefix soft-match (roast/roasting, coffee/coffees)
   for t in toks:
     for a in anchors:
-      if len(t) >= 4 and len(a) >= 4 and (t[:4] == a[:4]):
+      if len(t) >= 4 and len(a) >= 4 and t[:4] == a[:4]:
         return True
-  # Trust strategist LSI unless clearly foreign to the article
   for leak in _FOREIGN_LEAK:
     if leak in kw and leak not in content_low:
       return False
@@ -203,7 +252,7 @@ def _anchor_tokens(*texts: str) -> set[str]:
   stop = {
     "the", "and", "for", "with", "from", "that", "this", "your", "our", "are",
     "was", "have", "will", "can", "into", "about", "their", "what", "when",
-    "where", "which", "how", "why", "best", "guide", "using", "into",
+    "where", "which", "how", "why", "best", "guide", "using",
   }
   out: set[str] = set()
   for text in texts:
@@ -225,15 +274,16 @@ def build_strategist_prompt(
     "INPUT\n\n"
     f"Title:\n{title or '(not provided)'}\n\n"
     f"Content:\n{content}\n\n"
-    f"Primary Topic:\n{primary_topic or '(infer from content)'}\n\n"
-    f"Market:\n{country or 'Global'}\n\n"
+    f"Primary Keyword:\n{primary_topic or '(infer from content)'}\n\n"
     f"Language:\n{language or 'English'}\n\n"
-    "Follow STEP 1–7 from your instructions. Return JSON only."
+    f"Target Market:\n{country or 'Global'}\n\n"
+    "Follow STEP 1–11 from your instructions. "
+    f"Remove any keyword with semantic_similarity below {MIN_SEMANTIC_SIMILARITY}. "
+    "Return JSON only."
   )
 
 
 def _collect_group_keywords(groups: dict[str, Any]) -> list[tuple[str, str]]:
-  """Return (keyword, category) pairs in priority order."""
   order = [
     ("primary_keyword", "primary"),
     ("secondary_keywords", "secondary"),
@@ -243,14 +293,13 @@ def _collect_group_keywords(groups: dict[str, Any]) -> list[tuple[str, str]]:
     ("trending_variations", "trending"),
     ("commercial_keywords", "commercial"),
     ("local_keywords", "local"),
-    ("competitor_keywords", "commercial"),
+    ("competitor_keywords", "competitor"),
     ("opportunity_keywords", "opportunity"),
   ]
   out: list[tuple[str, str]] = []
   seen: set[str] = set()
   for key, cat in order:
     val = groups.get(key)
-    items: list[str]
     if isinstance(val, str):
       items = [val]
     elif isinstance(val, list):
@@ -258,7 +307,10 @@ def _collect_group_keywords(groups: dict[str, Any]) -> list[tuple[str, str]]:
     else:
       items = []
     for raw in items:
-      kw = _norm_kw(raw)
+      # Support list of objects {keyword: ...}
+      if isinstance(raw, dict):
+        raw = str(raw.get("keyword") or "")
+      kw = _norm_kw(str(raw))
       if not kw or len(kw) < 3 or len(kw) > 90 or kw in seen:
         continue
       seen.add(kw)
@@ -266,15 +318,11 @@ def _collect_group_keywords(groups: dict[str, Any]) -> list[tuple[str, str]]:
   return out
 
 
-def _metrics_index(metrics: list[Any]) -> dict[str, dict[str, Any]]:
-  idx: dict[str, dict[str, Any]] = {}
-  for m in metrics or []:
-    if not isinstance(m, dict):
-      continue
-    kw = _norm_kw(str(m.get("keyword") or ""))
-    if kw:
-      idx[kw] = m
-  return idx
+def _safe_int(val: Any, default: int) -> int:
+  try:
+    return int(val)
+  except (TypeError, ValueError):
+    return default
 
 
 def _cluster_for(kw: str, clusters: dict[str, Any]) -> str:
@@ -283,20 +331,43 @@ def _cluster_for(kw: str, clusters: dict[str, Any]) -> str:
     if not isinstance(members, list):
       continue
     for m in members:
-      if _norm_kw(str(m)) == low:
+      item = m.get("keyword") if isinstance(m, dict) else m
+      if _norm_kw(str(item)) == low:
         return str(name)
   return "General"
 
 
-def _intent_for(kw: str, default_intent: str, category: str) -> str:
-  k = kw.lower()
-  if category == "questions" or k.split()[0] in ("what", "how", "why", "when", "where", "which", "who"):
-    return "informational"
-  if category == "commercial" or any(x in k for x in ("buy", "price", "pricing", "cost", "subscription")):
-    return "commercial"
-  if category == "local" or "near me" in k:
-    return "transactional"
-  return default_intent
+def _intent_label(raw: str, default: str = "informational") -> str:
+  return _INTENT_MAP.get((raw or "").strip().lower(), default)
+
+
+def _normalize_keyword_entries(data: dict[str, Any]) -> list[dict[str, Any]]:
+  """Merge rich `keywords` array with group lists into unified entries."""
+  entries: dict[str, dict[str, Any]] = {}
+  for item in data.get("keywords") or []:
+    if not isinstance(item, dict):
+      continue
+    kw = _norm_kw(str(item.get("keyword") or ""))
+    if not kw:
+      continue
+    entries[kw] = dict(item)
+    entries[kw]["keyword"] = kw
+    if not entries[kw].get("category"):
+      entries[kw]["category"] = "secondary"
+
+  for kw, cat in _collect_group_keywords(data.get("keyword_groups") or {}):
+    if kw not in entries:
+      entries[kw] = {"keyword": kw, "category": cat}
+    else:
+      entries[kw].setdefault("category", cat)
+
+  primary = _norm_kw(str((data.get("keyword_groups") or {}).get("primary_keyword") or ""))
+  if primary and primary not in entries:
+    entries[primary] = {"keyword": primary, "category": "primary"}
+  elif primary and primary in entries:
+    entries[primary]["category"] = "primary"
+
+  return list(entries.values())
 
 
 def strategist_payload_to_result(
@@ -315,54 +386,104 @@ def strategist_payload_to_result(
   anchors = _anchor_tokens(title, content, primary_topic)
   classification = data.get("classification") or {}
   entities = data.get("entities") or {}
+  topic_graph = data.get("topic_graph") or {}
   topics = [str(t) for t in (data.get("topics") or []) if str(t).strip()][:15]
+  if not topics and topic_graph.get("supporting_topics"):
+    topics = [str(t) for t in topic_graph.get("supporting_topics") or []][:15]
   groups = data.get("keyword_groups") or {}
   clusters_raw = data.get("clusters") or {}
-  metrics_idx = _metrics_index(data.get("keyword_metrics") or [])
+  llm_recs = [str(r) for r in (data.get("recommendations") or []) if str(r).strip()]
 
-  intent_raw = str(classification.get("search_intent") or "Informational").lower()
-  default_intent = _INTENT_MAP.get(intent_raw, "informational")
+  intent_raw = str(classification.get("search_intent") or "Informational")
+  default_intent = _intent_label(intent_raw)
+  informational = default_intent == "informational"
   content_type = str(classification.get("content_type") or "Blog")
-  industry = str(classification.get("industry") or primary_topic or "General")
+  industry = str(
+    classification.get("industry")
+    or classification.get("main_topic")
+    or topic_graph.get("primary_topic")
+    or primary_topic
+    or "General"
+  )
+  main_topic = str(
+    classification.get("main_topic")
+    or topic_graph.get("primary_topic")
+    or primary_topic
+    or title
+    or "topic"
+  )
 
-  primary = _norm_kw(str(groups.get("primary_keyword") or primary_topic or title or "topic"))
+  primary = _norm_kw(str(groups.get("primary_keyword") or primary_topic or main_topic or title or "topic"))
   seed = primary or _norm_kw(primary_topic) or _norm_kw(title)[:80] or "topic"
 
-  flat = _collect_group_keywords(groups)
-  # Ensure primary is first
-  if primary and not any(k == primary for k, _ in flat):
-    flat.insert(0, (primary, "primary"))
-
-  rejected: list[str] = []
-  kept_pairs: list[tuple[str, str]] = []
-  for kw, cat in flat:
-    if _is_banned_generic(kw, content_low):
-      rejected.append(kw)
-      continue
-    if not _semantic_ok(kw, anchors, content_low):
-      rejected.append(kw)
-      continue
-    kept_pairs.append((kw, cat))
+  rejected: list[dict[str, str]] = []
+  for ex in (data.get("validation") or {}).get("rejected_examples") or []:
+    if isinstance(ex, dict):
+      rejected.append({"keyword": str(ex.get("keyword") or ""), "reason": str(ex.get("reason") or "")})
+    elif ex:
+      rejected.append({"keyword": str(ex), "reason": "rejected by model"})
 
   rows: list[dict[str, Any]] = []
-  for kw, cat in kept_pairs:
-    m = metrics_idx.get(kw, {})
-    vol = _VOLUME_MAP.get(str(m.get("search_volume") or "medium").strip().lower(), "medium")
-    diff = _DIFF_MAP.get(str(m.get("keyword_difficulty") or "medium").strip().lower(), "medium")
-    comp = _COMP_MAP.get(str(m.get("competition") or "medium").strip().lower(), "medium")
-    try:
-      opp = int(m.get("opportunity_score", 70))
-    except (TypeError, ValueError):
-      opp = 70
-    opp = max(0, min(100, opp))
-    intent = _intent_for(kw, default_intent, cat)
+  seen: set[str] = set()
+  for item in _normalize_keyword_entries(data):
+    kw = _norm_kw(str(item.get("keyword") or ""))
+    if not kw or kw in seen:
+      continue
+    seen.add(kw)
+    cat = str(item.get("category") or "secondary").lower().replace(" ", "_")
+    if cat == "trending_variations":
+      cat = "trending"
+    if cat not in {
+      "primary", "secondary", "long_tail", "questions", "lsi", "trending",
+      "commercial", "local", "competitor", "opportunity",
+    }:
+      cat = "secondary"
+
+    sim = _safe_int(item.get("semantic_similarity"), 0)
+    # If model omitted similarity, estimate from our gate (kept only if ok)
+    if sim <= 0:
+      sim = 88 if _semantic_ok(kw, anchors, content_low) else 50
+
+    reject_reason = ""
+    if sim < MIN_SEMANTIC_SIMILARITY:
+      reject_reason = f"semantic_similarity {sim} < {MIN_SEMANTIC_SIMILARITY}"
+    elif _is_banned_generic(kw, content_low, informational=informational):
+      reject_reason = "generic/off-topic or agency-style phrase"
+    elif not _semantic_ok(kw, anchors, content_low):
+      reject_reason = "weak semantic match to title/content"
+    elif informational and cat in ("commercial", "competitor"):
+      if not re.search(r"\b(buy|price|product|service|pricing|purchase|shop)\b", content_low):
+        reject_reason = "commercial keyword on informational content"
+    elif cat == "local" and not re.search(
+      r"\b(city|town|location|local|near me|pune|mumbai|delhi|india|usa|london)\b",
+      content_low,
+    ):
+      reject_reason = "local keyword without location evidence"
+
+    if reject_reason:
+      rejected.append({"keyword": kw, "reason": reject_reason})
+      continue
+
+    vol = _VOLUME_MAP.get(str(item.get("search_volume") or item.get("volume") or "medium").strip().lower(), "medium")
+    diff = _DIFF_MAP.get(
+      str(item.get("keyword_difficulty") or item.get("difficulty") or "medium").strip().lower(),
+      "medium",
+    )
+    comp = _COMP_MAP.get(str(item.get("competition") or "medium").strip().lower(), "medium")
+    opp = max(0, min(100, _safe_int(item.get("opportunity_score") or item.get("opportunity"), 70)))
+    conf = max(0, min(100, _safe_int(item.get("confidence_score") or item.get("confidence"), sim)))
+    intent = _intent_label(str(item.get("intent") or ""), default_intent)
+    if cat == "questions" or (kw.split() and kw.split()[0] in ("what", "how", "why", "when", "where", "which", "who")):
+      intent = "informational"
+    reason = _clean(str(item.get("reason") or f"Semantically aligned with {main_topic}"))
     cluster = _cluster_for(kw, clusters_raw)
-    relevance = 95 if cat == "primary" else 88 if cat == "secondary" else 78
+    relevance = max(sim, 95 if cat == "primary" else 0)
+
     rows.append({
       "keyword": kw,
-      "category": cat if cat != "opportunity" else "secondary",
+      "category": "secondary" if cat in ("opportunity", "competitor") else cat,
       "topic_cluster": cluster,
-      "is_competitor": cat == "commercial" and "competitor" in str(groups.get("competitor_keywords") or "").lower(),
+      "is_competitor": cat == "competitor",
       "is_trending": cat == "trending",
       "volume_estimate": vol,
       "volume_label": _VOLUME_LABELS[vol],
@@ -380,22 +501,40 @@ def strategist_payload_to_result(
       "trend_chart": "",
       "intent": intent,
       "relevance_score": relevance,
-      "topic_relevance": relevance,
-      "sources": ["seo_strategist", "hosted_llm"],
+      "topic_relevance": sim,
+      "semantic_similarity": sim,
+      "confidence_score": conf,
+      "reason": reason,
+      "sources": ["seo_strategist_v2", "hosted_llm"],
       "metrics_source": "ai_estimate",
-      "seo_score": min(100, int(opp * 0.6 + relevance * 0.4)),
+      "seo_score": min(100, int(0.45 * sim + 0.35 * opp + 0.20 * conf)),
       "opportunity_score": opp,
       "opportunity_breakdown": {
         "volume": _VOLUME_LABELS[vol],
         "difficulty": _LEVEL_LABELS[diff],
         "competition": _LEVEL_LABELS[comp],
         "intent": intent,
+        "semantic_similarity": sim,
       },
     })
 
-  # Prefer diversity then opportunity
-  rows.sort(key=lambda r: (r["opportunity_score"], r["relevance_score"]), reverse=True)
-  # Keep primary first if present
+  # Prioritize: relevance → intent match → opportunity → volume → long-tail
+  vol_rank = {"very_high": 5, "high": 4, "medium": 3, "low": 2, "very_low": 1}
+  intent_match = {"informational": 4, "commercial": 3, "transactional": 2, "navigational": 1}
+
+  def _sort_key(r: dict[str, Any]) -> tuple:
+    intent_fit = 4 if r["intent"] == default_intent else intent_match.get(r["intent"], 1)
+    long_tail = 1 if len(r["keyword"].split()) >= 4 else 0
+    return (
+      r.get("semantic_similarity", 0),
+      intent_fit,
+      r.get("opportunity_score", 0),
+      vol_rank.get(r.get("volume_estimate", "low"), 1),
+      long_tail,
+      r.get("confidence_score", 0),
+    )
+
+  rows.sort(key=_sort_key, reverse=True)
   primary_rows = [r for r in rows if r["keyword"] == primary]
   other = [r for r in rows if r["keyword"] != primary]
   ranked = (primary_rows + other)[: max(10, min(50, max_keywords))]
@@ -406,14 +545,19 @@ def strategist_payload_to_result(
 
   topic_clusters: dict[str, list[str]] = {}
   for name, members in (clusters_raw or {}).items():
-    if isinstance(members, list):
-      cleaned = [_norm_kw(str(m)) for m in members if _norm_kw(str(m))]
-      cleaned = [c for c in cleaned if any(r["keyword"] == c for r in ranked)]
-      if cleaned:
-        topic_clusters[str(name)] = cleaned
+    if not isinstance(members, list):
+      continue
+    cleaned: list[str] = []
+    for m in members:
+      item = m.get("keyword") if isinstance(m, dict) else m
+      c = _norm_kw(str(item))
+      if c and any(r["keyword"] == c for r in ranked):
+        cleaned.append(c)
+    if cleaned:
+      topic_clusters[str(name)] = cleaned
 
   output = {
-    "primary_keywords": by_cat.get("primary", [])[:5],
+    "primary_keywords": by_cat.get("primary", [])[:5] or primary_rows[:1],
     "secondary_keywords": by_cat.get("secondary", [])[:15],
     "long_tail_keywords": by_cat.get("long_tail", [])[:20],
     "question_keywords": by_cat.get("questions", [])[:10],
@@ -421,10 +565,11 @@ def strategist_payload_to_result(
     "trending_keywords": [r for r in ranked if r.get("is_trending")][:10],
     "commercial_keywords": by_cat.get("commercial", [])[:15],
     "local_keywords": by_cat.get("local", [])[:10],
-    "competitor_keywords": [],
+    "competitor_keywords": [r for r in ranked if r.get("is_competitor")][:10],
     "opportunity_keywords": sorted(ranked, key=lambda x: x["opportunity_score"], reverse=True)[:12],
     "entities": entities,
     "topics": topics,
+    "topic_graph": topic_graph,
     "seo_score": {"overall": int(sum(r["seo_score"] for r in ranked) / max(len(ranked), 1))},
   }
 
@@ -432,6 +577,13 @@ def strategist_payload_to_result(
     r for r in ranked
     if r["opportunity_score"] >= 70 and r["difficulty_estimate"] in ("low", "medium")
   ][:10]
+
+  conf = classification.get("confidence") if isinstance(classification.get("confidence"), dict) else {}
+  recommendations = llm_recs[:8] or [
+    f"Primary keyword focus: {seed}",
+    f"Content type: {content_type} → lean {default_intent}",
+    f"Main topic: {main_topic} (confidence {conf.get('main_topic', '—')})",
+  ]
 
   backend_name = backend or "hosted"
   return {
@@ -456,38 +608,41 @@ def strategist_payload_to_result(
       "content_type": content_type,
       "search_intent": classification.get("search_intent"),
       "industry": industry,
+      "main_topic": main_topic,
+      "target_audience": classification.get("target_audience"),
+      "confidence": conf,
       "topic_count": len(topics),
       "rejected_off_topic": len(rejected),
+      "min_semantic_similarity": MIN_SEMANTIC_SIMILARITY,
       "metrics_source": "ai_estimate",
     },
     "seo_score": output["seo_score"],
-    "recommendations": [
-      f"Primary keyword focus: {seed}",
-      f"Content type: {content_type} → lean {default_intent}",
-      f"Industry (from content): {industry}",
-    ][:5],
+    "recommendations": recommendations,
     "metrics_source": "ai_estimate",
     "metrics_disclaimer": (
       "Search volume, CPC, difficulty, and competition are AI estimates — not data from "
       "Google Ads, Search Console, Ahrefs, or Semrush. Use qualitative labels for planning only."
     ),
-    "discovery": {"enabled": False, "sources_used": ["hosted_llm_strategist"], "queries_run": 0, "errors": []},
+    "discovery": {"enabled": False, "sources_used": ["hosted_llm_strategist_v2"], "queries_run": 0, "errors": []},
     "architecture": {
       "flow": [
-        "content_input", "classification", "entity_extraction", "topic_extraction",
-        "keyword_groups", "metrics_estimation", "clustering", "validation", "final_output",
+        "content_input", "classification", "entity_extraction", "topic_graph",
+        "keyword_groups", "intent_mapping", "metrics_estimation", "clustering",
+        "relevance_validation", "prioritization", "final_output",
       ],
       "stages": {
         "classification": classification,
         "entity_extraction": entities,
+        "topic_graph": topic_graph,
         "topic_extraction": {"topics": topics, "count": len(topics)},
         "validation": {
-          "rejected": rejected[:20],
+          "rejected": rejected[:25],
           "rejected_count": len(rejected),
           "kept": len(ranked),
+          "min_similarity": MIN_SEMANTIC_SIMILARITY,
         },
       },
-      "mode": "content_strategist",
+      "mode": "content_strategist_v2",
     },
     "pipeline": {
       "context": {
@@ -497,13 +652,15 @@ def strategist_payload_to_result(
         "language": language,
         "content_type": content_type,
         "industry": industry,
+        "main_topic": main_topic,
       },
       "entities": [
         e for group in entities.values() if isinstance(group, list) for e in group
-      ][:30],
+      ][:40],
       "primary_domain": industry,
       "seed_intent": {"primary_intent": default_intent},
       "topics": topics,
+      "topic_graph": topic_graph,
     },
     "rag": {"enabled": False, "sources_used": []},
     "elapsed_ms": elapsed_ms,
@@ -512,7 +669,7 @@ def strategist_payload_to_result(
       "model_used": True,
       "backend": backend_name,
       "hosted": True,
-      "mode": "strategist",
+      "mode": "strategist_v2",
     },
     "strategist": data,
   }
@@ -558,8 +715,8 @@ async def generate_with_strategist(
     system_prompt=_SYSTEM,
     use_rag=False,
     skip_intent=True,
-    max_tokens=3500,
-    temperature=0.35,
+    max_tokens=4500,
+    temperature=0.3,
   )
   data = _extract_json(raw)
   backend = getattr(provider, "last_backend", None) or getattr(provider, "model_id", lambda: "hosted")()
