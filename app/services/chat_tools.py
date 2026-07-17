@@ -110,6 +110,11 @@ _FIELD_KEYS = {
   "seed_keyword": "seed_keyword",
   "context": "context",
   "brief": "context",
+  "article_title": "title",
+  "page_title": "title",
+  "primary_topic": "primary_topic",
+  "country": "country",
+  "market": "market",
 }
 
 _KEY_LINE_RE = re.compile(
@@ -122,7 +127,7 @@ _KEY_LINE_RE = re.compile(
 _MULTILINE_FIELDS = frozenset({
   "content", "original_email", "reply_points", "purpose_offer",
   "value_proposition", "skills", "experience", "education", "summary",
-  "projects", "certifications", "achievements", "topic", "seed_keyword", "context",
+  "projects", "certifications", "achievements", "topic", "seed_keyword", "context", "content",
 })
 
 
@@ -225,7 +230,7 @@ _USAGE: dict[str, str] = {
   "seo_content": "Usage: `/seo-content <topic>` — optional `tone:`, `keywords:`, `words:`, `audience:`, `language:`. Returns article + slug + suggested tags.",
   "seo_optimizer": "Usage: `/seo-optimizer <paste your content>` — optional `keywords:`, `tone:`.",
   "title_meta": "Usage: `/title-meta <topic>` — optional `variations:` (10–50).",
-  "seo_keywords": "Usage: `/keywords context: <business brief>` — or `/keywords <seed>` — optional `seed:` + `context:` + `variations:` (10–50). Keywords are generated from context when provided.",
+  "seo_keywords": "Usage: `/keywords title: <title> content: <article>` — or `context: <brief>`. Optional `primary_topic:`, `country:`, `language:`, `variations:`. With Use AI / hosted LLM runs the SEO strategist (JSON groups).",
   "schema_markup": "Usage: `/schema type: Article name: <page or business name>` — optional `language:`. Types: Article, Product, FAQPage, LocalBusiness, Recipe, JobPosting, …",
   "email_new": "Usage: `/email-new <context / key points>` — optional `subject:`, `tone:` (professional | casual | friendly | formal).",
   "email_reply": "Usage: `/email-reply <original email> | <your reply points>` — optional `tone:`. You can also use `original:` and `points:` fields.",
@@ -303,22 +308,34 @@ def _build_input(tool: str, args_text: str) -> dict[str, Any] | str:
 
   if tool == "seo_keywords":
     context = fields.get("context") or ""
-    seed = fields.get("seed_keyword") or fields.get("topic") or ""
-    if not context and not seed and free:
-      # Long free text → context; short → seed
+    content = fields.get("content") or ""
+    title = fields.get("title") or ""
+    seed = fields.get("seed_keyword") or fields.get("topic") or fields.get("primary_topic") or ""
+    if not context and not content and not seed and not title and free:
       if len(free) > 120 or free.count(" ") >= 18:
-        context = free
+        content = free
       else:
         seed = free
-    if not seed and not context:
+    if not seed and not context and not content and not title:
       return _USAGE[tool]
     data: dict[str, Any] = {}
     if seed:
       data["seed_keyword"] = seed
+      data["primary_topic"] = fields.get("primary_topic") or seed
+    if title:
+      data["title"] = title
+    if content:
+      data["content"] = content
     if context:
       data["context"] = context
+    if fields.get("country") or fields.get("market"):
+      data["country"] = fields.get("country") or fields.get("market")
+    if fields.get("language"):
+      data["language"] = fields["language"]
     if fields.get("variations"):
       data["variations"] = _to_int(fields["variations"], 10, 10, 50)
+    data["use_ai"] = True
+    data["mode"] = "strategist" if (content or context or title) else "pipeline"
     return data
 
   if tool == "schema_markup":
@@ -479,32 +496,56 @@ def _fmt_title_meta(r: dict[str, Any]) -> str:
 def _fmt_seo_keywords(r: dict[str, Any]) -> str:
   lines = [
     f"## SEO Keywords — {r.get('seed_keyword', '')}",
-    f"_Pipeline v{r.get('generator_version', '?')} · {r.get('count', 0)} keywords_",
+    f"_v{r.get('generator_version', '?')} · {r.get('count', 0)} keywords_",
     "",
   ]
+  if r.get("title"):
+    lines.append(f"**Title:** {r['title']}")
+  summary = r.get("summary") or {}
+  if summary.get("content_type") or summary.get("industry"):
+    lines.append(
+      f"**Type:** {summary.get('content_type', '—')} · "
+      f"**Intent:** {summary.get('search_intent', '—')} · "
+      f"**Industry:** {summary.get('industry', '—')}"
+    )
   ctx = (r.get("context") or "").strip()
   if ctx and ctx != (r.get("seed_keyword") or ""):
     preview = ctx if len(ctx) <= 280 else ctx[:277] + "…"
-    lines += [f"**Context:** {preview}", ""]
+    lines += [f"**Content:** {preview}", ""]
+  elif lines[-1] != "":
+    lines.append("")
   arch = r.get("architecture") or {}
   flow = arch.get("flow") or []
   if flow:
     lines += ["### Pipeline stages", " → ".join(flow), ""]
   stages = arch.get("stages") or {}
   topic = (stages.get("topic_extraction") or {}).get("primary_topic")
-  industry = stages.get("industry_classification") or {}
+  if not topic:
+    topics = (stages.get("topic_extraction") or {}).get("topics") or (r.get("pipeline") or {}).get("topics") or []
+    topic = topics[0] if topics else None
+  industry = stages.get("industry_classification") or summary.get("industry")
   if topic or industry:
     ind = industry.get("industry") if isinstance(industry, dict) else industry
     lines.append(f"**Topic:** {topic or '—'} · **Industry:** {ind or '—'}")
     lines.append("")
+  out = r.get("output") or {}
+  if out.get("topics"):
+    lines += ["### Topics", ", ".join(str(t) for t in out["topics"][:12]), ""]
+  clusters = r.get("topic_clusters") or {}
+  if clusters:
+    lines.append("### Clusters")
+    for name, kws in list(clusters.items())[:8]:
+      sample = ", ".join(kws[:5]) if isinstance(kws, list) else ""
+      lines.append(f"- **{name}:** {sample}")
+    lines.append("")
   lines += [
-    "| # | Keyword | Intent | Volume | Difficulty | CPC | Trend |",
-    "|---|---------|--------|--------|------------|-----|-------|",
+    "| # | Keyword | Intent | Volume | Difficulty | Opp |",
+    "|---|---------|--------|--------|------------|-----|",
   ]
   for i, kw in enumerate((r.get("keywords") or [])[:50], 1):
     lines.append(
       f"| {i} | {kw.get('keyword', '')} | {kw.get('intent', '')} | {kw.get('volume_estimate', '')} "
-      f"| {kw.get('difficulty_estimate', '')} | {kw.get('cpc_estimate', '')} | {kw.get('trend', '')} |"
+      f"| {kw.get('difficulty_estimate', '')} | {kw.get('opportunity_score', '')} |"
     )
   recs = r.get("recommendations") or []
   if recs:

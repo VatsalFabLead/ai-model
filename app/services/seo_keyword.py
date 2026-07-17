@@ -1,4 +1,4 @@
-"""SEO Keyword Generator — RAG pipeline + optional local model enrichment."""
+"""SEO Keyword Generator — content strategist (hosted) + RAG pipeline fallback."""
 
 from __future__ import annotations
 
@@ -49,7 +49,6 @@ def _extract_seed_from_context(context: str) -> str:
   text = (context or "").strip()
   if not text:
     return ""
-  # Prefer quoted or labeled topic
   m = re.search(
     r"(?:seed|keyword|topic|brand|product|about)\s*[:=\-]\s*[\"']?([^\"'\n,]{2,80})",
     text,
@@ -57,7 +56,6 @@ def _extract_seed_from_context(context: str) -> str:
   )
   if m:
     return _clean(m.group(1))
-  # Prefer strong product/industry noun phrases
   low = text.lower()
   for phrase in (
     "coffee roastery", "specialty coffee", "coffee shop", "coffee brand",
@@ -66,7 +64,6 @@ def _extract_seed_from_context(context: str) -> str:
   ):
     if phrase in low:
       return phrase
-  # First sentence / line, truncated to a usable seed
   first = re.split(r"[.\n!?]", text, maxsplit=1)[0]
   first = _clean(first)
   first = re.sub(
@@ -77,7 +74,6 @@ def _extract_seed_from_context(context: str) -> str:
   )
   first = re.sub(r"^(?:a|an|the)\s+", "", first, flags=re.I)
   words = first.split()
-  # Prefer noun-ish window: drop filler, keep 3–6 content words
   skip = {"in", "at", "to", "for", "and", "with", "from", "of", "the", "a", "an", "selling", "offering"}
   content = [w for w in words if w.lower() not in skip]
   if len(content) >= 2:
@@ -97,14 +93,34 @@ def resolve_seed_and_context(
   if not seed and brief:
     seed = _extract_seed_from_context(brief) or brief[:80]
   if not seed and not brief:
-    raise ValueError("Provide seed_keyword or context (business / topic brief)")
+    raise ValueError("Provide seed_keyword, context, title, or content")
   if not brief and seed:
     brief = seed
-  # If seed is actually a long brief pasted into seed_keyword, treat as context
   if seed and not context and (len(seed) > 120 or seed.count(" ") >= 18):
     brief = seed
     seed = _extract_seed_from_context(seed) or " ".join(seed.split()[:6])
   return seed, brief
+
+
+def _should_use_strategist(
+  *,
+  use_ai: bool,
+  provider: ModelProvider | None,
+  title: str,
+  content: str,
+  context: str,
+  mode: str | None,
+) -> bool:
+  if not use_ai or provider is None:
+    return False
+  if (mode or "").lower() in ("pipeline", "rag", "legacy"):
+    return False
+  if (mode or "").lower() in ("strategist", "content", "article"):
+    return True
+  # Prefer strategist whenever hosted AI is on and we have real content/title
+  if title or len(content) >= 40 or len(context) >= 40:
+    return True
+  return False
 
 
 async def generate_keywords(
@@ -112,6 +128,11 @@ async def generate_keywords(
   *,
   seed_keyword: str = "",
   context: str | None = None,
+  title: str | None = None,
+  content: str | None = None,
+  primary_topic: str | None = None,
+  country: str | None = None,
+  market: str | None = None,
   tone: str | None = None,
   max_items: int = 10,
   variations: int | None = None,
@@ -122,10 +143,50 @@ async def generate_keywords(
   include_questions: bool = True,
   include_alphabet: bool = True,
   variation_seed: int | None = None,
+  mode: str | None = None,
 ) -> dict[str, Any]:
-  seed, brief = resolve_seed_and_context(seed_keyword, context)
+  title_s = _clean(title)
+  content_s = (content or "").strip()
+  topic_s = _clean(primary_topic) or _clean(seed_keyword)
+  country_s = _clean(country) or _clean(market)
+  brief_ctx = (context or "").strip()
+
+  # Merge: content field wins; else context; else seed-as-brief
+  if not content_s and brief_ctx:
+    content_s = brief_ctx
+  if not title_s and topic_s:
+    title_s = topic_s
 
   n = max(10, min(50, variations if variations is not None else max_items))
+
+  if _should_use_strategist(
+    use_ai=use_ai,
+    provider=provider,
+    title=title_s,
+    content=content_s,
+    context=brief_ctx,
+    mode=mode,
+  ):
+    from app.engine.seo_keyword_strategist import generate_with_strategist
+
+    try:
+      return await generate_with_strategist(
+        provider,  # type: ignore[arg-type]
+        title=title_s,
+        content=content_s or brief_ctx or topic_s,
+        primary_topic=topic_s or title_s,
+        country=country_s,
+        language=language or "English",
+        max_keywords=n,
+      )
+    except Exception:
+      # Fall through to deterministic pipeline if hosted strategist fails
+      pass
+
+  seed, brief = resolve_seed_and_context(
+    seed_keyword or topic_s or title_s,
+    content_s or brief_ctx or None,
+  )
   tone_str = _normalize_tone(tone)
 
   result = await run_seo_keyword_pipeline(
@@ -207,4 +268,10 @@ async def generate_keywords(
   result["keywords"] = items[:n]
   result["count"] = len(result["keywords"])
   result["context"] = brief if brief != seed else None
+  if title_s:
+    result["title"] = title_s
+  if topic_s:
+    result["primary_topic"] = topic_s
+  if country_s:
+    result["market"] = country_s
   return result

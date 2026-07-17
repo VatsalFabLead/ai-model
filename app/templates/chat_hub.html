@@ -222,23 +222,32 @@
         }}),
         format: fmtTitleMeta
       }},
-      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "Generate from context / seed",
+      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "From title + content (strategist)",
         nexusTool: "seo_keywords",
         fields: [
-          {{ id: "context", label: "Context (business / topic brief) *", type: "textarea", required: true, full: true,
-            placeholder: "Describe your business, products, audience, location, and goals…" }},
-          {{ id: "seed_keyword", label: "Seed keyword (optional)", type: "text",
-            placeholder: "Leave blank to derive from context" }},
-          {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
+          {{ id: "title", label: "Title", type: "text",
+            placeholder: "Page or article title" }},
+          {{ id: "content", label: "Content *", type: "textarea", required: true, full: true,
+            placeholder: "Paste the article / page content. Keywords are generated ONLY from this." }},
+          {{ id: "primary_topic", label: "Primary topic (optional)", type: "text",
+            placeholder: "Override topic if needed" }},
+          {{ id: "country", label: "Market / country", type: "text", value: "India" }},
+          {{ id: "language", label: "Language", type: "text", value: "English" }},
+          {{ id: "variations", label: "Keywords to return (10–50)", type: "number", value: "20" }},
         ],
         endpoint: "/seo-keywords/generate",
         build: (f, useAi) => ({{
-          context: f.context,
-          seed_keyword: f.seed_keyword || undefined,
-          variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
+          title: f.title || undefined,
+          content: f.content,
+          primary_topic: f.primary_topic || undefined,
+          country: f.country || undefined,
+          language: f.language || "English",
+          context: f.content,
+          variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 20)),
           use_ai: useAi,
-          use_rag: true,
-          discover_web: true,
+          mode: useAi ? "strategist" : "pipeline",
+          use_rag: !useAi,
+          discover_web: !useAi,
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtKeywords
@@ -744,38 +753,51 @@
       const NL = String.fromCharCode(10);
       const arch = d.architecture || {{}};
       const out = d.output || {{}};
-      const ctx = out.context || {{}};
+      const ctx = out.context || d.pipeline?.context || {{}};
+      const summary = d.summary || {{}};
       const fmtRow = (k) =>
         "**" + (k.keyword || k) + "**" + (k.topic_cluster ? " [" + k.topic_cluster + "]" : "") +
         (k.volume_label ? " · vol " + k.volume_label : "") +
-        (k.opportunity_score ? " · opp " + k.opportunity_score : "");
+        (k.opportunity_score != null ? " · opp " + k.opportunity_score : "");
       const kwList = (items) => (items || []).slice(0, 8).map(k => "- " + fmtRow(k)).join(NL);
+      const ents = out.entities || {{}};
+      const entFlat = Array.isArray(d.pipeline?.entities)
+        ? d.pipeline.entities
+        : Object.values(ents).flat().filter(Boolean);
       const lines = [
         "SEO Keyword Generator · v" + (d.generator_version || "?"),
-        d.seed_keyword ? "Seed: " + d.seed_keyword : "",
-        d.context ? "Context: " + (d.context.length > 280 ? d.context.slice(0, 277) + "…" : d.context) : "",
+        d.ai?.mode ? "Mode: " + d.ai.mode + (d.ai.hosted ? " (hosted LLM)" : "") : "",
+        d.title ? "Title: " + d.title : "",
+        d.seed_keyword ? "Primary: " + d.seed_keyword : "",
+        summary.content_type
+          ? ("Type: " + summary.content_type + " · Intent: " + (summary.search_intent || "—") + " · Industry: " + (summary.industry || "—"))
+          : "",
         d.metrics_disclaimer || "",
-        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+        d.elapsed_ms ? "Completed in " + Math.round(d.elapsed_ms) + " ms" : "",
         "",
         "### Pipeline (" + (arch.flow || []).length + " stages)",
         (arch.flow || []).join(" → "),
         "",
-        "### Detected context",
-        "Language: " + (ctx.language?.language || "—") + " · Market: " + (ctx.geo?.primary_market || "—"),
-        "Industry: " + (ctx.industry?.primary_industry || "—") + " · Intent: " + (ctx.seed_intent?.primary_intent || "—"),
-        "Entities: " + ((out.entities || d.pipeline?.entities || []).join(", ") || "—"),
-        "Topic clusters: " + ((ctx.topic_clusters || []).join(", ") || "—"),
+        "### Classification",
+        "Content type: " + (summary.content_type || ctx.content_type || "—"),
+        "Industry: " + (summary.industry || ctx.industry?.primary_industry || ctx.industry || "—") +
+          " · Intent: " + (summary.search_intent || ctx.seed_intent?.primary_intent || "—"),
+        "Market: " + (d.market || ctx.market || ctx.geo?.primary_market || "—") +
+          " · Language: " + (d.language || ctx.language?.language || ctx.language || "—"),
+        "Entities: " + (entFlat.slice(0, 20).join(", ") || "—"),
+        "Topics: " + ((out.topics || d.pipeline?.topics || []).slice(0, 12).join(", ") || "—"),
         "",
         "### SEO Score",
         "Overall: " + (out.seo_score?.overall || d.seo_score?.overall || "—") + "/100",
         "",
-        "### Primary Keywords", kwList(out.primary_keywords) || "—",
-        "### Commercial Keywords", kwList(out.commercial_keywords) || "",
+        "### Primary Keywords", kwList(out.primary_keywords) || kwList((d.keywords || []).slice(0, 3)) || "—",
+        "### Secondary / Long-tail", kwList(out.secondary_keywords) || "",
+        kwList(out.long_tail_keywords) || "",
         "### Question Keywords", kwList(out.question_keywords) || "",
         "### LSI Keywords", kwList(out.lsi_keywords) || "",
+        "### Commercial Keywords", kwList(out.commercial_keywords) || "",
         "### Local Keywords", kwList(out.local_keywords) || "",
         "### Trending Keywords", kwList(out.trending_keywords) || "",
-        "### Competitor Keywords", kwList(out.competitor_keywords) || "",
         "",
         "### Opportunity Keywords",
         kwList(out.opportunity_keywords) || "—",

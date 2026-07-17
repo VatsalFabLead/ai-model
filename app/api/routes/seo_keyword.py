@@ -51,7 +51,12 @@ class SeoKeywordRequest(BaseModel):
   seed_keyword: str | None = Field(
     default=None,
     examples=["Navio Coffee"],
-    description="Primary seed keyword or short topic (optional if context is provided)",
+    description="Primary seed / topic (optional if title/content/context provided)",
+  )
+  title: str | None = Field(default=None, description="Article or page title")
+  content: str | None = Field(
+    default=None,
+    description="Full article/page content — preferred input for strategist mode",
   )
   context: str | None = Field(
     default=None,
@@ -59,15 +64,25 @@ class SeoKeywordRequest(BaseModel):
       "We run a specialty coffee brand in Surat selling single-origin beans, "
       "subscriptions, and cafe brewing workshops for beginners."
     ],
-    description="Business / topic brief — keywords are generated from this context",
+    description="Business / topic brief (alias for content when content is empty)",
   )
-  variations: int = Field(default=10, ge=10, le=50, description="10–50 unique keywords per request")
+  primary_topic: str | None = Field(default=None, description="Optional primary topic override")
+  country: str | None = Field(default=None, examples=["India", "United States"], description="Market / country")
+  market: str | None = Field(default=None, description="Alias for country")
+  variations: int = Field(default=10, ge=10, le=50, description="10–50 unique keywords in flat list")
   max_items: int | None = Field(default=None, ge=10, le=50, description="Alias for variations")
   tone: str | None = Field(default=None, examples=["informative", "professional"])
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
-  use_ai: bool = Field(default=True, description="Enrich via hosted LLM + custom model (same path as Chat)")
-  use_rag: bool = Field(default=True, description="Use open-dataset evidence routing")
-  discover_web: bool = Field(default=True, description="Google/Bing suggest, Datamuse, Wikipedia")
+  use_ai: bool = Field(
+    default=True,
+    description="Use hosted SEO strategist (Groq) when content/title provided; else pipeline",
+  )
+  mode: str | None = Field(
+    default=None,
+    description="strategist | pipeline — default auto (strategist when AI+content)",
+  )
+  use_rag: bool = Field(default=True, description="Use open-dataset evidence routing (pipeline mode)")
+  discover_web: bool = Field(default=True, description="Google/Bing suggest, Datamuse, Wikipedia (pipeline mode)")
   include_questions: bool = Field(default=True)
   include_alphabet: bool = Field(default=True)
   variation_seed: int | None = Field(default=None, description="Omit for unique output each request")
@@ -76,6 +91,10 @@ class SeoKeywordRequest(BaseModel):
 class SeoKeywordResponse(BaseModel):
   seed_keyword: str
   context: str | None = None
+  title: str | None = None
+  primary_topic: str | None = None
+  market: str | None = None
+  language: str | None = None
   count: int
   summary: dict[str, Any]
   keywords: list[KeywordItem]
@@ -95,14 +114,20 @@ class SeoKeywordResponse(BaseModel):
   seo_score: dict[str, Any] | None = None
   rag: dict[str, Any] | None = None
   elapsed_ms: float | None = None
-  ai: dict[str, bool] | None = None
+  ai: dict[str, Any] | None = None
+  strategist: dict[str, Any] | None = None
 
 
 @router.get("/version")
 async def keyword_version(_: str = Depends(verify_api_key)) -> dict[str, str]:
   from app.engine.seo_keyword_rag_pipeline import GENERATOR_VERSION
+  from app.engine.seo_keyword_strategist import STRATEGIST_VERSION
 
-  return {"generator_version": GENERATOR_VERSION, "status": "ok"}
+  return {
+    "generator_version": GENERATOR_VERSION,
+    "strategist_version": STRATEGIST_VERSION,
+    "status": "ok",
+  }
 
 
 @router.get("/pipeline")
@@ -138,10 +163,16 @@ async def generate(
       provider,
       seed_keyword=payload.seed_keyword or "",
       context=payload.context,
+      title=payload.title,
+      content=payload.content,
+      primary_topic=payload.primary_topic,
+      country=payload.country,
+      market=payload.market,
       tone=payload.tone,
       variations=variations,
       language=payload.language,
       use_ai=payload.use_ai,
+      mode=payload.mode,
       use_rag=payload.use_rag,
       discover_web=payload.discover_web,
       include_questions=payload.include_questions,
