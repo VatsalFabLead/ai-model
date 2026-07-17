@@ -208,7 +208,7 @@
         }}),
         format: fmtSeoOptimizer
       }},
-      {{ id: "title_meta", label: "SEO Title & Meta", desc: "Target keyword / topic",
+      {{ id: "title_meta", label: "SEO Title & Meta", desc: "Hosted strategist — page-type titles & metas",
         nexusTool: "title_meta",
         fields: [
           {{ id: "topic", label: "Target keyword / topic *", type: "text", required: true }},
@@ -220,6 +220,7 @@
           variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
           use_ai: useAi,
           use_rag: true,
+          mode: useAi ? "strategist" : "pipeline",
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtTitleMeta
@@ -748,34 +749,41 @@
       const NL = String.fromCharCode(10);
       const arch = d.architecture || {{}};
       const pipe = d.pipeline || {{}};
+      const kw = d.keyword_analysis || {{}};
+      const serp = d.serp_analysis || {{}};
       const lines = [
         "SEO Title & Meta · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        "Mode: " + ((d.ai && d.ai.mode) || "pipeline"),
         d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
         "",
-        "### Pipeline Architecture",
-        (arch.flow || []).join(" → "),
+        "### Detected Page Type",
+        d.page_type || pipe.page_type || "—",
         "",
-        "### Open Datasets",
-        Object.keys(arch.open_datasets || {{}}).join(", "),
+        "### Title Strategy",
+        d.title_strategy || pipe.title_strategy || "—",
+        "",
+        "### Search Intent",
+        (d.commercial_intent && d.commercial_intent.label) || pipe.search_intent || (pipe.intent && pipe.intent.primary) || "—",
         "",
         "### Keyword Analysis",
-        "Primary: " + (pipe.keywords?.primary || d.topic),
-        "Long-tail: " + ((pipe.keywords?.long_tail || []).slice(0, 4).join("; ") || "—"),
-        "",
-        "### Intent",
-        "Primary: " + (pipe.intent?.primary || "—"),
+        "Primary: " + (kw.primary_keyword || pipe.primary_keyword || pipe.keywords?.primary || d.topic),
+        "Supporting: " + ((kw.supporting_keywords || pipe.keywords?.long_tail || []).slice(0, 6).join("; ") || "—"),
         "",
         "### SERP Patterns",
-        "Recommended: " + ((pipe.serp_patterns?.recommended || []).join(", ") || "—"),
+        ((serp.top_patterns || pipe.serp_patterns || pipe.serp_patterns?.recommended || []).join(", ") || serp.dominant_style || "—"),
+        "",
+        "### Pipeline",
+        (arch.flow || []).join(" → "),
         "",
         "### Variations (" + (d.variation_count || 0) + ")",
         (d.variations||[]).map((v,i) =>
-          "#### Option " + (i+1) + " (" + (v.angle||"") + ") · score " + (v.quality_score||"—") + NL +
+          "#### Option " + (i+1) + " (" + (v.angle||"") + ") · SEO " + (v.seo_score ?? v.quality_score ?? "—") + " · CTR " + (v.ctr_score ?? "—") + NL +
           "**Title** (" + v.title_length + "): " + v.title + NL +
-          "**Meta** (" + v.meta_length + "): " + v.meta_description
+          "**Meta** (" + v.meta_length + "): " + v.meta_description +
+          (v.reasoning ? NL + "_Why:_ " + v.reasoning : "")
         ).join(NL + NL),
         "",
-        "_Avg quality: " + (d.quality?.average_score || "—") + "/100_"
+        "_Avg quality: " + (d.quality?.average_score || "—") + "/100 · SEO " + (d.quality?.average_seo_score ?? "—") + " · CTR " + (d.quality?.average_ctr_score ?? "—") + "_"
       ];
       return lines.filter(Boolean).join(NL);
     }}

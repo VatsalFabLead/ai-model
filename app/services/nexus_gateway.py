@@ -116,9 +116,12 @@ async def invoke_nexus_tool(
       topic=inp["topic"],
       variations=int(inp.get("variations", 10)),
       category=inp.get("category", "blog_article"),
+      tone=inp.get("tone"),
+      language=inp.get("language"),
       use_ai=use_ai,
       use_rag=bool(inp.get("use_rag", True)),
       variation_seed=inp.get("variation_seed"),
+      mode=inp.get("mode"),
     )
   elif tool_id == "seo_keywords":
     use_ai = bool(inp.get("use_ai", True))

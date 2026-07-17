@@ -27,17 +27,23 @@ class TitleMetaVariation(BaseModel):
   overall_score: int = 0
   seo_ready: bool = False
   issues: list[str] = Field(default_factory=list)
+  reasoning: str = ""
 
 
 class TitleMetaQuality(BaseModel):
   average_score: int
   seo_ready: bool
   all_ready: bool
+  average_seo_score: int | None = None
+  average_ctr_score: int | None = None
 
 
 class TitleMetaAiMeta(BaseModel):
   enabled: bool
   model_used: bool
+  backend: str | None = None
+  hosted: bool | None = None
+  mode: str | None = None
 
 
 class TitleMetaRequest(BaseModel):
@@ -49,8 +55,12 @@ class TitleMetaRequest(BaseModel):
     default="blog_article",
     examples=["blog_article", "product_page", "landing_page", "local_business", "how_to"],
   )
-  use_ai: bool = Field(default=True, description="Polish via hosted LLM + custom model (same path as Chat)")
-  use_rag: bool = Field(default=True, description="Use open-dataset SERP/evidence routing")
+  use_ai: bool = Field(default=True, description="Use hosted elite title/meta strategist (falls back to RAG)")
+  use_rag: bool = Field(default=True, description="Use open-dataset SERP/evidence routing when strategist unavailable")
+  mode: str | None = Field(
+    default=None,
+    description="strategist (default when use_ai) · pipeline|rag|legacy (skip strategist)",
+  )
   variation_seed: int | None = Field(default=None, description="Omit for unique output each request")
 
 
@@ -68,11 +78,18 @@ class TitleMetaResponse(BaseModel):
   ai: TitleMetaAiMeta
   generator_version: str | None = None
   variation_seed: int | None = None
+  page_type: str | None = None
+  title_strategy: str | None = None
+  understanding: dict[str, Any] | None = None
+  commercial_intent: dict[str, Any] | None = None
+  serp_analysis: dict[str, Any] | None = None
+  keyword_analysis: dict[str, Any] | None = None
   architecture: dict[str, Any] | None = None
   pipeline: dict[str, Any] | None = None
   policy: dict[str, Any] | None = None
   rag: dict[str, Any] | None = None
   elapsed_ms: float | None = None
+  unlimited_outputs: bool | None = None
 
 
 @router.get("/categories")
@@ -94,15 +111,24 @@ async def list_languages(_: str = Depends(verify_api_key)) -> dict:
 @router.get("/version")
 async def title_meta_version(_: str = Depends(verify_api_key)) -> dict[str, str]:
   from app.engine.title_meta_rag_pipeline import GENERATOR_VERSION
+  from app.engine.title_meta_strategist import STRATEGIST_VERSION
 
-  return {"generator_version": GENERATOR_VERSION, "status": "ok"}
+  return {
+    "generator_version": GENERATOR_VERSION,
+    "strategist_version": STRATEGIST_VERSION,
+    "status": "ok",
+  }
 
 
 @router.get("/pipeline")
 async def pipeline_architecture(_: str = Depends(verify_api_key)) -> dict[str, Any]:
   from app.engine.title_meta_rag_pipeline import ARCHITECTURE_FLOW, OPEN_DATASET_TREE
 
-  return {"flow": ARCHITECTURE_FLOW, "open_datasets": OPEN_DATASET_TREE}
+  return {
+    "flow": ARCHITECTURE_FLOW,
+    "open_datasets": OPEN_DATASET_TREE,
+    "strategist_default": True,
+  }
 
 
 @router.post("/generate", response_model=TitleMetaResponse)
@@ -125,6 +151,7 @@ async def generate(
       use_ai=payload.use_ai,
       use_rag=payload.use_rag,
       variation_seed=payload.variation_seed,
+      mode=payload.mode,
     )
   except ValueError as exc:
     raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -304,7 +304,7 @@ def _build_input(tool: str, args_text: str) -> dict[str, Any] | str:
     topic = fields.get("topic") or free
     if not topic:
       return _USAGE[tool]
-    data = {"topic": topic}
+    data: dict[str, Any] = {"topic": topic, "use_ai": True, "mode": "strategist"}
     if fields.get("variations"):
       data["variations"] = _to_int(fields["variations"], 10, 10, 50)
     return data

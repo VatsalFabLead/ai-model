@@ -1,8 +1,9 @@
-"""SEO Title & Meta Description Generator — RAG pipeline + optional local model polish."""
+"""SEO Title & Meta Description Generator — hosted strategist + RAG fallback."""
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from app.engine import title_meta_engine as engine
 from app.engine.title_meta_rag_pipeline import run_title_meta_pipeline
 from app.services.provider_base import ModelProvider
+
+logger = logging.getLogger(__name__)
 
 TITLE_MAX = engine.TITLE_MAX
 META_MIN = engine.META_MIN
@@ -59,6 +62,20 @@ def _parse_variations(raw: str, topic: str, count: int) -> list[dict]:
   return variations
 
 
+def _should_use_strategist(
+  *,
+  use_ai: bool,
+  provider: ModelProvider | None,
+  mode: str | None,
+) -> bool:
+  if not use_ai or provider is None:
+    return False
+  m = (mode or "").lower().strip()
+  if m in ("pipeline", "rag", "legacy"):
+    return False
+  return True
+
+
 async def generate(
   provider: ModelProvider | None,
   *,
@@ -70,6 +87,7 @@ async def generate(
   use_ai: bool = True,
   use_rag: bool = True,
   variation_seed: int | None = None,
+  mode: str | None = None,
 ) -> dict:
   topic = re.sub(r"\s+", " ", (topic or "").strip())
   if not topic:
@@ -79,8 +97,24 @@ async def generate(
   cat = engine.normalize_category(category)
   tone_str = engine.normalize_tone(tone, cat)
   lang_code = engine.bcp47(language)
+  lang_label = language or "English"
   if variation_seed is None:
     variation_seed = int(time.time() * 1000) % 2_000_000_000
+
+  if _should_use_strategist(use_ai=use_ai, provider=provider, mode=mode):
+    from app.engine.title_meta_strategist import generate_with_title_meta_strategist
+
+    try:
+      return await generate_with_title_meta_strategist(
+        provider,  # type: ignore[arg-type]
+        topic=topic,
+        variations=n,
+        category=cat,
+        tone=tone_str,
+        language=lang_label,
+      )
+    except Exception:
+      logger.exception("Title/meta hosted strategist failed; falling back to RAG pipeline")
 
   ai_used = False
   result = await run_title_meta_pipeline(
@@ -102,6 +136,7 @@ async def generate(
         [{"role": "user", "content": f"Topic: {topic}. Generate {min(3, n)} unique title+meta pairs."}],
         system_prompt=(
           f"SEO copywriter ({tone_str}). Title max {TITLE_MAX}, meta {META_MIN}-{META_MAX}.{lang_line} "
+          "Match the page type. Do NOT force Complete Guide / Ultimate Guide / Best Practices. "
           "Format: TITLE: ...\\nMETA: ...\\n---"
         ),
         use_rag=False,
@@ -143,7 +178,7 @@ async def generate(
       "seo_ready": avg_quality >= 75,
       "all_ready": all(v.get("seo_ready") for v in items),
     },
-    "ai": {"enabled": use_ai, "model_used": ai_used},
+    "ai": {"enabled": use_ai, "model_used": ai_used, "mode": "pipeline"},
     "generator_version": result.get("generator_version"),
     "variation_seed": result.get("variation_seed"),
     "policy": policy,
