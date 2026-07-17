@@ -1,7 +1,7 @@
-"""SEO Content Optimizer — hosted strategist (primary) + RAG rewrite fallback.
+"""SEO Content Optimizer — hosted strategist + rewrite pipeline.
 
-Default with use_ai: understand → audit → plan via hosted LLM (no forced rewrite).
-Set rewrite=True to run the local RAG rewrite pipeline (optionally guided by strategist keywords).
+Default: understand via hosted LLM, then rewrite the article body (guided by resolved topic).
+Set rewrite=False or mode=audit|plan|strategist for audit/plan only.
 """
 
 from __future__ import annotations
@@ -215,7 +215,7 @@ async def optimize(
   use_ai: bool = True,
   use_rag: bool = True,
   variation_seed: int | None = None,
-  rewrite: bool = False,
+  rewrite: bool = True,
   mode: str | None = None,
 ) -> dict[str, Any]:
   content = (content or "").strip()
@@ -237,16 +237,16 @@ async def optimize(
     variation_seed = int(time.time() * 1000) % 2_000_000_000
 
   m = (mode or "").lower().strip()
-  if m in ("rewrite", "optimize", "full"):
-    rewrite = True
   if m in ("audit", "plan", "strategist"):
     rewrite = False
+  elif m in ("rewrite", "optimize", "full") or m == "":
+    rewrite = True
 
   if is_optimizer_instruction_content(content):
     raise ValueError(
       "That text is an SEO optimizer instruction prompt, not an article to optimize. "
       "Paste your blog post or page content (e.g. a Flutter guide, product page). "
-      "The tool will analyze it and return an SEO audit and plan."
+      "The tool will analyze and rewrite it."
     )
 
   strategist_result: dict[str, Any] | None = None
@@ -395,7 +395,7 @@ async def optimize(
       "enabled": use_ai,
       "model_used": ai_used or bool(strategist_result),
       "hosted": bool(strategist_result),
-      "mode": "rewrite" if rewrite else "pipeline",
+      "mode": "strategist_rewrite" if strategist_result else ("rewrite" if rewrite else "pipeline"),
     },
     "use_rag": use_rag,
     "generator_version": (

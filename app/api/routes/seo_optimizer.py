@@ -43,12 +43,12 @@ class OptimizeRequest(BaseModel):
   )
   use_rag: bool = Field(default=True, description="Use open-dataset RAG when rewrite=true")
   rewrite: bool = Field(
-    default=False,
-    description="If false (default with hosted AI): audit/plan only, preserve article body. If true: run rewrite pipeline.",
+    default=True,
+    description="Rewrite the article body (default true). Set false for audit/plan only.",
   )
   mode: str | None = Field(
-    default=None,
-    description="strategist|audit|plan (no rewrite) · rewrite|optimize|full · pipeline|rag|legacy (skip strategist)",
+    default="rewrite",
+    description="rewrite|optimize|full (default) · audit|plan|strategist (no rewrite) · pipeline|rag|legacy (skip strategist)",
   )
   variation_seed: int | None = Field(default=None, description="Omit for unique output each request")
 
@@ -184,7 +184,8 @@ async def pipeline_architecture(_: str = Depends(verify_api_key)) -> dict[str, A
   return {
     "flow": ARCHITECTURE_FLOW,
     "strategist_default": True,
-    "rewrite_optional": True,
+    "rewrite_default": True,
+    "rewrite_optional": False,
     "datasets": [
       "Wikipedia", "Wikidata", "DBpedia", "ConceptNet", "Stack Exchange",
       "arXiv", "Semantic Scholar", "GDELT", "GooAQ", "SQuAD", "Dolly", "C4", "FineWeb",

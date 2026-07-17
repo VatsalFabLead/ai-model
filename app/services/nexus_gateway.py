@@ -106,8 +106,8 @@ async def invoke_nexus_tool(
       use_ai=use_ai,
       use_rag=bool(inp.get("use_rag", True)),
       variation_seed=inp.get("variation_seed"),
-      rewrite=bool(inp.get("rewrite", False)),
-      mode=inp.get("mode"),
+      rewrite=bool(inp.get("rewrite", True)),
+      mode=inp.get("mode") or "rewrite",
     )
   elif tool_id == "title_meta":
     use_ai = bool(inp.get("use_ai", True))

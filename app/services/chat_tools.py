@@ -290,14 +290,14 @@ def _build_input(tool: str, args_text: str) -> dict[str, Any] | str:
     content = fields.get("content") or free
     if not content:
       return _USAGE[tool]
-    data = {"content": content, "use_ai": True, "rewrite": False, "mode": "strategist"}
+    data = {"content": content, "use_ai": True, "rewrite": True, "mode": "rewrite"}
     if fields.get("keywords"):
       data["keywords"] = fields["keywords"]
     if fields.get("tone"):
       data["tone"] = fields["tone"].lower()
-    if fields.get("rewrite") in ("1", "true", "yes", "rewrite"):
-      data["rewrite"] = True
-      data["mode"] = "rewrite"
+    if fields.get("rewrite") in ("0", "false", "no", "audit", "plan"):
+      data["rewrite"] = False
+      data["mode"] = "strategist"
     return data
 
   if tool == "title_meta":
@@ -540,7 +540,7 @@ def _fmt_seo_optimizer(r: dict[str, Any]) -> str:
   suggestions = r.get("suggestions") or []
   if suggestions:
     lines += ["### Suggestions"] + [f"- {s}" for s in suggestions[:8]] + [""]
-  body_label = "Optimized Article" if r.get("rewrite_applied") else "Original Article (preserved)"
+  body_label = "Optimized Article"
   lines += [f"### {body_label}", r.get("optimized_content", "")]
   return "\n".join(lines).strip()
 

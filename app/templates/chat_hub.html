@@ -190,12 +190,11 @@
         }}),
         format: fmtSeoContent
       }},
-      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Audit & plan (hosted) — optional rewrite",
+      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Understand + rewrite with hosted SEO strategist",
         nexusTool: "seo_optimizer",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
           {{ id: "keywords", label: "Target keywords (comma, line, or semicolon-separated)", type: "textarea", full: true }},
-          {{ id: "rewrite", label: "Also rewrite article body", type: "checkbox", value: "" }},
         ],
         endpoint: "/seo-optimizer/optimize",
         build: (f, useAi) => ({{
@@ -203,8 +202,8 @@
           keywords: f.keywords || null,
           use_ai: useAi,
           use_rag: true,
-          rewrite: !!(f.rewrite),
-          mode: f.rewrite ? "rewrite" : "strategist",
+          rewrite: true,
+          mode: "rewrite",
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtSeoOptimizer
@@ -671,7 +670,7 @@
           "Keyword coverage: " + (fm.keyword_coverage_pct ?? "—") + "%",
           "Entity coverage: " + (fm.entity_coverage_pct ?? "—") + "%",
           "Content depth: " + (fm.content_depth_score ?? "—"),
-          "Rewrite applied: " + (d.rewrite_applied ? "yes" : "no"),
+          "Rewrite applied: " + (d.rewrite_applied !== false ? "yes" : "no"),
           "",
           "### FAQs",
           ...(report.faqs || []).map((f, i) => (i + 1) + ". " + f.question + NL + f.answer),
@@ -682,7 +681,7 @@
           "### AI Search Optimization",
           ...(report.ai_search_optimization || []).map(s => "- " + s),
           "",
-          d.rewrite_applied ? "### Optimized Article" : "### Original Article (preserved — enable rewrite to mutate body)",
+          "### Optimized Article",
           d.optimized_content || ""
         ];
         return lines.filter(Boolean).join(NL);
