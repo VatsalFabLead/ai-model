@@ -55,7 +55,7 @@ from app.engine.seo_keyword_open_data import (
   terms_from_open_docs,
 )
 
-GENERATOR_VERSION = "seo-keyword-rag-v5.1"
+GENERATOR_VERSION = "seo-keyword-rag-v5.2"
 
 _INTENTS = ("informational", "commercial", "transactional", "navigational")
 _CATEGORIES = (
@@ -579,6 +579,11 @@ def generate_seed_variants(context: dict[str, Any], count: int, variation_seed: 
     variants.append(cluster.lower())
   if context.get("brand_name"):
     variants.append(context["brand_name"].lower())
+  seed = _clean(str(context.get("normalized_seed") or context.get("seed_keyword") or ""))
+  if isinstance(context.get("normalized"), dict) and not seed:
+    seed = _clean(str(context["normalized"].get("normalized_seed") or ""))
+  if seed:
+    variants.append(seed)
   seen: set[str] = set()
   out: list[str] = []
   for v in _shuffle(variants, variation_seed):
@@ -587,6 +592,178 @@ def generate_seed_variants(context: dict[str, Any], count: int, variation_seed: 
       seen.add(v)
       out.append(v)
   return out[: max(5, min(20, count))]
+
+
+def extract_topics(
+  seed_keyword: str,
+  entities: list[dict[str, Any]],
+  context: dict[str, Any],
+) -> dict[str, Any]:
+  """Topic extraction — clusters, entities, and seed phrases for expansion."""
+  clusters = list(context.get("topic_clusters") or [])
+  entity_topics = [e.get("name") or e.get("cluster") for e in entities if e.get("name") or e.get("cluster")]
+  brand = (context.get("brand_name") or "").strip()
+  primary_domain = context.get("primary_domain") or ""
+  topics: list[str] = []
+  seen: set[str] = set()
+  for t in [seed_keyword, brand, primary_domain] + clusters + entity_topics:
+    t = _clean(str(t or ""))
+    if not t or len(t) < 2:
+      continue
+    low = t.lower()
+    if low in seen:
+      continue
+    seen.add(low)
+    topics.append(t)
+  return {
+    "topics": topics[:16],
+    "primary_topic": topics[0] if topics else seed_keyword,
+    "topic_clusters": clusters[:10],
+    "entity_topics": entity_topics[:12],
+  }
+
+
+def semantic_expand_keywords(
+  seed_keyword: str,
+  docs: list[OpenDoc],
+  existing: set[str],
+  context: dict[str, Any],
+  *,
+  limit: int = 20,
+) -> list[dict[str, Any]]:
+  """Semantic expansion from Datamuse/open-doc related terms (embedding-like neighbors)."""
+  terms = terms_from_open_docs(docs, context)
+  # Prefer datamuse synonym docs
+  for doc in docs:
+    if doc.source == "datamuse" and doc.meta.get("terms"):
+      terms = list(doc.meta["terms"]) + terms
+  out: list[dict[str, Any]] = []
+  seen = set(existing)
+  seed_low = seed_keyword.lower()
+  for term in terms:
+    phrase = _clean(str(term).lower())
+    if not phrase or len(phrase) < 3 or len(phrase) > 60:
+      continue
+    if phrase in seen or phrase == seed_low:
+      continue
+    if is_junk_open_keyword(phrase, context):
+      continue
+    # Prefer multi-word or related-to-seed phrases
+    if " " not in phrase and phrase not in seed_low and seed_low.split()[0] not in phrase:
+      relevance = 62
+    else:
+      relevance = 78
+    seen.add(phrase)
+    out.append({
+      "keyword": phrase,
+      "sources": ["semantic_expansion", "datamuse"],
+      "category": "lsi",
+      "relevance": relevance,
+      "topic_cluster": context.get("primary_domain") or "General",
+    })
+    if len(out) >= limit:
+      break
+  return out
+
+
+def generate_long_tail_keywords(
+  context: dict[str, Any],
+  existing: set[str],
+  *,
+  limit: int = 16,
+) -> list[dict[str, Any]]:
+  """Long-tail generation — multi-word intent phrases from seeds + templates."""
+  seeds = [context.get("normalized_seed") or ""]
+  if isinstance(context.get("normalized"), dict):
+    seeds[0] = context["normalized"].get("normalized_seed") or seeds[0]
+  if not seeds[0]:
+    seeds[0] = str(context.get("seed_keyword") or "")
+  seeds += list(context.get("topic_clusters") or [])[:4]
+  brand = context.get("brand_name") or ""
+  if brand:
+    seeds.append(brand)
+  locations = (context.get("locations") or ["india"])[:3]
+  modifiers = (
+    "for beginners", "best practices", "step by step", "near me",
+    "cost", "examples", "guide 2026", "tips", "vs alternatives",
+  )
+  out: list[dict[str, Any]] = []
+  seen = set(existing)
+  for seed in seeds:
+    base = _clean(str(seed).lower())
+    if not base or len(base) < 2:
+      continue
+    candidates = [
+      f"{base} {mod}" for mod in modifiers
+    ] + [
+      f"{base} in {loc.lower()}" for loc in locations
+    ] + [
+      f"how to {base}",
+      f"what is {base}",
+      f"best {base} tools",
+    ]
+    for phrase in candidates:
+      phrase = _clean(phrase)
+      if len(phrase.split()) < 3 or phrase in seen:
+        continue
+      if not is_natural_keyword(phrase, context):
+        continue
+      seen.add(phrase)
+      out.append({
+        "keyword": phrase,
+        "sources": ["long_tail_generation"],
+        "category": "long_tail",
+        "relevance": 80,
+        "topic_cluster": context.get("primary_domain") or "General",
+      })
+      if len(out) >= limit:
+        return out
+  return out
+
+
+def _normalize_dedupe_key(keyword: str) -> str:
+  """Near-duplicate key: lowercase, strip punctuation, collapse whitespace/plurals lightly."""
+  k = (keyword or "").lower().strip()
+  k = re.sub(r"[^\w\s]", " ", k)
+  k = re.sub(r"\s+", " ", k).strip()
+  # light plural trim for trailing s on last token
+  parts = k.split()
+  if parts and len(parts[-1]) > 3 and parts[-1].endswith("s") and not parts[-1].endswith("ss"):
+    parts[-1] = parts[-1][:-1]
+  return " ".join(parts)
+
+
+def dedupe_keyword_candidates(
+  candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+  """Exact + near-duplicate keyword deduplication."""
+  kept: list[dict[str, Any]] = []
+  seen_exact: set[str] = set()
+  seen_norm: set[str] = set()
+  dropped_exact = 0
+  dropped_near = 0
+  for cand in candidates:
+    kw = _clean(str(cand.get("keyword") or "").lower())
+    if not kw:
+      continue
+    if kw in seen_exact:
+      dropped_exact += 1
+      continue
+    norm = _normalize_dedupe_key(kw)
+    if norm in seen_norm:
+      dropped_near += 1
+      continue
+    seen_exact.add(kw)
+    seen_norm.add(norm)
+    cand = dict(cand)
+    cand["keyword"] = kw
+    kept.append(cand)
+  return kept, {
+    "input_count": len(candidates),
+    "output_count": len(kept),
+    "dropped_exact": dropped_exact,
+    "dropped_near_duplicate": dropped_near,
+  }
 
 
 def extract_entities(seed: str, docs: list[OpenDoc]) -> list[dict[str, str]]:
@@ -1033,7 +1210,7 @@ async def run_seo_keyword_pipeline(
   seed_keyword = corrected
 
   lang_info = detect_language(seed_keyword, language)
-  stages["language_detector"] = lang_info
+  stages["language_detection"] = lang_info
 
   # NER on seed only — domain detection before open-data fetch
   ner_entities = run_named_entity_recognition(seed_keyword, [], known_phrases=_KNOWN_ENTITY_PHRASES)
@@ -1072,6 +1249,7 @@ async def run_seo_keyword_pipeline(
   stages["entity_disambiguation"] = {"entities": disambiguated, "count": len(disambiguated)}
 
   context = parse_input_context(seed_keyword, disambiguated, docs)
+  context["seed_keyword"] = seed_keyword
   context["kb_primary_domain"] = kb_primary_domain(seed_keyword, disambiguated)
   domain_info = classify_domains(seed_keyword, context)
   context.update({
@@ -1097,7 +1275,11 @@ async def run_seo_keyword_pipeline(
   entity_names = [e.get("name", "") for e in disambiguated if e.get("name")]
 
   seed_intent = detect_seed_intent(seed_keyword, context)
-  stages["search_intent_detection"] = seed_intent
+  stages["intent_classification"] = seed_intent
+
+  topic_info = extract_topics(seed_keyword, disambiguated, context)
+  context["extracted_topics"] = topic_info["topics"]
+  stages["topic_extraction"] = topic_info
 
   kg = knowledge_graph_lookup(seed_keyword, disambiguated, docs)
   stages["knowledge_graph_lookup"] = kg
@@ -1112,6 +1294,14 @@ async def run_seo_keyword_pipeline(
 
   normalized = normalize_seed_keyword(seed_keyword, context)
   context["normalized"] = normalized
+  context["normalized_seed"] = normalized.get("normalized_seed") or seed_keyword.lower()
+
+  seed_variants = generate_seed_variants(context, count, seed)
+  stages["keyword_seed_generation"] = {
+    "seeds": seed_variants,
+    "count": len(seed_variants),
+    "primary_seed": context["normalized_seed"],
+  }
 
   if use_rag:
     stages["open_data_retrieval"] = {
@@ -1151,11 +1341,25 @@ async def run_seo_keyword_pipeline(
     except asyncio.TimeoutError:
       discovery_meta["errors"] = ["discovery_timeout"]
 
+  # Fold seed variants into discovery as high-relevance seeds
+  for sv in seed_variants:
+    discovered.append({"keyword": sv, "sources": ["keyword_seed_generation"], "relevance": 90})
+
   expanded = generate_realistic_keywords(context, discovered, docs, count=count, variation_seed=seed)
   existing_kws = {c["keyword"] for c in expanded}
 
+  semantic_extra = semantic_expand_keywords(seed_keyword, docs, existing_kws, context, limit=max(12, count // 2))
+  existing_kws |= {c["keyword"] for c in semantic_extra}
+  stages["semantic_expansion"] = {
+    "added": len(semantic_extra),
+    "method": "datamuse_related_terms",
+    "sources": sorted({s for c in semantic_extra for s in (c.get("sources") or [])}),
+  }
+
   lsi_extra = expand_lsi_keywords(context, existing_kws)
   existing_kws |= {c["keyword"] for c in lsi_extra}
+  long_tail_extra = generate_long_tail_keywords(context, existing_kws, limit=max(10, count))
+  existing_kws |= {c["keyword"] for c in long_tail_extra}
   question_extra = generate_question_keywords(context, existing_kws) if include_questions else []
   existing_kws |= {c["keyword"] for c in question_extra}
   local_extra = generate_local_seo_keywords(context, existing_kws)
@@ -1164,21 +1368,24 @@ async def run_seo_keyword_pipeline(
   existing_kws |= {c["keyword"] for c in competitor_extra}
   trending_extra = generate_trending_candidates(context, existing_kws, seed)
 
-  all_candidates = expanded + lsi_extra + question_extra + local_extra + competitor_extra + trending_extra
+  all_candidates = (
+    expanded + semantic_extra + lsi_extra + long_tail_extra
+    + question_extra + local_extra + competitor_extra + trending_extra
+  )
   stages["keyword_expansion"] = {"candidates": len(expanded), "web_discovered": len(discovered)}
-  stages["lsi_semantic_keywords"] = {"added": len(lsi_extra)}
-  stages["question_generator"] = {"added": len(question_extra)}
-  stages["local_seo_keywords"] = {"added": len(local_extra), "markets": geo.get("countries", [])}
-  stages["competitor_generator"] = {"added": len(competitor_extra)}
-  stages["trending_keywords"] = {"added": len(trending_extra)}
+  stages["lsi_generation"] = {"added": len(lsi_extra)}
+  stages["long_tail_generation"] = {"added": len(long_tail_extra)}
+  stages["question_generation"] = {"added": len(question_extra)}
+  stages["local_seo"] = {"added": len(local_extra), "markets": geo.get("countries", []), "optional": True}
+  stages["competitor_topic_extraction"] = {"added": len(competitor_extra)}
+  stages["trend_detection"] = {"added": len(trending_extra)}
+
+  deduped_candidates, dedupe_meta = dedupe_keyword_candidates(all_candidates)
+  stages["keyword_deduplication"] = dedupe_meta
 
   raw_items: list[dict[str, Any]] = []
-  seen: set[str] = set()
-  for i, cand in enumerate(all_candidates):
+  for i, cand in enumerate(deduped_candidates):
     kw = cand["keyword"]
-    if kw in seen:
-      continue
-    seen.add(kw)
     row = build_keyword_row(
       kw,
       context=context,
@@ -1204,12 +1411,16 @@ async def run_seo_keyword_pipeline(
     it["opportunity_breakdown"] = compute_opportunity_breakdown(it)
 
   intent_dist = {intent: sum(1 for it in raw_items if it["intent"] == intent) for intent in _INTENTS}
-  stages["intent_classifier"] = {"distribution": intent_dist}
+  stages["search_intent_mapping"] = {"distribution": intent_dist, "per_keyword": True}
 
   trend_agg = {"up": 0, "stable": 0, "down": 0}
   for it in raw_items:
     trend_agg[it["trend"]] = trend_agg.get(it["trend"], 0) + 1
-  stages["trend_analyzer"] = {**trend_agg, "metrics_source": METRICS_SOURCE}
+  stages["trend_detection"] = {
+    **stages.get("trend_detection", {}),
+    **trend_agg,
+    "metrics_source": METRICS_SOURCE,
+  }
 
   vol_dist: dict[str, int] = {}
   diff_dist: dict[str, int] = {}
@@ -1221,10 +1432,10 @@ async def run_seo_keyword_pipeline(
     cpc_dist[it["cpc_label"]] = cpc_dist.get(it["cpc_label"], 0) + 1
     comp_dist[it["competition_label"]] = comp_dist.get(it["competition_label"], 0) + 1
 
-  stages["volume_estimator"] = {"distribution": vol_dist, "metrics_source": METRICS_SOURCE}
-  stages["difficulty_estimator"] = {"distribution": diff_dist, "metrics_source": METRICS_SOURCE}
-  stages["cpc_estimator"] = {"distribution": cpc_dist, "metrics_source": METRICS_SOURCE}
-  stages["competition_estimator"] = {"distribution": comp_dist, "metrics_source": METRICS_SOURCE}
+  stages["volume_estimation"] = {"distribution": vol_dist, "metrics_source": METRICS_SOURCE}
+  stages["difficulty_estimation"] = {"distribution": diff_dist, "metrics_source": METRICS_SOURCE}
+  stages["cpc_estimation"] = {"distribution": cpc_dist, "metrics_source": METRICS_SOURCE}
+  stages["competition_estimation"] = {"distribution": comp_dist, "metrics_source": METRICS_SOURCE}
   stages["opportunity_scoring"] = {"applied": True, "score_range": "62-98"}
 
   opportunities = find_opportunities(raw_items)
@@ -1244,11 +1455,12 @@ async def run_seo_keyword_pipeline(
 
   quality = validate_seo_quality(ranked, context, seo_score)
   recommendations = build_recommendations(quality, context, opportunities)
-  stages["seo_quality_validator"] = quality
+  stages["quality_validation"] = quality
 
+  ranked_keys = {r["keyword"] for r in ranked}
   competitor_rows: list[dict[str, Any]] = []
   for c in competitor_extra[:10]:
-    if c["keyword"] not in seen:
+    if c["keyword"] not in ranked_keys:
       competitor_rows.append(build_keyword_row(
         c["keyword"], context=context, sources=c.get("sources", []),
         relevance=c.get("relevance", 70), variation_seed=seed + 999,

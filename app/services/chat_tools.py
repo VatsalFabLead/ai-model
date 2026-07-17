@@ -223,7 +223,7 @@ _USAGE: dict[str, str] = {
   "seo_content": "Usage: `/seo-content <topic>` — optional `tone:`, `keywords:`, `words:`, `audience:`, `language:`. Returns article + slug + suggested tags.",
   "seo_optimizer": "Usage: `/seo-optimizer <paste your content>` — optional `keywords:`, `tone:`.",
   "title_meta": "Usage: `/title-meta <topic>` — optional `variations:` (10–50).",
-  "seo_keywords": "Usage: `/keywords <seed keyword or topic>` — optional `variations:` (10–50).",
+  "seo_keywords": "Usage: `/keywords <seed keyword or topic>` — optional `variations:` (10–50). Runs full SEO keyword pipeline (language → intent → industry → NER → topics → seeds → semantic/LSI/long-tail → scoring).",
   "schema_markup": "Usage: `/schema type: Article name: <page or business name>` — optional `language:`. Types: Article, Product, FAQPage, LocalBusiness, Recipe, JobPosting, …",
   "email_new": "Usage: `/email-new <context / key points>` — optional `subject:`, `tone:` (professional | casual | friendly | formal).",
   "email_reply": "Usage: `/email-reply <original email> | <your reply points>` — optional `tone:`. You can also use `original:` and `points:` fields.",
@@ -466,7 +466,21 @@ def _fmt_title_meta(r: dict[str, Any]) -> str:
 def _fmt_seo_keywords(r: dict[str, Any]) -> str:
   lines = [
     f"## SEO Keywords — {r.get('seed_keyword', '')}",
+    f"_Pipeline v{r.get('generator_version', '?')} · {r.get('count', 0)} keywords_",
     "",
+  ]
+  arch = r.get("architecture") or {}
+  flow = arch.get("flow") or []
+  if flow:
+    lines += ["### Pipeline stages", " → ".join(flow), ""]
+  stages = arch.get("stages") or {}
+  topic = (stages.get("topic_extraction") or {}).get("primary_topic")
+  industry = stages.get("industry_classification") or {}
+  if topic or industry:
+    ind = industry.get("industry") if isinstance(industry, dict) else industry
+    lines.append(f"**Topic:** {topic or '—'} · **Industry:** {ind or '—'}")
+    lines.append("")
+  lines += [
     "| # | Keyword | Intent | Volume | Difficulty | CPC | Trend |",
     "|---|---------|--------|--------|------------|-----|-------|",
   ]
