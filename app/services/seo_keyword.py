@@ -44,10 +44,74 @@ def _parse_ai_lines(raw: str, seed_keyword: str, max_items: int) -> list[str]:
   return out
 
 
+def _extract_seed_from_context(context: str) -> str:
+  """Pull a short seed topic from a longer business/context brief."""
+  text = (context or "").strip()
+  if not text:
+    return ""
+  # Prefer quoted or labeled topic
+  m = re.search(
+    r"(?:seed|keyword|topic|brand|product|about)\s*[:=\-]\s*[\"']?([^\"'\n,]{2,80})",
+    text,
+    re.I,
+  )
+  if m:
+    return _clean(m.group(1))
+  # Prefer strong product/industry noun phrases
+  low = text.lower()
+  for phrase in (
+    "coffee roastery", "specialty coffee", "coffee shop", "coffee brand",
+    "real estate", "digital marketing", "seo agency", "saas platform",
+    "online store", "ecommerce store", "fitness studio", "yoga studio",
+  ):
+    if phrase in low:
+      return phrase
+  # First sentence / line, truncated to a usable seed
+  first = re.split(r"[.\n!?]", text, maxsplit=1)[0]
+  first = _clean(first)
+  first = re.sub(
+    r"^(?:we\s+(?:are|run|sell|offer|provide)|our\s+(?:company|brand|product)\s+is)\s+",
+    "",
+    first,
+    flags=re.I,
+  )
+  first = re.sub(r"^(?:a|an|the)\s+", "", first, flags=re.I)
+  words = first.split()
+  # Prefer noun-ish window: drop filler, keep 3–6 content words
+  skip = {"in", "at", "to", "for", "and", "with", "from", "of", "the", "a", "an", "selling", "offering"}
+  content = [w for w in words if w.lower() not in skip]
+  if len(content) >= 2:
+    first = " ".join(content[:5])
+  elif len(words) > 6:
+    first = " ".join(words[:6])
+  return first[:80].strip(" ,;-")
+
+
+def resolve_seed_and_context(
+  seed_keyword: str | None,
+  context: str | None,
+) -> tuple[str, str]:
+  """Return (seed, context_brief). Context alone is enough."""
+  seed = _clean(seed_keyword)
+  brief = (context or "").strip()
+  if not seed and brief:
+    seed = _extract_seed_from_context(brief) or brief[:80]
+  if not seed and not brief:
+    raise ValueError("Provide seed_keyword or context (business / topic brief)")
+  if not brief and seed:
+    brief = seed
+  # If seed is actually a long brief pasted into seed_keyword, treat as context
+  if seed and not context and (len(seed) > 120 or seed.count(" ") >= 18):
+    brief = seed
+    seed = _extract_seed_from_context(seed) or " ".join(seed.split()[:6])
+  return seed, brief
+
+
 async def generate_keywords(
   provider: ModelProvider | None,
   *,
-  seed_keyword: str,
+  seed_keyword: str = "",
+  context: str | None = None,
   tone: str | None = None,
   max_items: int = 10,
   variations: int | None = None,
@@ -59,15 +123,14 @@ async def generate_keywords(
   include_alphabet: bool = True,
   variation_seed: int | None = None,
 ) -> dict[str, Any]:
-  seed_keyword = _clean(seed_keyword)
-  if not seed_keyword:
-    raise ValueError("seed_keyword is required")
+  seed, brief = resolve_seed_and_context(seed_keyword, context)
 
   n = max(10, min(50, variations if variations is not None else max_items))
   tone_str = _normalize_tone(tone)
 
   result = await run_seo_keyword_pipeline(
-    seed_keyword,
+    seed,
+    context_text=brief,
     variations=n,
     tone=tone_str,
     language=language,
@@ -84,46 +147,45 @@ async def generate_keywords(
     or result.get("architecture", {}).get("stages", {}).get("named_entity_recognition", {}).get("entities")
   )
 
-  if use_ai and provider is not None and entities_detected:
+  if use_ai and provider is not None and (entities_detected or brief):
     preview = ", ".join(k["keyword"] for k in items[:10])
     try:
       raw = await provider.chat(
-        [{"role": "user", "content": f"Seed: {seed_keyword}. Add {min(5, n)} unique SEO keywords not in: {preview}"}],
+        [{
+          "role": "user",
+          "content": (
+            f"Seed: {seed}\n"
+            f"Context: {brief[:1200]}\n"
+            f"Add {min(8, n)} unique SEO keywords not already in: {preview}\n"
+            "Derive keywords from the business context (products, audience, location, services)."
+          ),
+        }],
         system_prompt=(
-          "SEO keyword researcher. Return plain lines only, one keyword per line, no numbering."
+          "SEO keyword researcher. Use the provided context to invent relevant, "
+          "searchable keywords. Return plain lines only, one keyword per line, no numbering."
         ),
         use_rag=False,
         skip_intent=True,
-        max_tokens=300,
+        max_tokens=400,
         temperature=0.75,
       )
       from app.engine.seo_keyword_rag_pipeline import build_keyword_row, parse_input_context
 
-      seed = result.get("variation_seed") or 0
-      existing = {k["keyword"].lower() for k in items}
-      ctx = result.get("pipeline", {}).get("context") or parse_input_context(
-        seed_keyword, [], [],
-      )
-      for i, kw in enumerate(_parse_ai_lines(raw, seed_keyword, 5)):
-        if kw.lower() not in existing:
-          row = build_keyword_row(
-            kw,
-            context=ctx,
-            sources=["ai"],
-            relevance=50,
-            variation_seed=seed + 900 + i,
-          )
-          items.append(row)
-          existing.add(kw.lower())
-      items = items[:n]
+      ctx = parse_input_context(seed, [], [])
+      ctx["seed_keyword"] = seed
+      for kw in _parse_ai_lines(raw, seed, min(8, n)):
+        if any(it["keyword"] == kw for it in items):
+          continue
+        items.append(build_keyword_row(
+          kw, context=ctx, sources=["ai_enrichment"], relevance=70, variation_seed=0,
+        ))
       result["ai"] = {"enabled": True, "model_used": True}
     except Exception:
       result["ai"] = {"enabled": True, "model_used": False}
   elif use_ai and provider is not None:
-    result["ai"] = {"enabled": True, "model_used": False, "reason": "entities_required_before_llm"}
-  else:
     result["ai"] = {"enabled": use_ai, "model_used": False}
 
   result["keywords"] = items[:n]
   result["count"] = len(result["keywords"])
+  result["context"] = brief if brief != seed else None
   return result

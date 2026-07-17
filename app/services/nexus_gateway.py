@@ -120,7 +120,8 @@ async def invoke_nexus_tool(
     use_ai = bool(inp.get("use_ai", True))
     result = await seo_keyword.generate_keywords(
       _provider(registry, model, use_ai=use_ai),
-      seed_keyword=inp["seed_keyword"],
+      seed_keyword=inp.get("seed_keyword") or "",
+      context=inp.get("context"),
       variations=int(inp.get("variations", 10)),
       tone=inp.get("tone"),
       use_ai=use_ai,

@@ -48,11 +48,18 @@ class DiscoveryMeta(BaseModel):
 
 
 class SeoKeywordRequest(BaseModel):
-  seed_keyword: str = Field(
-    ...,
-    min_length=1,
-    examples=["Fablead Developers Technolab"],
-    description="Seed keyword, topic, or full brief — no character limit",
+  seed_keyword: str | None = Field(
+    default=None,
+    examples=["Navio Coffee"],
+    description="Primary seed keyword or short topic (optional if context is provided)",
+  )
+  context: str | None = Field(
+    default=None,
+    examples=[
+      "We run a specialty coffee brand in Surat selling single-origin beans, "
+      "subscriptions, and cafe brewing workshops for beginners."
+    ],
+    description="Business / topic brief — keywords are generated from this context",
   )
   variations: int = Field(default=10, ge=10, le=50, description="10–50 unique keywords per request")
   max_items: int | None = Field(default=None, ge=10, le=50, description="Alias for variations")
@@ -68,6 +75,7 @@ class SeoKeywordRequest(BaseModel):
 
 class SeoKeywordResponse(BaseModel):
   seed_keyword: str
+  context: str | None = None
   count: int
   summary: dict[str, Any]
   keywords: list[KeywordItem]
@@ -128,7 +136,8 @@ async def generate(
   try:
     result = await seo_keyword.generate_keywords(
       provider,
-      seed_keyword=payload.seed_keyword,
+      seed_keyword=payload.seed_keyword or "",
+      context=payload.context,
       tone=payload.tone,
       variations=variations,
       language=payload.language,

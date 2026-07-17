@@ -108,6 +108,8 @@ _FIELD_KEYS = {
   "topic": "topic",
   "seed": "seed_keyword",
   "seed_keyword": "seed_keyword",
+  "context": "context",
+  "brief": "context",
 }
 
 _KEY_LINE_RE = re.compile(
@@ -120,7 +122,7 @@ _KEY_LINE_RE = re.compile(
 _MULTILINE_FIELDS = frozenset({
   "content", "original_email", "reply_points", "purpose_offer",
   "value_proposition", "skills", "experience", "education", "summary",
-  "projects", "certifications", "achievements", "topic", "seed_keyword",
+  "projects", "certifications", "achievements", "topic", "seed_keyword", "context",
 })
 
 
@@ -223,7 +225,7 @@ _USAGE: dict[str, str] = {
   "seo_content": "Usage: `/seo-content <topic>` — optional `tone:`, `keywords:`, `words:`, `audience:`, `language:`. Returns article + slug + suggested tags.",
   "seo_optimizer": "Usage: `/seo-optimizer <paste your content>` — optional `keywords:`, `tone:`.",
   "title_meta": "Usage: `/title-meta <topic>` — optional `variations:` (10–50).",
-  "seo_keywords": "Usage: `/keywords <seed keyword or topic>` — optional `variations:` (10–50). Runs full SEO keyword pipeline (language → intent → industry → NER → topics → seeds → semantic/LSI/long-tail → scoring).",
+  "seo_keywords": "Usage: `/keywords context: <business brief>` — or `/keywords <seed>` — optional `seed:` + `context:` + `variations:` (10–50). Keywords are generated from context when provided.",
   "schema_markup": "Usage: `/schema type: Article name: <page or business name>` — optional `language:`. Types: Article, Product, FAQPage, LocalBusiness, Recipe, JobPosting, …",
   "email_new": "Usage: `/email-new <context / key points>` — optional `subject:`, `tone:` (professional | casual | friendly | formal).",
   "email_reply": "Usage: `/email-reply <original email> | <your reply points>` — optional `tone:`. You can also use `original:` and `points:` fields.",
@@ -245,7 +247,7 @@ _HELP_TEXT = (
   "| `/seo-content <topic>` | SEO Content Generator |\n"
   "| `/seo-optimizer <content>` | SEO Content Optimizer |\n"
   "| `/title-meta <topic>` | SEO Title & Meta |\n"
-  "| `/keywords <seed>` | SEO Keyword Generator |\n"
+  "| `/keywords context: <brief>` | SEO Keyword Generator |\n"
   "| `/schema type: Article name: …` | Schema Markup Generator |\n"
   "| `/email-new <context>` | Email Assistant — New |\n"
   "| `/email-reply <original> \\| <points>` | Email Assistant — Reply |\n"
@@ -300,10 +302,21 @@ def _build_input(tool: str, args_text: str) -> dict[str, Any] | str:
     return data
 
   if tool == "seo_keywords":
-    seed = fields.get("seed_keyword") or fields.get("topic") or free
-    if not seed:
+    context = fields.get("context") or ""
+    seed = fields.get("seed_keyword") or fields.get("topic") or ""
+    if not context and not seed and free:
+      # Long free text → context; short → seed
+      if len(free) > 120 or free.count(" ") >= 18:
+        context = free
+      else:
+        seed = free
+    if not seed and not context:
       return _USAGE[tool]
-    data = {"seed_keyword": seed}
+    data: dict[str, Any] = {}
+    if seed:
+      data["seed_keyword"] = seed
+    if context:
+      data["context"] = context
     if fields.get("variations"):
       data["variations"] = _to_int(fields["variations"], 10, 10, 50)
     return data
@@ -469,6 +482,10 @@ def _fmt_seo_keywords(r: dict[str, Any]) -> str:
     f"_Pipeline v{r.get('generator_version', '?')} · {r.get('count', 0)} keywords_",
     "",
   ]
+  ctx = (r.get("context") or "").strip()
+  if ctx and ctx != (r.get("seed_keyword") or ""):
+    preview = ctx if len(ctx) <= 280 else ctx[:277] + "…"
+    lines += [f"**Context:** {preview}", ""]
   arch = r.get("architecture") or {}
   flow = arch.get("flow") or []
   if flow:

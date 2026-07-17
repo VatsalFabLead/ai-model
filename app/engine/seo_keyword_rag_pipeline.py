@@ -1183,6 +1183,7 @@ def build_keyword_row(
 async def run_seo_keyword_pipeline(
   seed_keyword: str,
   *,
+  context_text: str | None = None,
   variations: int = 10,
   tone: str = "informative",
   language: str | None = None,
@@ -1196,37 +1197,52 @@ async def run_seo_keyword_pipeline(
   seed = effective_variation_seed(variation_seed)
   count = max(10, min(50, variations))
   seed_keyword = normalize_seed_typos(_clean(seed_keyword))
+  context_brief = (context_text or "").strip() or seed_keyword
+  # Analysis text = full context (brief) so NER/industry/topics use the business story
+  analysis_text = context_brief if len(context_brief) >= len(seed_keyword) else seed_keyword
   stages: dict[str, Any] = {}
 
-  stages["input"] = {"seed_keyword": seed_keyword, "requested_variations": count, "tone": tone}
+  stages["input"] = {
+    "seed_keyword": seed_keyword,
+    "context": context_brief[:500],
+    "has_context": bool(context_text and context_text.strip() and context_text.strip() != seed_keyword),
+    "requested_variations": count,
+    "tone": tone,
+  }
 
-  input_val = validate_input(seed_keyword)
+  input_val = validate_input(analysis_text if len(analysis_text) <= 2000 else seed_keyword)
   stages["input_validator"] = input_val
   if not input_val["valid"]:
-    raise ValueError("; ".join(input_val["issues"]))
+    # Retry with short seed if long context fails validator length rules
+    input_val = validate_input(seed_keyword)
+    stages["input_validator"] = input_val
+    if not input_val["valid"]:
+      raise ValueError("; ".join(input_val["issues"]))
 
   corrected = normalize_seed_typos(seed_keyword)
   stages["spell_correction"] = {"original": seed_keyword, "corrected": corrected, "applied": corrected != seed_keyword}
   seed_keyword = corrected
 
-  lang_info = detect_language(seed_keyword, language)
+  lang_info = detect_language(analysis_text, language)
   stages["language_detection"] = lang_info
 
-  # NER on seed only — domain detection before open-data fetch
-  ner_entities = run_named_entity_recognition(seed_keyword, [], known_phrases=_KNOWN_ENTITY_PHRASES)
-  pre_context = parse_input_context(seed_keyword, ner_entities, [])
-  pre_context["kb_primary_domain"] = kb_primary_domain(seed_keyword, ner_entities)
+  # NER on full context — richer entities from the business brief
+  ner_entities = run_named_entity_recognition(analysis_text, [], known_phrases=_KNOWN_ENTITY_PHRASES)
+  pre_context = parse_input_context(analysis_text, ner_entities, [])
+  pre_context["kb_primary_domain"] = kb_primary_domain(analysis_text, ner_entities)
+  pre_context["context_brief"] = context_brief
+  pre_context["seed_keyword"] = seed_keyword
 
-  domain_info = classify_domains(seed_keyword, pre_context)
+  domain_info = classify_domains(analysis_text, pre_context)
   pre_context.update({
     "primary_domain": domain_info["primary_domain"],
     "domains": domain_info["domains"],
     "domain_category": domain_info["category"],
   })
-  industry = classify_industry_domain(seed_keyword, pre_context)
+  industry = classify_industry_domain(analysis_text, pre_context)
   pre_context["industry"] = industry
 
-  geo = detect_country_region(seed_keyword, pre_context)
+  geo = detect_country_region(analysis_text, pre_context)
   stages["country_detection"] = geo
   pre_context["locations"] = geo.get("regions") or pre_context.get("locations", [])
 
@@ -1244,14 +1260,15 @@ async def run_seo_keyword_pipeline(
     except asyncio.TimeoutError:
       docs = []
 
-  entities = run_named_entity_recognition(seed_keyword, docs, known_phrases=_KNOWN_ENTITY_PHRASES)
-  disambiguated = disambiguate_entities(entities, seed_keyword, pre_context)
+  entities = run_named_entity_recognition(analysis_text, docs, known_phrases=_KNOWN_ENTITY_PHRASES)
+  disambiguated = disambiguate_entities(entities, analysis_text, pre_context)
   stages["entity_disambiguation"] = {"entities": disambiguated, "count": len(disambiguated)}
 
-  context = parse_input_context(seed_keyword, disambiguated, docs)
+  context = parse_input_context(analysis_text, disambiguated, docs)
   context["seed_keyword"] = seed_keyword
-  context["kb_primary_domain"] = kb_primary_domain(seed_keyword, disambiguated)
-  domain_info = classify_domains(seed_keyword, context)
+  context["context_brief"] = context_brief
+  context["kb_primary_domain"] = kb_primary_domain(analysis_text, disambiguated)
+  domain_info = classify_domains(analysis_text, context)
   context.update({
     "primary_domain": domain_info["primary_domain"],
     "primary_domain_slug": domain_info.get("primary_domain_slug"),
@@ -1262,11 +1279,11 @@ async def run_seo_keyword_pipeline(
     "domain_flags": domain_info.get("flags", {}),
     "disambiguated_entities": disambiguated,
   })
-  industry = classify_industry_domain(seed_keyword, context)
+  industry = classify_industry_domain(analysis_text, context)
   context["industry"] = industry
   context["locations"] = geo.get("regions") or context.get("locations", [])
 
-  brand_info = detect_brand(seed_keyword, disambiguated, context)
+  brand_info = detect_brand(analysis_text, disambiguated, context)
   context["brand_name"] = brand_info.get("brand_name", context.get("brand_name", ""))
   context["is_brand_seed"] = brand_info.get("is_brand_seed", context.get("is_brand_seed", False))
   stages["brand_detection"] = brand_info
@@ -1279,6 +1296,11 @@ async def run_seo_keyword_pipeline(
 
   topic_info = extract_topics(seed_keyword, disambiguated, context)
   context["extracted_topics"] = topic_info["topics"]
+  # Prefer seed as primary topic when context brief is long
+  if len(context_brief) > 80 and seed_keyword:
+    topic_info = {**topic_info, "primary_topic": seed_keyword}
+    if seed_keyword not in (topic_info.get("topics") or []):
+      topic_info["topics"] = [seed_keyword] + list(topic_info.get("topics") or [])[:8]
   stages["topic_extraction"] = topic_info
 
   kg = knowledge_graph_lookup(seed_keyword, disambiguated, docs)
@@ -1501,6 +1523,7 @@ async def run_seo_keyword_pipeline(
   return {
     "generator_version": GENERATOR_VERSION,
     "seed_keyword": seed_keyword,
+    "context": context_brief if context_brief != seed_keyword else None,
     "count": len(ranked),
     "variation_seed": seed,
     "keywords": ranked,

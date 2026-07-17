@@ -218,13 +218,16 @@ _DOMAIN_EXTRA_HINTS: dict[str, tuple[str, ...]] = {
   "Footwear": ("footwear", "shoes", "sneakers", "sandals"),
   "Accessories": ("accessories", "handbag", "belt", "sunglasses"),
   "Restaurant": ("restaurant", "dining", "fine dining", "food menu"),
-  "Cafe": ("cafe", "coffee shop", "espresso", "bakery cafe"),
+  "Cafe": (
+    "cafe", "coffee shop", "espresso", "bakery cafe", "coffee", "roastery",
+    "barista", "latte", "cappuccino", "single-origin", "coffee beans", "coffee roaster",
+  ),
   "Bakery": ("bakery", "pastry", "bread", "cake shop"),
   "Fast Food": ("fast food", "quick service", "burger", "pizza"),
   "Food Delivery": ("food delivery", "order food online", "delivery app"),
   "Grocery": ("grocery", "supermarket", "grocery store", "provisions"),
   "Catering": ("catering", "event catering", "wedding catering"),
-  "Beverage": ("beverage", "drinks", "juice", "soft drink"),
+  "Beverage": ("beverage", "drinks", "juice", "soft drink", "coffee", "tea", "espresso"),
   "Organic Food": ("organic food", "organic produce", "natural food"),
   "Automobile": ("automobile", "car dealer", "new car"),
   "Luxury Cars": ("luxury cars", "premium car", "bmw", "mercedes"),
@@ -524,8 +527,12 @@ def _hint_score(haystack: str, hints: tuple[str, ...]) -> int:
 def _nutrition_disambig_bonus(domain: str, category: str, haystack: str) -> int:
   if domain != "Nutrition":
     return 0
+  # Coffee/cafe context is Cafe/Beverage — do not boost Nutrition on "cafe" alone
+  coffee_signals = ("coffee", "espresso", "barista", "roastery", "latte", "cappuccino")
+  if any(s in haystack for s in coffee_signals):
+    return 0
   health_signals = ("dietitian", "clinical", "medical", "patient", "hospital", "therapy", "supplement")
-  food_signals = ("food", "recipe", "restaurant", "meal", "organic food", "grocery", "cafe")
+  food_signals = ("food", "recipe", "restaurant", "meal", "organic food", "grocery", "nutrition")
   if category == "Healthcare & Medical":
     return sum(2 for s in health_signals if s in haystack)
   return sum(2 for s in food_signals if s in haystack)
@@ -538,6 +545,7 @@ _VERTICAL_CATEGORIES: frozenset[str] = frozenset(
 
 def _vertical_boost(entry: dict[str, Any], haystack: str) -> int:
   cat = entry["category"]
+  domain = entry["domain"]
   bonus = 0
   if cat == "Beauty & Fashion" and any(s in haystack for s in ("beauty", "cosmetic", "makeup", "skincare", "lipstick")):
     bonus += 5
@@ -547,6 +555,14 @@ def _vertical_boost(entry: dict[str, Any], haystack: str) -> int:
     bonus += 4
   if cat == "Local Business" and any(s in haystack for s in ("near me", "plumber", "electrician", "repair")):
     bonus += 4
+  if domain in ("Cafe", "Beverage") and any(
+    s in haystack for s in ("coffee", "espresso", "barista", "roastery", "latte")
+  ):
+    bonus += 5
+  # Avoid "espresso machines" → Machine Learning via bare "machine"
+  if domain == "Machine Learning" and "machine learning" not in haystack and "ml model" not in haystack:
+    if "machine" in haystack and any(s in haystack for s in ("coffee", "espresso", "vending", "washing")):
+      bonus -= 3
   return bonus
 
 
