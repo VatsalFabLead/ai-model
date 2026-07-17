@@ -52,6 +52,7 @@ from app.engine.seo_optimizer_enrichment import (
 ARCHITECTURE_FLOW = [
   "input_article",
   "keyword_extractor",
+  "topic_resolution",
   "entity_extractor",
   "coverage_map",
   "gap_analysis",
@@ -72,7 +73,7 @@ ARCHITECTURE_FLOW = [
   "final_article",
 ]
 
-GENERATOR_VERSION = "seo-optimizer-rag-v5.1"
+GENERATOR_VERSION = "seo-optimizer-rag-v5.2"
 
 _INSTRUCTION_MARKERS = (
   "you are an expert seo content optimizer",
@@ -160,6 +161,272 @@ _IRRELEVANT_PATTERNS = [
 ]
 
 
+_TOPIC_STOP = frozenset({
+  "the", "and", "for", "with", "from", "that", "this", "your", "our", "are",
+  "was", "were", "have", "has", "had", "will", "can", "into", "onto", "about",
+  "their", "them", "they", "what", "when", "where", "which", "who", "how",
+  "why", "best", "guide", "using", "into", "over", "under", "after", "before",
+  "often", "always", "never", "really", "very", "just", "also", "than", "then",
+  "some", "any", "all", "more", "most", "other", "such", "only", "own", "same",
+  "so", "too", "very", "a", "an", "of", "in", "on", "to", "by", "as", "at",
+  "or", "if", "is", "it", "be", "do", "does", "did", "not", "no", "yes",
+  "complete", "ultimate", "introduction", "overview", "chapter", "part",
+})
+
+
+def _extract_h1(content: str) -> str:
+  m = re.search(r"^#\s+(.+)$", content or "", re.MULTILINE)
+  if not m:
+    return ""
+  return re.sub(r"[*_`#]", "", m.group(1)).strip()
+
+
+def _phrase_in_text(phrase: str, text_low: str) -> bool:
+  p = re.sub(r"\s+", " ", (phrase or "").strip().lower())
+  if len(p) < 3:
+    return False
+  return p in text_low
+
+
+def _is_junk_topic_phrase(phrase: str, content_low: str, title: str) -> bool:
+  """Detect non-contiguous title slices like 'Success Business Often'."""
+  p = re.sub(r"\s+", " ", (phrase or "").strip())
+  if not p or len(p) < 3:
+    return True
+  words = [w for w in re.findall(r"[A-Za-z0-9]+", p) if w]
+  if not words:
+    return True
+  # Single stopword / adverb heads
+  if len(words) == 1 and words[0].lower() in _TOPIC_STOP:
+    return True
+  # Majority stopwords
+  stop_n = sum(1 for w in words if w.lower() in _TOPIC_STOP)
+  if stop_n >= max(1, len(words) - 1) and len(words) >= 2:
+    return True
+  low = p.lower()
+  title_low = (title or "").lower()
+  # Must appear as a contiguous phrase in title or body
+  if not _phrase_in_text(low, content_low) and not _phrase_in_text(low, title_low):
+    # Allow slight punctuation differences in title (colons/dashes)
+    compact_title = re.sub(r"[:\-–—|/]+", " ", title_low)
+    compact_title = re.sub(r"\s+", " ", compact_title)
+    if not _phrase_in_text(low, compact_title):
+      return True
+  return False
+
+
+def _title_phrase_candidates(title: str) -> list[str]:
+  """Contiguous, searchable phrases from the H1 — never shuffled word picks."""
+  title = re.sub(r"\s+", " ", (title or "").strip())
+  if not title:
+    return []
+  out: list[str] = []
+  # Split on common title separators
+  parts = re.split(r"\s*[:\-–—|/]\s*", title)
+  for part in parts:
+    part = part.strip(" .!?")
+    if len(part) >= 8:
+      out.append(part)
+  out.append(title)
+  words = re.findall(r"[A-Za-z0-9']+", title)
+  # Sliding windows keeping original order
+  for n in (5, 4, 3, 2):
+    for i in range(0, max(0, len(words) - n + 1)):
+      window = words[i : i + n]
+      if sum(1 for w in window if w.lower() not in _TOPIC_STOP) < max(1, n - 1):
+        continue
+      # Drop windows starting with stopwords like "in", "to", "of"
+      if window[0].lower() in _TOPIC_STOP:
+        continue
+      phrase = " ".join(window)
+      out.append(phrase)
+  # Clean "How to X" → keep as search-like primary
+  how = re.search(r"\bhow\s+to\s+(.+)$", title, re.I)
+  if how and len(how.group(1).strip()) >= 8:
+    out.append("how to " + how.group(1).strip())
+    out.append(how.group(1).strip())
+  return list(dict.fromkeys(out))
+
+
+def _content_ngram_candidates(content: str, title_tokens: set[str], *, limit: int = 12) -> list[str]:
+  """Frequent bigrams/trigrams that overlap the title topic."""
+  # Prefer early body (intro carries the topic)
+  body = re.sub(r"^#+\s*.+$", " ", content or "", flags=re.MULTILINE)
+  body = re.sub(r"\s+", " ", body).strip().lower()
+  words = [w for w in re.findall(r"[a-z0-9']+", body) if len(w) > 2]
+  counts: dict[str, int] = {}
+  for n in (3, 2):
+    for i in range(0, max(0, len(words) - n + 1)):
+      window = words[i : i + n]
+      if window[0] in _TOPIC_STOP or window[-1] in _TOPIC_STOP:
+        continue
+      if sum(1 for w in window if w in _TOPIC_STOP) >= n - 1:
+        continue
+      phrase = " ".join(window)
+      if title_tokens and not (set(window) & title_tokens):
+        continue
+      counts[phrase] = counts.get(phrase, 0) + 1
+  ranked = sorted(counts.items(), key=lambda x: (x[1], len(x[0])), reverse=True)
+  return [p for p, c in ranked if c >= 1][:limit]
+
+
+def _score_topic_candidate(
+  phrase: str,
+  *,
+  content_low: str,
+  title: str,
+  entities: list[str],
+) -> int:
+  p = re.sub(r"\s+", " ", (phrase or "").strip())
+  if not p:
+    return 0
+  if _is_junk_topic_phrase(p, content_low, title):
+    return 0
+  low = p.lower()
+  score = 0
+  title_low = (title or "").lower()
+  title_left = re.split(r"\s*[:\-–—|]\s*", title_low, maxsplit=1)[0].strip()
+  if low == title_low:
+    score += 55
+  elif title_left and low == title_left:
+    score += 50
+  elif low in title_low:
+    score += 35
+  if _phrase_in_text(low, content_low):
+    score += 30 + min(25, content_low.count(low) * 6)
+  # Prefer search-like length
+  wc = len(p.split())
+  if 3 <= wc <= 8:
+    score += 18
+  elif wc == 2:
+    score += 10
+  elif wc == 1:
+    score += 3
+  elif wc > 10:
+    score -= 12
+  if low.startswith("how to ") or low.startswith("what is "):
+    score += 14
+  # Prefer fuller title phrases over truncated heads ("How to Achieve Success"
+  # vs "How to Achieve Success in Business")
+  if title_left and title_left.startswith(low) and low != title_left:
+    score -= 20
+  for ent in entities[:12]:
+    if ent.lower() in low or low in ent.lower():
+      score += 10
+      break
+  if any(w.lower() in {"often", "always", "never", "really"} for w in p.split()):
+    score -= 25
+  return max(0, score)
+
+
+def resolve_seo_topic(
+  content: str,
+  *,
+  keywords: list[str] | None = None,
+  display_title: str | None = None,
+  user_supplied: bool = False,
+  entities: list[str] | None = None,
+) -> dict[str, Any]:
+  """Identify the true SEO topic / primary keyword from title, entities, and body.
+
+  Replaces junk non-contiguous slices (e.g. 'Success Business Often') with a
+  phrase that actually appears in the article's semantic context.
+  """
+  content = content or ""
+  content_low = content.lower()
+  title = (display_title or "").strip() or _extract_h1(content)
+  kws = [k.strip() for k in (keywords or []) if k and str(k).strip()]
+  ents = list(entities or [])
+  if not ents:
+    # Lightweight early entity pass (keywords + Title Case phrases)
+    ents = extract_entities_from_content(content, kws[:6] if kws else [])
+
+  rejected: list[dict[str, str]] = []
+  candidates: list[str] = []
+
+  if user_supplied and kws:
+    primary = kws[0]
+    return {
+      "primary_keyword": primary,
+      "display_title": title or primary,
+      "keywords": list(dict.fromkeys(kws))[:15],
+      "topic": primary,
+      "source": "user_supplied",
+      "confidence": 95,
+      "candidates_considered": kws[:8],
+      "rejected": [],
+      "entities_used": ents[:12],
+    }
+
+  # Seed candidates: contiguous title phrases, existing kws, entities, body n-grams
+  candidates.extend(_title_phrase_candidates(title))
+  candidates.extend(kws)
+  candidates.extend(ents[:10])
+  title_tokens = {w.lower() for w in re.findall(r"[a-z0-9']+", title.lower()) if len(w) > 2}
+  candidates.extend(_content_ngram_candidates(content, title_tokens))
+
+  scored: list[tuple[int, str]] = []
+  seen: set[str] = set()
+  for raw in candidates:
+    phrase = re.sub(r"\s+", " ", (raw or "").strip())
+    key = phrase.lower()
+    if not phrase or key in seen:
+      continue
+    seen.add(key)
+    if _is_junk_topic_phrase(phrase, content_low, title):
+      rejected.append({"phrase": phrase, "reason": "non_contiguous_or_junk"})
+      continue
+    score = _score_topic_candidate(phrase, content_low=content_low, title=title, entities=ents)
+    if score < 25:
+      rejected.append({"phrase": phrase, "reason": f"low_score_{score}"})
+      continue
+    scored.append((score, phrase))
+
+  scored.sort(key=lambda x: (x[0], len(x[1].split()), len(x[1])), reverse=True)
+
+  if scored:
+    primary = scored[0][1]
+    confidence = min(98, scored[0][0])
+    source = "title" if primary.lower() in title.lower() else "semantic_context"
+  elif title and not _is_junk_topic_phrase(title, content_low, title):
+    # Fall back to cleaned full H1 (prefer over word salad)
+    primary = title if len(title) <= 70 else " ".join(title.split()[:8])
+    confidence = 55
+    source = "h1_fallback"
+  else:
+    primary = (kws[0] if kws else "topic")
+    confidence = 30
+    source = "weak_fallback"
+
+  # Build keyword list: primary first, then strong secondaries
+  new_kws: list[str] = [primary]
+  for _, phrase in scored[1:]:
+    if phrase.lower() == primary.lower():
+      continue
+    if phrase.lower() not in {k.lower() for k in new_kws}:
+      new_kws.append(phrase)
+    if len(new_kws) >= 10:
+      break
+  for kw in kws:
+    if kw.lower() not in {k.lower() for k in new_kws}:
+      new_kws.append(kw)
+    if len(new_kws) >= 12:
+      break
+
+  display = title or primary
+  return {
+    "primary_keyword": primary,
+    "display_title": display,
+    "keywords": new_kws[:15],
+    "topic": primary,
+    "source": source,
+    "confidence": confidence,
+    "candidates_considered": [p for _, p in scored[:8]],
+    "rejected": rejected[:12],
+    "entities_used": ents[:12],
+  }
+
+
 def infer_keywords_from_content(content: str) -> list[str]:
   low = content.lower()
   found: list[str] = []
@@ -170,12 +437,11 @@ def infer_keywords_from_content(content: str) -> list[str]:
   if "react" in low:
     found.append("React development")
   if not found:
-    m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-    if m:
-      title = re.sub(r"[*_`]", "", m.group(1)).strip()
-      words = [w for w in re.findall(r"\w+", title) if len(w) > 3][:3]
-      if words:
-        found.append(" ".join(words))
+    resolved = resolve_seo_topic(content, keywords=[], display_title=_extract_h1(content))
+    primary = resolved.get("primary_keyword") or ""
+    if primary:
+      found.append(primary)
+      found.extend([k for k in resolved.get("keywords") or [] if k.lower() != primary.lower()][:4])
   return list(dict.fromkeys(found))[:6]
 
 
@@ -186,43 +452,35 @@ def normalize_keywords(
   user_supplied: bool = False,
 ) -> tuple[str, str, list[str]]:
   """Return (short_primary, display_title, keyword_list)."""
-  display = ""
-  m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
-  if m:
-    display = re.sub(r"[*_`]", "", m.group(1)).strip()
-
+  display = _extract_h1(content)
   kws = [k.strip() for k in keywords if k and str(k).strip()]
-  if not kws:
-    kws = infer_keywords_from_content(content)
-  if not kws and display:
-    kws = [display]
 
   if user_supplied and kws:
     short = kws[0]
     return short, display or short, list(dict.fromkeys(kws))[:15]
 
-  raw_primary = kws[0] if kws else (display or infer_topic(content, []))
-  short = raw_primary
+  if not kws:
+    kws = infer_keywords_from_content(content)
+  if not kws and display:
+    kws = [display]
 
-  if len(raw_primary) > 45 or raw_primary.count(" ") > 4:
-    low = content.lower()
-    if "flutter" in low:
-      short = "Flutter app development"
-    elif re.search(r"\berp\b", low) or "enterprise resource planning" in low:
-      short = "ERP software"
-    else:
-      words = [w for w in re.findall(r"\w+", raw_primary) if len(w) > 3][:3]
-      short = " ".join(words) if words else _clip(raw_primary, 40)
-
-  if short.lower() not in {k.lower() for k in kws}:
-    kws = [short] + kws
-  else:
-    kws[0] = short
+  # Resolve true topic — never keep non-contiguous title word salad
+  resolved = resolve_seo_topic(
+    content,
+    keywords=kws,
+    display_title=display,
+    user_supplied=False,
+  )
+  short = resolved["primary_keyword"]
+  display = resolved["display_title"] or display or short
+  kws = resolved["keywords"] or [short]
 
   if "flutter" in content.lower():
     kws = [k for k in kws if "erp" not in k.lower() and "enterprise resource" not in k.lower()]
+    if short.lower() not in {k.lower() for k in kws}:
+      kws = [short] + kws
 
-  return short, display or short, kws
+  return short, display or short, list(dict.fromkeys(kws))[:15]
 
 
 def derive_anchor_terms(content: str, short_topic: str, keywords: list[str]) -> set[str]:
@@ -1979,8 +2237,6 @@ async def run_optimizer_rag_pipeline(
     content, keywords, user_supplied=user_supplied_keywords,
   )
   topic = short_topic
-  anchors = derive_anchor_terms(content, short_topic, kws)
-  strong = is_content_already_strong(content)
   stages: dict[str, Any] = {}
 
   # 1 Existing content
@@ -1991,9 +2247,30 @@ async def run_optimizer_rag_pipeline(
     "readability_score": readability_score(content),
   }
 
-  # 2 Keyword analysis
+  # 2 Keyword analysis (preliminary)
   kw_analysis = analyze_keywords(content, kws)
   stages["keyword_analysis"] = kw_analysis
+
+  # 2b Topic resolution — true SEO topic from title + entities + body
+  early_entities = extract_entities_from_content(content, kws)
+  topic_resolution = resolve_seo_topic(
+    content,
+    keywords=kws,
+    display_title=display_title,
+    user_supplied=user_supplied_keywords,
+    entities=early_entities,
+  )
+  stages["topic_resolution"] = topic_resolution
+  if not user_supplied_keywords:
+    short_topic = topic_resolution["primary_keyword"]
+    display_title = topic_resolution.get("display_title") or display_title or short_topic
+    kws = topic_resolution.get("keywords") or [short_topic]
+    topic = short_topic
+    kw_analysis = analyze_keywords(content, kws)
+    stages["keyword_analysis"] = {**kw_analysis, "after_topic_resolution": True}
+
+  anchors = derive_anchor_terms(content, short_topic, kws)
+  strong = is_content_already_strong(content)
 
   # 3 Entity extraction
   content_entities = extract_entities_from_content(content, kws)
