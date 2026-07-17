@@ -789,6 +789,20 @@
         "",
         "### SEO Score",
         "Overall: " + (out.seo_score?.overall || d.seo_score?.overall || "—") + "/100",
+        summary.similarity_is_validation_gate
+          ? ("Similarity gate: ≥" + (summary.min_semantic_similarity || 80) + " (hard validation)")
+          : "",
+        "",
+        "### Content gaps",
+        "Missing: " + ((d.content_gap_analysis?.missing_topics || out.content_gap_analysis?.missing_topics || []).slice(0, 6).join("; ") || "—"),
+        "Add sections: " + ((d.content_gap_analysis?.recommended_sections || out.content_gap_analysis?.recommended_sections || []).slice(0, 5).join("; ") || "—"),
+        "Gap queries: " + ((d.content_gap_analysis?.priority_gap_keywords || out.content_gap_analysis?.priority_gap_keywords || []).slice(0, 5).join("; ") || "—"),
+        "",
+        "### SERP predictions",
+        ((d.serp_predictions || out.serp_predictions || []).slice(0, 5).map(s =>
+          "- **" + s.keyword + "** → " + ((s.likely_serp_features || []).join(", ") || "—") +
+          (s.content_format_to_win ? " · win with " + s.content_format_to_win : "")
+        ).join(NL) || "—"),
         "",
         "### Primary Keywords", kwList(out.primary_keywords) || kwList((d.keywords || []).slice(0, 3)) || "—",
         "### Secondary / Long-tail", kwList(out.secondary_keywords) || "",

@@ -41,6 +41,9 @@ class KeywordItem(BaseModel):
   semantic_similarity: int | None = None
   confidence_score: int | None = None
   reason: str | None = None
+  model_similarity: int | None = None
+  local_similarity: int | None = None
+  validation: dict[str, Any] | None = None
 
 
 class DiscoveryMeta(BaseModel):
@@ -112,6 +115,8 @@ class SeoKeywordResponse(BaseModel):
   clusters: list[dict[str, Any]] | None = None
   topic_clusters: dict[str, list[Any]] | None = None
   opportunities: list[dict[str, Any]] | None = None
+  content_gap_analysis: dict[str, Any] | None = None
+  serp_predictions: list[dict[str, Any]] | None = None
   output: dict[str, Any] | None = None
   recommendations: list[str] | None = None
   seo_score: dict[str, Any] | None = None

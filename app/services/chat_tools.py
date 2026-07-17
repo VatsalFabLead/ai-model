@@ -531,6 +531,21 @@ def _fmt_seo_keywords(r: dict[str, Any]) -> str:
   out = r.get("output") or {}
   if out.get("topics"):
     lines += ["### Topics", ", ".join(str(t) for t in out["topics"][:12]), ""]
+  gaps = r.get("content_gap_analysis") or out.get("content_gap_analysis") or {}
+  if gaps.get("missing_topics") or gaps.get("recommended_sections"):
+    lines += ["### Content gaps"]
+    if gaps.get("missing_topics"):
+      lines.append("- Missing: " + "; ".join(str(x) for x in gaps["missing_topics"][:6]))
+    if gaps.get("recommended_sections"):
+      lines.append("- Add sections: " + "; ".join(str(x) for x in gaps["recommended_sections"][:5]))
+    lines.append("")
+  serp = r.get("serp_predictions") or out.get("serp_predictions") or []
+  if serp:
+    lines.append("### SERP predictions")
+    for s in serp[:5]:
+      feats = ", ".join(s.get("likely_serp_features") or []) or "—"
+      lines.append(f"- **{s.get('keyword', '')}** → {feats}")
+    lines.append("")
   clusters = r.get("topic_clusters") or {}
   if clusters:
     lines.append("### Clusters")
