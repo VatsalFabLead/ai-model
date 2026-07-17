@@ -117,12 +117,13 @@ class SeoContentResponse(BaseModel):
   title: str
   meta_description: str
   slug: str
+  suggested_tags: list[str] = Field(default_factory=list)
   word_count: int
   quality: SeoQuality
   discovery: SeoDiscoveryMeta
   ai: SeoAiMeta
   rag: SeoRagMeta | None = None
-  generator_version: str = "seo-content-rag-v4.1"
+  generator_version: str = "seo-content-rag-v4.2"
   variation_seed: int | None = None
   domain: str | None = None
 
@@ -215,9 +216,11 @@ async def output_schema(_: str = Depends(verify_api_key)) -> dict[str, Any]:
       "outline": [{"level": "h1|h2|h3", "text": "string"}],
       "content": {"article": "markdown string", "tone": "string"},
       "faqs": [{"question": "string", "answer": "string"}],
+      "slug": "url-friendly-slug",
+      "suggested_tags": ["tag1", "tag2"],
     },
     "speed": {
       "use_ai_false": "Template-only — instant, no model load",
-      "use_ai_true": "Template-first + optional custom model polish (timeout 14s)",
+      "use_ai_true": "Hosted LLM + custom model article writing (timeout ~75s)",
     },
   }

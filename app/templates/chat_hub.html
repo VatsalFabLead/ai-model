@@ -567,6 +567,8 @@
         "Metadata",
         "Title: " + meta.title,
         "Meta Description: " + meta.meta_description,
+        "Slug: /" + (d.slug || "—"),
+        "Suggested Tags: " + ((d.suggested_tags || []).join(", ") || "—"),
         ragLine,
         "",
         "Keywords",

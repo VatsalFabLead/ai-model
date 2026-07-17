@@ -196,7 +196,12 @@ _NL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
   ("seo_keywords", re.compile(r"\b(seo\s+)?keywords?\b[^.\n]*\b(for|about|ideas?)\b|\bkeyword\s+(generator|research)\b", re.IGNORECASE)),
   ("schema_markup", re.compile(r"\bschema\s+markup\b|\bjson-?ld\b", re.IGNORECASE)),
   ("seo_optimizer", re.compile(r"\boptimi[sz]e\b[^.\n]*\b(content|article|text|blog|page|seo)\b", re.IGNORECASE)),
-  ("seo_content", re.compile(r"\b(write|create|generate)\b[^.\n]*\b(blog|article|seo\s+content)\b", re.IGNORECASE)),
+  ("seo_content", re.compile(
+    r"\b(write|create|generate)\b[^.\n]*\b(blog|article|seo\s+content)\b"
+    r"|\bseo\s+content\b"
+    r"|\b(blog\s+post|article)\s+(about|on|for)\b",
+    re.IGNORECASE,
+  )),
 )
 
 
@@ -215,7 +220,7 @@ def detect_tool_intent(text: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 _USAGE: dict[str, str] = {
-  "seo_content": "Usage: `/seo-content <topic>` — optional `tone:`, `keywords:`, `words:`, `audience:`, `language:`.",
+  "seo_content": "Usage: `/seo-content <topic>` — optional `tone:`, `keywords:`, `words:`, `audience:`, `language:`. Returns article + slug + suggested tags.",
   "seo_optimizer": "Usage: `/seo-optimizer <paste your content>` — optional `keywords:`, `tone:`.",
   "title_meta": "Usage: `/title-meta <topic>` — optional `variations:` (10–50).",
   "seo_keywords": "Usage: `/keywords <seed keyword or topic>` — optional `variations:` (10–50).",
@@ -419,10 +424,17 @@ def _to_int(raw: str, default: int, lo: int, hi: int) -> int:
 def _fmt_seo_content(r: dict[str, Any]) -> str:
   meta = r.get("metadata") or {}
   quality = r.get("quality") or {}
+  kw = r.get("keywords") or {}
+  primary = kw.get("primary", "") if isinstance(kw, dict) else ""
+  secondary = (kw.get("secondary") or []) if isinstance(kw, dict) else []
+  tags = r.get("suggested_tags") or []
+  slug = r.get("slug") or ""
   lines = [
     f"## {meta.get('title') or r.get('title') or r.get('topic', 'SEO Content')}",
-    f"**Meta description:** {meta.get('meta_description', '')}",
-    f"**Keywords:** {', '.join([r.get('keywords', {}).get('primary', '')] + (r.get('keywords', {}).get('secondary') or [])[:5]).strip(', ')}",
+    f"**Meta description:** {meta.get('meta_description') or r.get('meta_description', '')}",
+    f"**Slug:** /{slug}" if slug else "**Slug:** —",
+    f"**Suggested tags:** {', '.join(tags[:12])}" if tags else "**Suggested tags:** —",
+    f"**Keywords:** {', '.join([primary] + list(secondary)[:5]).strip(', ')}",
     "",
     r.get("article") or (r.get("content") or {}).get("article", ""),
     "",

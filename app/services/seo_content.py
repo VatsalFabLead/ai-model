@@ -138,6 +138,59 @@ def _slugify(text: str, max_len: int = 60) -> str:
   return text or "untitled"
 
 
+def _suggest_tags(
+  *,
+  topic: str,
+  title: str,
+  primary: str,
+  secondary: list[str],
+  outline: list[dict[str, str]] | list[str],
+  category: str,
+  ai_tags: list[str] | None = None,
+  max_tags: int = 12,
+) -> list[str]:
+  """Build SEO-friendly suggested tags from keywords, outline, and optional AI tags."""
+  tags: list[str] = []
+  seen: set[str] = set()
+
+  def _add(raw: str) -> None:
+    t = re.sub(r"\s+", " ", (raw or "").strip(" #,;|/"))
+    if not t or len(t) < 2 or len(t) > 48:
+      return
+    # Drop instruction-like / filler tags
+    low = t.lower()
+    if low in seen:
+      return
+    if re.search(r"\b(generate|write|create)\s+(seo\s+)?(content|article)\b", low):
+      return
+    if low in ("introduction", "conclusion", "overview", "summary", "faq", "faqs"):
+      return
+    seen.add(low)
+    tags.append(t)
+
+  for item in ai_tags or []:
+    _add(str(item))
+  _add(primary)
+  _add(topic)
+  for kw in secondary:
+    _add(kw)
+  # Short phrases from H2 headings
+  for item in outline or []:
+    text = item.get("text") if isinstance(item, dict) else str(item)
+    level = (item.get("level") if isinstance(item, dict) else "h2") or "h2"
+    if str(level).lower() == "h2" and text:
+      _add(text)
+  # Category-style tag
+  if category:
+    _add(category.replace("_", " "))
+  # Title words as last resort for coverage
+  if title and len(tags) < 5:
+    for part in re.split(r"[:\-–—|]", title):
+      _add(part.strip())
+
+  return tags[:max_tags]
+
+
 def _count_words(text: str) -> int:
   return len(re.findall(r"\b[\w'-]+\b", text or ""))
 
@@ -286,12 +339,24 @@ def _parse_structured_ai(raw: str, topic: str) -> dict[str, Any] | None:
         faqs = seo_content_engine.extract_faqs_from_body(obj.get("content") or article)
       if not keywords.get("primary"):
         keywords = {"primary": topic, "secondary": []}
+      slug_raw = (
+        obj.get("slug")
+        or meta_obj.get("slug")
+        or ""
+      )
+      slug = _slugify(str(slug_raw).strip() or title or topic)
+      raw_tags = obj.get("suggested_tags") or obj.get("tags") or meta_obj.get("suggested_tags") or []
+      if isinstance(raw_tags, str):
+        raw_tags = [t.strip() for t in re.split(r"[,;|]", raw_tags) if t.strip()]
+      suggested_tags = [str(t).strip() for t in raw_tags if str(t).strip()]
       return {
         "metadata": {"title": title, "meta_description": _trim_meta(meta)},
         "keywords": keywords,
         "outline": outline,
         "content": {"article": article, "tone": tone},
         "faqs": faqs,
+        "slug": slug,
+        "suggested_tags": suggested_tags,
       }
 
   return _parse_markdown_article(raw, topic)
@@ -371,6 +436,10 @@ def _merge_ai_into_template(template: dict[str, Any], ai: dict[str, Any]) -> dic
     merged["outline"] = ai["outline"]
   if ai.get("faqs"):
     merged["faqs"] = ai["faqs"]
+  if ai.get("slug"):
+    merged["slug"] = _slugify(str(ai["slug"]))
+  if ai.get("suggested_tags"):
+    merged["suggested_tags"] = [str(t).strip() for t in ai["suggested_tags"] if str(t).strip()]
   return merged
 
 
@@ -395,6 +464,16 @@ def _pack_response(
   outline_struct = _coerce_outline_struct(structured.get("outline"))
   title = meta["title"]
   meta_desc = meta["meta_description"]
+  slug = _slugify(str(structured.get("slug") or title or topic))
+  suggested_tags = _suggest_tags(
+    topic=topic,
+    title=title,
+    primary=primary,
+    secondary=secondary,
+    outline=outline_struct,
+    category=category,
+    ai_tags=structured.get("suggested_tags") if isinstance(structured.get("suggested_tags"), list) else None,
+  )
 
   quality = pipeline_meta.get("quality") if pipeline_meta else None
   if not quality:
@@ -414,7 +493,8 @@ def _pack_response(
     "tone": tone,
     "title": title,
     "meta_description": meta_desc,
-    "slug": _slugify(title),
+    "slug": slug,
+    "suggested_tags": suggested_tags,
     "word_count": _count_words(article),
     "quality": quality,
     "discovery": discovery_meta,
@@ -475,7 +555,9 @@ async def _enhance_with_ai(
     '"content":{"article":"full markdown article starting with # Title — NO FAQ section","tone":"'
     + tone
     + '"},'
-    '"faqs":[{"question":"...","answer":"..."}]}'
+    '"faqs":[{"question":"...","answer":"..."}],'
+    '"slug":"url-friendly-slug",'
+    '"suggested_tags":["tag1","tag2","tag3"]}'
   )
   user_prompt = (
     f"Write a complete SEO article about: {topic}\n"
@@ -488,6 +570,8 @@ async def _enhance_with_ai(
     f"- Use the primary keyword naturally in title, intro, and 2–3 headings\n"
     "- Short paragraphs, bullet lists where helpful, one comparison table if useful\n"
     "- 4–6 FAQs with real answers\n"
+    "- slug: lowercase hyphenated URL slug from the title (e.g. navio-coffee-guide)\n"
+    "- suggested_tags: 6–12 short SEO tags (keywords + related topics, no filler)\n"
     "- No placeholder or meta text about 'generating SEO content'"
   )
   max_tokens = min(3500, max(1200, int(target * 2.2) + 400))
@@ -680,6 +764,10 @@ async def generate(
           structured["faqs"] = ai_result["faqs"]
         if ai_result.get("outline"):
           structured["outline"] = ai_result["outline"]
+        if ai_result.get("slug"):
+          structured["slug"] = ai_result["slug"]
+        if ai_result.get("suggested_tags"):
+          structured["suggested_tags"] = ai_result["suggested_tags"]
         ai_used = True
     except Exception:
       structured = template
