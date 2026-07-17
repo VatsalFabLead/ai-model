@@ -190,7 +190,7 @@
         }}),
         format: fmtSeoContent
       }},
-      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Understand + rewrite with hosted SEO strategist",
+      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Agency SEO consultant — audit + conditional rewrite",
         nexusTool: "seo_optimizer",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
@@ -203,7 +203,7 @@
           use_ai: useAi,
           use_rag: true,
           rewrite: true,
-          mode: "rewrite",
+          mode: useAi ? "rewrite" : "pipeline",
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtSeoOptimizer
@@ -663,6 +663,10 @@
           "",
           "### Optimization Plan",
           ...planLines,
+          "",
+          "### Conditional Rewrite",
+          (report.conditional_rewrite?.summary || d.conditional_rewrite?.summary || "—"),
+          "Patches: " + ((report.conditional_rewrite?.patches_applied || d.conditional_rewrite?.patches_applied || []).join(", ") || "none"),
           "",
           "### Final Metrics",
           "Readability: " + (fm.readability_score ?? "—") + "/100",

@@ -1,7 +1,7 @@
-"""SEO Content Optimizer — hosted strategist + rewrite pipeline.
+"""SEO Content Optimizer — hosted consultant strategist + conditional rewrite.
 
-Default: understand via hosted LLM, then rewrite the article body (guided by resolved topic).
-Set rewrite=False or mode=audit|plan|strategist for audit/plan only.
+Default (use_ai): understand → audit → plan → minimal editorial rewrite via hosted LLM.
+Full RAG regeneration only when strategist fails or mode=pipeline|rag|legacy|full_rag.
 """
 
 from __future__ import annotations
@@ -261,13 +261,15 @@ async def optimize(
         category=cat,
         tone=tone_str,
         language=lang_label,
+        apply_rewrite=rewrite,
       )
     except Exception:
       logger.exception("SEO optimizer hosted strategist failed; falling back to RAG pipeline")
       strategist_result = None
 
-  # Default path: strategist audit/plan without rewriting the article body
-  if strategist_result is not None and not rewrite:
+  # Preferred path: hosted strategist with conditional (minimal) rewrite
+  force_full_rag = m in ("pipeline", "rag", "legacy", "full_rag")
+  if strategist_result is not None and not force_full_rag:
     result = dict(strategist_result)
     result["use_rag"] = False
     result["metrics"] = {
@@ -276,7 +278,7 @@ async def optimize(
     }
     return result
 
-  # Rewrite path (or strategist unavailable): local RAG pipeline
+  # Full RAG only when strategist unavailable or mode forces pipeline
   guided_kws = list(kws)
   article_type = ""
   if strategist_result:

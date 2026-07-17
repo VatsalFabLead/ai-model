@@ -44,11 +44,11 @@ class OptimizeRequest(BaseModel):
   use_rag: bool = Field(default=True, description="Use open-dataset RAG when rewrite=true")
   rewrite: bool = Field(
     default=True,
-    description="Rewrite the article body (default true). Set false for audit/plan only.",
+    description="Apply conditional editorial rewrite (default true). Minimal patches — not a full article regeneration.",
   )
   mode: str | None = Field(
     default="rewrite",
-    description="rewrite|optimize|full (default) · audit|plan|strategist (no rewrite) · pipeline|rag|legacy (skip strategist)",
+    description="rewrite (default, hosted conditional) · audit|plan|strategist · pipeline|rag|legacy|full_rag",
   )
   variation_seed: int | None = Field(default=None, description="Omit for unique output each request")
 
@@ -141,6 +141,7 @@ class OptimizeResponse(BaseModel):
   article_understanding: dict[str, Any] | None = None
   optimization_plan: dict[str, Any] | None = None
   quality_validation: dict[str, Any] | None = None
+  conditional_rewrite: dict[str, Any] | None = None
   seo_report: dict[str, Any] | None = None
   elapsed_ms: float | None = None
   rag: RagMeta | None = None
