@@ -37,14 +37,20 @@ class OptimizeRequest(BaseModel):
     default="blog_article",
     examples=["blog_article", "landing_page", "product_description", "email_copy"],
   )
-  use_ai: bool = Field(default=True, description="Polish RAG output with your custom local model")
-  use_rag: bool = Field(default=True, description="Use open-dataset RAG pipeline (Wikipedia, Wikidata, etc.)")
+  use_ai: bool = Field(
+    default=True,
+    description="Use hosted elite SEO strategist (understand/audit/plan). Falls back to local pipeline if unavailable.",
+  )
+  use_rag: bool = Field(default=True, description="Use open-dataset RAG when rewrite=true")
+  rewrite: bool = Field(
+    default=False,
+    description="If false (default with hosted AI): audit/plan only, preserve article body. If true: run rewrite pipeline.",
+  )
+  mode: str | None = Field(
+    default=None,
+    description="strategist|audit|plan (no rewrite) · rewrite|optimize|full · pipeline|rag|legacy (skip strategist)",
+  )
   variation_seed: int | None = Field(default=None, description="Omit for unique output each request")
-
-
-class AiMeta(BaseModel):
-  enabled: bool
-  model_used: bool
 
 
 class RagMeta(BaseModel):
@@ -92,11 +98,24 @@ class OptimizationBundle(BaseModel):
   internal_links: list[InternalLink] = Field(default_factory=list)
   faqs: list[FaqItem] = Field(default_factory=list)
   schema_suggestions: dict[str, Any] = Field(default_factory=dict)
+  seo_report: dict[str, Any] | None = None
+  external_links: list[dict[str, Any]] | None = None
+  heading_optimization: list[dict[str, Any]] | None = None
+  featured_snippets: dict[str, Any] | None = None
 
 
 class MetricsComparison(BaseModel):
   original: ContentMetrics
   optimized: ContentMetrics
+
+
+class AiMeta(BaseModel):
+  enabled: bool
+  model_used: bool
+  backend: str | None = None
+  hosted: bool | None = None
+  mode: str | None = None
+  rewrite_pipeline: bool | None = None
 
 
 class OptimizeResponse(BaseModel):
@@ -116,8 +135,14 @@ class OptimizeResponse(BaseModel):
   keywords: list[str]
   ai: AiMeta
   use_rag: bool = True
-  generator_version: str = "seo-optimizer-rag-v5.1"
+  generator_version: str = "seo-optimizer-strategist-v1"
   variation_seed: int | None = None
+  rewrite_applied: bool | None = None
+  article_understanding: dict[str, Any] | None = None
+  optimization_plan: dict[str, Any] | None = None
+  quality_validation: dict[str, Any] | None = None
+  seo_report: dict[str, Any] | None = None
+  elapsed_ms: float | None = None
   rag: RagMeta | None = None
   pipeline: PipelineAnalysis | None = None
   architecture: dict[str, Any] | None = None
@@ -143,8 +168,13 @@ async def list_languages(_: str = Depends(verify_api_key)) -> dict:
 @router.get("/version")
 async def optimizer_version(_: str = Depends(verify_api_key)) -> dict[str, str]:
   from app.engine.seo_optimizer_rag_pipeline import GENERATOR_VERSION
+  from app.engine.seo_optimizer_strategist import STRATEGIST_VERSION
 
-  return {"generator_version": GENERATOR_VERSION, "status": "ok"}
+  return {
+    "generator_version": GENERATOR_VERSION,
+    "strategist_version": STRATEGIST_VERSION,
+    "status": "ok",
+  }
 
 
 @router.get("/pipeline")
@@ -153,6 +183,8 @@ async def pipeline_architecture(_: str = Depends(verify_api_key)) -> dict[str, A
 
   return {
     "flow": ARCHITECTURE_FLOW,
+    "strategist_default": True,
+    "rewrite_optional": True,
     "datasets": [
       "Wikipedia", "Wikidata", "DBpedia", "ConceptNet", "Stack Exchange",
       "arXiv", "Semantic Scholar", "GDELT", "GooAQ", "SQuAD", "Dolly", "C4", "FineWeb",
@@ -186,6 +218,8 @@ async def optimize_content(
       use_ai=payload.use_ai,
       use_rag=payload.use_rag,
       variation_seed=payload.variation_seed,
+      rewrite=payload.rewrite,
+      mode=payload.mode,
     )
   except ValueError as exc:
     raise HTTPException(status_code=400, detail=str(exc)) from exc

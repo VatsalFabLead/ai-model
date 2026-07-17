@@ -439,38 +439,31 @@ def generate_optimizer_faqs(
       "Yes. Flutter supports cross-platform development for Android, iOS, web, and desktop from a shared codebase.",
     )
   else:
-    add(f"What is {label}?", intro)
-    add(
-      f"How does {label} work?",
-      _section_answer(article, keywords[1] if len(keywords) > 1 else label, profile)
-      or f"The {label} process involves planning, execution, and refinement aligned with goals for {topic}.",
-    )
-    add(
-      f"What are the benefits of {label}?",
-      _section_answer(article, "benefits", profile)
-      or f"{label} helps teams achieve better results with structured approaches to {topic}.",
-    )
-    add(
-      f"Who should use {label}?",
-      f"{label} is useful for beginners and professionals who need practical guidance on {topic}.",
-    )
-
-  for h2 in re.findall(r"^##\s+(.+)$", article, re.M):
-    low = h2.lower()
-    if low in ("introduction", "conclusion", "frequently asked questions", "key takeaways", "related guides"):
-      continue
-    if len(faqs) >= 8:
-      break
-    body = _section_answer(article, h2, profile)
-    if len(body) < 40:
-      continue
-    if low.startswith("what "):
-      q = h2 if h2.endswith("?") else f"{h2}?"
-    elif low.startswith("how "):
-      q = h2 if h2.endswith("?") else f"{h2}?"
-    else:
-      q = f"What is {h2}?"
-    add(q, body)
+    # Prefer intent-led FAQs from real H2s / entities — avoid generic
+    # "What is X / How does X work / Benefits of X" templates.
+    for h2 in re.findall(r"^##\s+(.+)$", article, re.M):
+      low = h2.lower().strip()
+      if low in ("introduction", "conclusion", "frequently asked questions", "key takeaways", "related guides"):
+        continue
+      body = _section_answer(article, h2, profile)
+      if len(body) < 40:
+        continue
+      if low.startswith(("what ", "how ", "why ", "when ", "where ")):
+        q = h2 if h2.endswith("?") else f"{h2}?"
+      else:
+        q = f"Why does {h2} matter?"
+      add(q, body)
+      if len(faqs) >= 5:
+        break
+    if intro and len(faqs) < 3:
+      add(f"What should readers know about {label}?", intro)
+    if len(faqs) < 4:
+      add(
+        f"Why is {label} important?",
+        _section_answer(article, keywords[1] if len(keywords) > 1 else label, profile)
+        or intro
+        or f"This article explains practical context around {topic}.",
+      )
 
   for ent in (entities or [])[:3]:
     if len(faqs) >= 10:
@@ -494,17 +487,18 @@ def optimize_metadata_clean(
   primary = keywords[0] if keywords else topic
   profile = detect_topic_profile(topic, keywords, article)
 
-  subtitle_parts: list[str] = []
-  if profile == "flutter":
-    subtitle_parts = ["Features", "Benefits", "Best Practices"]
-  elif profile == "marketing":
-    subtitle_parts = ["Tips", "Strategies", "Best Practices"]
-  else:
-    subtitle_parts = ["Guide", "Tips", "Best Practices"]
+  h1 = ""
+  m = re.search(r"^#\s+(.+)$", article, re.M)
+  if m:
+    h1 = re.sub(r"\s+", " ", m.group(1).strip())
 
-  title = f"{topic.strip()}: {', '.join(subtitle_parts[:3])}"
-  if len(title) > 70:
-    title = title[:67].rsplit(" ", 1)[0] + "..."
+  # Prefer real H1 over generic "Guide / Tips / Best Practices" templates
+  if h1 and len(h1) >= 8:
+    title = h1[:70] if len(h1) <= 70 else h1[:67].rsplit(" ", 1)[0] + "..."
+  elif profile == "flutter":
+    title = f"{topic.strip()}: Features, Benefits, and Best Practices"[:70]
+  else:
+    title = (topic.strip() or primary)[:70]
 
   intro = _extract_intro_sentence(article, topic)
   feature_bits: list[str] = []
@@ -514,22 +508,21 @@ def optimize_metadata_clean(
     feature_bits = [k for k in keywords[1:4] if k and not is_internal_suggestion(k)]
 
   meta = intro
-  if feature_bits:
+  if profile == "flutter" and feature_bits:
     meta = f"Learn {primary}, {', '.join(feature_bits[:3])}, and best practices for {topic}."
-  else:
+  elif feature_bits and intro:
     meta = intro
+  else:
+    meta = intro or f"Read about {primary}."
   meta = re.sub(r"\s+", " ", meta).strip()
   if len(meta) > 160:
     meta = meta[:157].rsplit(" ", 1)[0] + "..."
-  elif len(meta) < 120:
-    meta = _clip(f"{meta} Practical guide with expert tips and FAQs.", 160)
+  elif len(meta) < 110 and intro:
+    meta = _clip(intro, 160)
 
   if is_internal_suggestion(meta) or is_internal_suggestion(title):
-    title = f"{primary.title()} Guide: Features, Benefits, and Best Practices"[:70]
-    meta = _clip(
-      f"Learn {primary} with expert tips, practical guidance, and answers to common questions about {topic}.",
-      160,
-    )
+    title = (h1 or primary or topic)[:70]
+    meta = _clip(intro or f"Overview of {primary} based on the article content.", 160)
 
   return {"title": title, "meta_description": meta}
 

@@ -190,11 +190,12 @@
         }}),
         format: fmtSeoContent
       }},
-      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Optimize content",
+      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Audit & plan (hosted) — optional rewrite",
         nexusTool: "seo_optimizer",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
           {{ id: "keywords", label: "Target keywords (comma, line, or semicolon-separated)", type: "textarea", full: true }},
+          {{ id: "rewrite", label: "Also rewrite article body", type: "checkbox", value: "" }},
         ],
         endpoint: "/seo-optimizer/optimize",
         build: (f, useAi) => ({{
@@ -202,6 +203,8 @@
           keywords: f.keywords || null,
           use_ai: useAi,
           use_rag: true,
+          rewrite: !!(f.rewrite),
+          mode: f.rewrite ? "rewrite" : "strategist",
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtSeoOptimizer
@@ -436,12 +439,16 @@
           }});
         }} else if (f.type === "textarea") {{
           input = document.createElement("textarea");
+        }} else if (f.type === "checkbox") {{
+          input = document.createElement("input");
+          input.type = "checkbox";
+          if (f.value) input.checked = true;
         }} else {{
           input = document.createElement("input");
           input.type = f.type || "text";
         }}
         input.id = "f_" + f.id;
-        if (f.value != null) input.value = f.value;
+        if (f.type !== "checkbox" && f.value != null) input.value = f.value;
         if (f.placeholder) input.placeholder = f.placeholder;
         if (f.required) input.required = true;
         wrap.appendChild(input);
@@ -453,7 +460,9 @@
       const out = {{}};
       activeTool.fields.forEach(f => {{
         const el = document.getElementById("f_" + f.id);
-        if (el) out[f.id] = el.value.trim();
+        if (!el) return;
+        if (f.type === "checkbox") out[f.id] = !!el.checked;
+        else out[f.id] = el.value.trim();
       }});
       return out;
     }}
@@ -601,13 +610,27 @@
     }}
     function fmtSeoOptimizer(d) {{
       const NL = String.fromCharCode(10);
-      const report = (d.optimization || {{}}).seo_report;
+      const report = d.seo_report || (d.optimization || {{}}).seo_report;
+      const understanding = d.article_understanding || report?.article_understanding || {{}};
+      const plan = d.optimization_plan || report?.optimization_plan || {{}};
       if (report) {{
         const fm = report.final_metrics || {{}};
+        const planLines = []
+          .concat((plan.high_priority || []).map(p => "- [High] " + (p.action || p) + (p.why ? " — " + p.why : "")))
+          .concat((plan.medium_priority || []).map(p => "- [Medium] " + (p.action || p) + (p.why ? " — " + p.why : "")))
+          .concat((plan.low_priority || []).map(p => "- [Low] " + (p.action || p) + (p.why ? " — " + p.why : "")));
         const lines = [
-          "SEO Content Optimization · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+          "SEO Content Optimizer · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+          "Mode: " + ((d.ai && d.ai.mode) || (d.rewrite_applied ? "rewrite" : "strategist audit/plan")),
           "SEO score: " + (fm.seo_score_before ?? d.seo_score_before) + " → " + (fm.seo_score_after ?? d.seo_score_after),
           d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+          "",
+          "### Article Understanding",
+          "Primary topic: " + (understanding.primary_topic || report.keyword_analysis?.primary || "—"),
+          "Type: " + (understanding.article_type || "—") + " · Intent: " + (understanding.search_intent || report.search_intent?.primary || "—"),
+          "Industry: " + (understanding.industry || "—") + " · Audience: " + (understanding.target_audience || "—"),
+          "Goal: " + (understanding.content_goal || "—") + " · Stage: " + (understanding.reader_journey_stage || "—"),
+          "Confidence: " + (understanding.confidence_score ?? "—"),
           "",
           "### SEO Audit",
           "**Strengths**", ...(report.seo_audit?.strengths || []).map(s => "- " + s),
@@ -617,16 +640,16 @@
           "### Keyword Analysis",
           "Primary: " + (report.keyword_analysis?.primary || "—"),
           "Secondary: " + ((report.keyword_analysis?.secondary || []).join(", ") || "—"),
-          ...(report.keyword_analysis?.table || []).map(r => "- " + r.keyword + " · " + r.status + " · mentions " + r.mentions),
+          ...(report.keyword_analysis?.table || []).map(r => "- " + r.keyword + " · " + (r.status || r.importance || "") + " · mentions " + (r.mentions ?? "—")),
           "",
           "### Entity Analysis (" + (report.entity_analysis?.entity_coverage_pct ?? "—") + "% coverage)",
           ...(report.entity_analysis?.entities || []).map(e => "- " + e.entity + (e.in_content ? " ✓" : " (missing)")),
           "",
           "### Search Intent",
-          "Primary: " + (report.search_intent?.primary || "—"),
+          "Primary: " + (understanding.search_intent || report.search_intent?.primary || "—"),
           "",
           "### Content Gap Analysis",
-          ...(report.content_gap_analysis?.gaps || []).map(g => "- [" + g.priority + "] " + g.suggestion),
+          ...(report.content_gap_analysis?.gaps || []).map(g => "- [" + (g.priority || "") + "] " + (g.suggestion || g.gap || "")),
           "",
           "### Featured Snippets",
           "**Definition:** " + (report.featured_snippets?.definition || "—"),
@@ -639,12 +662,16 @@
           "OG Title: " + (report.metadata?.og_title || "—"),
           "OG Description: " + (report.metadata?.og_description || "—"),
           "",
+          "### Optimization Plan",
+          ...planLines,
+          "",
           "### Final Metrics",
           "Readability: " + (fm.readability_score ?? "—") + "/100",
           "Topical authority: " + (fm.topical_authority_score ?? "—"),
           "Keyword coverage: " + (fm.keyword_coverage_pct ?? "—") + "%",
           "Entity coverage: " + (fm.entity_coverage_pct ?? "—") + "%",
           "Content depth: " + (fm.content_depth_score ?? "—"),
+          "Rewrite applied: " + (d.rewrite_applied ? "yes" : "no"),
           "",
           "### FAQs",
           ...(report.faqs || []).map((f, i) => (i + 1) + ". " + f.question + NL + f.answer),
@@ -655,7 +682,7 @@
           "### AI Search Optimization",
           ...(report.ai_search_optimization || []).map(s => "- " + s),
           "",
-          "### Optimized Article",
+          d.rewrite_applied ? "### Optimized Article" : "### Original Article (preserved — enable rewrite to mutate body)",
           d.optimized_content || ""
         ];
         return lines.filter(Boolean).join(NL);

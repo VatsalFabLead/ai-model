@@ -290,11 +290,14 @@ def _build_input(tool: str, args_text: str) -> dict[str, Any] | str:
     content = fields.get("content") or free
     if not content:
       return _USAGE[tool]
-    data = {"content": content}
+    data = {"content": content, "use_ai": True, "rewrite": False, "mode": "strategist"}
     if fields.get("keywords"):
       data["keywords"] = fields["keywords"]
     if fields.get("tone"):
       data["tone"] = fields["tone"].lower()
+    if fields.get("rewrite") in ("1", "true", "yes", "rewrite"):
+      data["rewrite"] = True
+      data["mode"] = "rewrite"
     return data
 
   if tool == "title_meta":
@@ -474,16 +477,71 @@ def _fmt_seo_content(r: dict[str, Any]) -> str:
 
 
 def _fmt_seo_optimizer(r: dict[str, Any]) -> str:
+  report = r.get("seo_report") or (r.get("optimization") or {}).get("seo_report") or {}
+  understanding = r.get("article_understanding") or report.get("article_understanding") or {}
+  plan = r.get("optimization_plan") or report.get("optimization_plan") or {}
   lines = [
-    "## Optimized Content",
+    f"## SEO Content Optimizer · v{r.get('generator_version', '?')}",
+    f"**Mode:** {(r.get('ai') or {}).get('mode') or ('rewrite' if r.get('rewrite_applied') else 'strategist')}",
     f"**SEO score:** {r.get('seo_score_before', 0)} → {r.get('seo_score_after', 0)} "
     f"(+{r.get('improvement', 0)})",
     "",
-    r.get("optimized_content", ""),
   ]
+  if understanding:
+    lines += [
+      "### Article Understanding",
+      f"- Primary: {understanding.get('primary_topic') or (report.get('keyword_analysis') or {}).get('primary') or '—'}",
+      f"- Type: {understanding.get('article_type', '—')} · Intent: {understanding.get('search_intent', '—')}",
+      f"- Industry: {understanding.get('industry', '—')} · Audience: {understanding.get('target_audience', '—')}",
+      "",
+    ]
+  kw = report.get("keyword_analysis") or {}
+  if kw.get("primary"):
+    lines += [
+      "### Keywords",
+      f"- Primary: {kw.get('primary')}",
+      f"- Secondary: {', '.join(kw.get('secondary') or []) or '—'}",
+      "",
+    ]
+  meta = (report.get("metadata") or (r.get("optimization") or {}).get("metadata") or {})
+  if meta.get("title") or meta.get("meta_description"):
+    lines += [
+      "### Metadata",
+      f"- Title: {meta.get('title', '—')}",
+      f"- Meta: {meta.get('meta_description', '—')}",
+      "",
+    ]
+  for bucket, label in (
+    ("high_priority", "High"),
+    ("medium_priority", "Medium"),
+    ("low_priority", "Low"),
+  ):
+    items = plan.get(bucket) or []
+    if items:
+      if "### Optimization Plan" not in lines:
+        lines.append("### Optimization Plan")
+      for p in items[:5]:
+        if isinstance(p, dict):
+          lines.append(f"- [{label}] {p.get('action', '')}" + (f" — {p['why']}" if p.get("why") else ""))
+        else:
+          lines.append(f"- [{label}] {p}")
+  if "### Optimization Plan" in lines:
+    lines.append("")
+  faqs = report.get("faqs") or (r.get("optimization") or {}).get("faqs") or []
+  if faqs:
+    lines.append("### FAQs")
+    for i, f in enumerate(faqs[:6], 1):
+      if isinstance(f, dict):
+        lines.append(f"{i}. {f.get('question', '')}")
+        lines.append(f.get("answer", ""))
+      else:
+        lines.append(f"{i}. {f}")
+    lines.append("")
   suggestions = r.get("suggestions") or []
   if suggestions:
-    lines += ["", "### Suggestions"] + [f"- {s}" for s in suggestions[:8]]
+    lines += ["### Suggestions"] + [f"- {s}" for s in suggestions[:8]] + [""]
+  body_label = "Optimized Article" if r.get("rewrite_applied") else "Original Article (preserved)"
+  lines += [f"### {body_label}", r.get("optimized_content", "")]
   return "\n".join(lines).strip()
 
 
