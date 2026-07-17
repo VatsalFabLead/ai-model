@@ -24,6 +24,7 @@ ARCHITECTURE_FLOW = [
   "trend_detection",
   "local_seo",
   "keyword_deduplication",
+  "relevance_rerank",
   "volume_estimation",
   "difficulty_estimation",
   "cpc_estimation",
@@ -159,16 +160,25 @@ def classify_industry_domain(seed: str, context: dict[str, Any]) -> dict[str, An
 
 def detect_seed_intent(seed: str, context: dict[str, Any]) -> dict[str, Any]:
   low = seed.lower()
-  if any(w in low for w in ("hire", "buy", "pricing", "cost", "agency", "company")):
+  brief = str(context.get("context_brief") or "").lower()
+  hay = f"{low} {brief[:400]}"
+  if any(w in hay for w in ("hire", "buy", "pricing", "cost", "agency", "company near me", "book now")):
     primary = "commercial"
-  elif any(w in low for w in ("how to", "what is", "why", "guide", "tutorial")):
+  elif any(w in hay for w in ("how to", "what is", "why", "guide", "tutorial", "tips")):
     primary = "informational"
-  elif any(w in low for w in ("near me", "book", "order")):
+  elif any(w in hay for w in ("near me", "book", "order", "subscribe", "buy online")):
     primary = "transactional"
-  elif context.get("is_brand_seed"):
+  elif context.get("is_brand_seed") and not context.get("topic_mode") and len((seed or "").split()) <= 4 and (
+    context.get("domain_category") or ""
+  ) in ("Technology", "Healthcare & Medical", "Business"):
     primary = "navigational"
   else:
-    primary = "commercial"
+    # Product / local / service briefs default to informational research intent
+    category = context.get("domain_category") or ""
+    if category in ("Technology", "Healthcare & Medical"):
+      primary = "commercial"
+    else:
+      primary = "informational"
   return {
     "primary_intent": primary,
     "intents": ["informational", "commercial", "transactional", "navigational"],

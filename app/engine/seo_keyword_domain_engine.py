@@ -13,11 +13,17 @@ from app.engine.seo_keyword_domains import (
   is_adult_restricted,
   resolve_domain,
 )
+from app.engine.seo_keyword_relevance import (
+  expansion_domains,
+  passes_topic_relevance,
+)
 
 _DOMAIN_LSI: dict[str, tuple[str, ...]] = {
   "Beauty": ("cruelty free makeup", "vegan cosmetics", "beauty essentials", "glow makeup", "lipstick shades"),
   "Cosmetics": ("matte lipstick", "liquid foundation", "makeup palette", "beauty kit"),
   "Skincare": ("vitamin c serum", "moisturizer spf", "skincare routine", "anti aging cream"),
+  "Cafe": ("specialty coffee", "single origin beans", "espresso drinks", "coffee roasting", "barista tools"),
+  "Beverage": ("cold brew", "craft coffee", "tea blends", "drink menu"),
   "Healthcare": ("digital health", "patient care", "clinical workflow", "medical records"),
   "Telemedicine": ("virtual care", "remote consultation", "online doctor", "digital clinic"),
   "Artificial Intelligence": ("machine learning model", "ai automation", "predictive analytics", "nlp"),
@@ -33,13 +39,20 @@ _DOMAIN_LSI: dict[str, tuple[str, ...]] = {
 }
 
 _DOMAIN_BLOCK_TERMS: dict[str, tuple[str, ...]] = {
-  "Beauty": ("healthcare", "telemedicine", "hipaa", "hospital", "medical software", "developer", "flutter"),
-  "Cosmetics": ("healthcare", "telemedicine", "software development", "machine learning"),
-  "Skincare": ("healthcare", "telemedicine", "software development"),
+  "Beauty": ("healthcare", "telemedicine", "hipaa", "hospital", "medical software", "developer", "flutter", "machine learning", "ai development"),
+  "Cosmetics": ("healthcare", "telemedicine", "software development", "machine learning", "flutter", "hire developers"),
+  "Skincare": ("healthcare", "telemedicine", "software development", "machine learning", "flutter"),
+  "Cafe": ("healthcare", "telemedicine", "hipaa", "flutter", "machine learning", "software development", "ai development", "hire developers", "app development"),
+  "Beverage": ("healthcare", "telemedicine", "flutter", "machine learning", "software development", "ai development"),
+  "Restaurant": ("software development", "flutter", "machine learning", "healthcare", "telemedicine", "hipaa", "ai development"),
+  "Bakery": ("healthcare", "software development", "flutter", "machine learning", "telemedicine"),
+  "Food Delivery": ("healthcare", "hipaa", "telemedicine", "flutter healthcare", "machine learning"),
+  "Grocery": ("healthcare software", "telemedicine", "flutter", "machine learning"),
+  "Travel": ("healthcare", "hipaa", "telemedicine", "software development", "flutter", "machine learning"),
+  "Real Estate": ("healthcare", "telemedicine", "flutter", "machine learning", "app development company"),
   "Healthcare": ("makeup", "cosmetics", "lipstick", "beauty products"),
   "Telemedicine": ("makeup", "cosmetics", "fashion"),
   "Mobile App Development": ("makeup", "cosmetics", "restaurant menu"),
-  "Restaurant": ("software development", "flutter", "machine learning"),
 }
 
 _TRENDING_BY_DOMAIN: dict[str, tuple[str, ...]] = {
@@ -212,6 +225,15 @@ def get_domain_templates(domain: str, brand: str = "", location: str = "india") 
 
 
 _TEMPLATE_OVERRIDES: dict[str, dict[str, list[str]]] = {
+  "Cafe": {
+    "primary": ["specialty coffee", "coffee roastery", "cafe near me", "espresso coffee"],
+    "commercial": ["buy coffee beans online", "coffee subscription", "wholesale coffee beans"],
+    "questions": ["what is specialty coffee", "how to choose coffee beans", "best coffee roastery"],
+  },
+  "Beverage": {
+    "primary": ["craft beverages", "specialty drinks", "coffee and tea"],
+    "commercial": ["beverage brand", "drink subscription"],
+  },
   "Beauty": {
     "primary": ["beauty products company", "cosmetics brand", "makeup brand", "skincare products online"],
     "commercial": ["buy makeup online", "beauty products online shopping", "cosmetics ecommerce"],
@@ -222,8 +244,8 @@ _TEMPLATE_OVERRIDES: dict[str, dict[str, list[str]]] = {
     "commercial": ["cosmetics wholesale", "makeup distributor"],
   },
   "Healthcare": {
-    "primary": ["healthcare software", "medical app development", "hospital management software"],
-    "commercial": ["healthcare software development company", "medical app development services"],
+    "primary": ["healthcare services", "medical clinic", "patient care services"],
+    "commercial": ["healthcare providers near me", "book medical appointment"],
   },
   "Telemedicine": {
     "primary": ["telemedicine platform", "virtual healthcare platform", "telemedicine app"],
@@ -269,6 +291,8 @@ def apply_domain_rules(keyword: str, context: dict[str, Any]) -> bool:
   if industry in ("Beauty", "Cosmetics", "Skincare") and k in ("sugar",) and "beauty" not in k and "cosmetic" not in k:
     return False
   if industry in ("Beauty", "Cosmetics", "Skincare") and any(t in k for t in ("software", "technologies", "developer")):
+    return False
+  if not passes_topic_relevance(k, context, min_score=22):
     return False
   return True
 
@@ -339,7 +363,7 @@ def expand_domain_keywords(
       "topic_cluster": domain,
     })
 
-  for domain in domains[:4]:
+  for domain in expansion_domains(context):
     loc = (locations[0] if locations else "India").lower()
     tpl = get_domain_templates(domain, brand=brand, location=loc)
     for kw in tpl.get("primary", []):
@@ -370,7 +394,7 @@ def expand_domain_keywords(
 def generate_domain_questions(context: dict[str, Any], existing: set[str]) -> list[dict[str, Any]]:
   out: list[dict[str, Any]] = []
   brand = context.get("brand_name", "")
-  for domain in (context.get("domains") or [context.get("primary_domain", "Business")])[:4]:
+  for domain in expansion_domains(context):
     tpl = get_domain_templates(domain, brand=brand)
     for q in tpl.get("questions", []):
       if q not in existing and apply_domain_rules(q, context):
@@ -386,7 +410,7 @@ def generate_domain_questions(context: dict[str, Any], existing: set[str]) -> li
 
 def generate_domain_competitors(context: dict[str, Any], existing: set[str]) -> list[dict[str, Any]]:
   out: list[dict[str, Any]] = []
-  for domain in (context.get("domains") or [context.get("primary_domain", "Business")])[:5]:
+  for domain in expansion_domains(context):
     d = _dl(domain)
     patterns = [
       f"best {d} companies",
@@ -410,7 +434,7 @@ def generate_domain_competitors(context: dict[str, Any], existing: set[str]) -> 
 
 def generate_domain_lsi(context: dict[str, Any], existing: set[str]) -> list[dict[str, Any]]:
   out: list[dict[str, Any]] = []
-  for domain in (context.get("domains") or [context.get("primary_domain", "Business")])[:4]:
+  for domain in expansion_domains(context):
     for phrase in _DOMAIN_LSI.get(domain, ()):
       kw = phrase.lower()
       if kw not in existing and apply_domain_rules(kw, context):

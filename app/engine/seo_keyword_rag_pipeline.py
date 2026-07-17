@@ -54,8 +54,13 @@ from app.engine.seo_keyword_open_data import (
   retrieve_seo_keyword_data,
   terms_from_open_docs,
 )
+from app.engine.seo_keyword_relevance import (
+  passes_topic_relevance,
+  topic_relevance_score,
+  topic_template_allowed,
+)
 
-GENERATOR_VERSION = "seo-keyword-rag-v5.2"
+GENERATOR_VERSION = "seo-keyword-rag-v5.3"
 
 _INTENTS = ("informational", "commercial", "transactional", "navigational")
 _CATEGORIES = (
@@ -206,36 +211,36 @@ _TOPIC_TEMPLATES: dict[str, dict[str, list[str]]] = {
     "lsi": ["matte lipstick", "liquid foundation", "makeup palette"],
   },
   "Artificial Intelligence": {
-    "primary": ["ai healthcare solutions", "medical ai platform", "ai medical diagnosis", "healthcare ai software"],
-    "long_tail": ["ai healthcare startup development", "ai powered healthcare app", "artificial intelligence medical software"],
+    "primary": ["ai solutions", "artificial intelligence platform", "machine learning services", "ai software tools"],
+    "long_tail": ["enterprise ai automation platform", "custom machine learning solutions", "ai powered business tools"],
     "questions": [
-      "what is ai in healthcare",
-      "how is ai used in healthcare",
-      "how does ai improve patient care",
+      "what is artificial intelligence",
+      "how is ai used in business",
+      "what are machine learning use cases",
     ],
-    "commercial": ["ai healthcare consulting", "ai development services", "hire ai developers"],
-    "lsi": ["clinical decision support ai", "predictive analytics healthcare", "intelligent health systems"],
+    "commercial": ["ai consulting services", "ai development services", "hire ai developers"],
+    "lsi": ["predictive analytics", "natural language processing", "generative ai"],
   },
   "Flutter": {
-    "primary": ["flutter healthcare app", "flutter telemedicine app", "flutter mobile development", "flutter app development"],
-    "long_tail": ["flutter healthcare app development", "flutter telemedicine app development", "flutter medical app development"],
-    "questions": ["how to build a flutter healthcare app", "what is flutter app development"],
+    "primary": ["flutter app development", "flutter mobile development", "cross platform flutter apps"],
+    "long_tail": ["flutter ios android app development", "flutter development company india"],
+    "questions": ["what is flutter app development", "how to build a flutter mobile app"],
     "commercial": ["hire flutter developers", "flutter development services", "flutter development company"],
-    "lsi": ["cross platform healthcare app", "flutter ios android medical app"],
+    "lsi": ["dart programming", "cross platform mobile ui", "flutter widgets"],
   },
   "Python": {
-    "primary": ["python medical ai", "python machine learning healthcare", "python healthcare software"],
-    "long_tail": ["python ai healthcare application development", "python data science healthcare"],
-    "questions": ["how is python used in healthcare", "what is python machine learning healthcare"],
-    "commercial": ["python development services", "hire python developers", "python software development company"],
-    "lsi": ["python healthcare analytics", "python backend healthcare api"],
+    "primary": ["python development services", "python software development", "python web development"],
+    "long_tail": ["python data science consulting", "python backend api development"],
+    "questions": ["what is python used for", "how to learn python programming"],
+    "commercial": ["hire python developers", "python development company"],
+    "lsi": ["django flask", "python automation scripts", "data analysis python"],
   },
   "Computer Vision": {
-    "primary": ["medical image analysis", "healthcare computer vision", "ai radiology software"],
-    "long_tail": ["medical image analysis using ai", "computer vision for medical diagnosis"],
-    "questions": ["how is computer vision used in healthcare", "what is medical image analysis"],
-    "commercial": ["computer vision development services", "medical imaging ai solutions"],
-    "lsi": ["radiology image recognition", "diagnostic imaging ai", "medical scan analysis software"],
+    "primary": ["computer vision solutions", "image recognition software", "visual ai platform"],
+    "long_tail": ["computer vision for quality inspection", "object detection software"],
+    "questions": ["what is computer vision", "how does image recognition work"],
+    "commercial": ["computer vision development services", "hire computer vision engineers"],
+    "lsi": ["object detection", "image classification", "visual inspection ai"],
   },
   "Telemedicine": {
     "primary": ["telemedicine platform", "virtual healthcare platform", "telemedicine app development"],
@@ -245,11 +250,11 @@ _TOPIC_TEMPLATES: dict[str, dict[str, list[str]]] = {
     "lsi": ["virtual care platform", "online doctor consultation app", "digital health platform"],
   },
   "Healthcare": {
-    "primary": ["healthcare software development", "healthcare mobile app development", "medical software development"],
-    "long_tail": ["healthcare startup app development", "digital health software company"],
-    "questions": ["what is healthcare software", "how to develop healthcare applications"],
-    "commercial": ["healthcare software development company", "medical app development services"],
-    "lsi": ["digital health solutions", "health tech software", "clinical software development"],
+    "primary": ["healthcare services", "medical clinic near me", "patient care services"],
+    "long_tail": ["best healthcare providers nearby", "digital health services"],
+    "questions": ["what is healthcare management", "how to choose a healthcare provider"],
+    "commercial": ["healthcare providers near me", "book medical appointment"],
+    "lsi": ["patient care", "clinical services", "health records"],
   },
   "HIPAA": {
     "primary": ["hipaa compliant software", "hipaa compliant app development", "hipaa compliance software"],
@@ -259,11 +264,11 @@ _TOPIC_TEMPLATES: dict[str, dict[str, list[str]]] = {
     "lsi": ["health data privacy compliance", "phi security healthcare app", "hipaa security standards"],
   },
   "Machine Learning": {
-    "primary": ["machine learning healthcare", "ml medical diagnosis", "healthcare machine learning solutions"],
-    "long_tail": ["machine learning for medical diagnosis", "predictive healthcare machine learning"],
-    "questions": ["what is machine learning in healthcare", "how is machine learning used in medicine"],
-    "commercial": ["machine learning development company", "ml consulting healthcare"],
-    "lsi": ["clinical ml models", "healthcare predictive modeling", "medical data machine learning"],
+    "primary": ["machine learning solutions", "ml model development", "predictive analytics platform"],
+    "long_tail": ["custom machine learning model development", "ml consulting for business"],
+    "questions": ["what is machine learning", "how is machine learning used in business"],
+    "commercial": ["machine learning development company", "ml consulting services"],
+    "lsi": ["supervised learning", "model training", "predictive modeling"],
   },
   "Electronic Health Records": {
     "primary": ["electronic health records software", "ehr software development", "ehr system development"],
@@ -545,6 +550,8 @@ def generate_realistic_keywords(
       row["relevance"] = max(row["relevance"], relevance)
 
   for cluster in clusters:
+    if not topic_template_allowed(cluster, context):
+      continue
     if cluster not in ALL_DOMAIN_NAMES:
       templates = _TOPIC_TEMPLATES.get(cluster, {})
       if templates:
@@ -552,8 +559,19 @@ def generate_realistic_keywords(
           add(kw, f"topic:{cluster}", "primary", 92, cluster)
         for kw in templates.get("long_tail", []):
           add(kw, f"topic:{cluster}", "long_tail", 84, cluster)
+    else:
+      # Domain-named clusters still may have specialized packs
+      templates = _TOPIC_TEMPLATES.get(cluster, {})
+      if templates and topic_template_allowed(cluster, context):
+        for kw in templates.get("primary", [])[:4]:
+          add(kw, f"topic:{cluster}", "primary", 90, cluster)
 
   merged = list(candidates.values())
+  # Re-score by seed/context relevance before truncation
+  for row in merged:
+    rel = topic_relevance_score(row["keyword"], context)
+    row["relevance"] = int(0.55 * row.get("relevance", 50) + 0.45 * rel)
+  merged = [r for r in merged if r["relevance"] >= 28 and passes_topic_relevance(r["keyword"], context)]
   merged.sort(key=lambda r: r["relevance"], reverse=True)
   return merged[: max(count * 3, 90)]
 
@@ -573,6 +591,8 @@ def _match_topic_cluster(keyword: str, clusters: list[str]) -> str:
 def generate_seed_variants(context: dict[str, Any], count: int, variation_seed: int) -> list[str]:
   variants: list[str] = []
   for cluster in context.get("topic_clusters", [])[:10]:
+    if not topic_template_allowed(cluster, context):
+      continue
     templates = _TOPIC_TEMPLATES.get(cluster, {})
     for kw in templates.get("primary", [])[:2]:
       variants.append(kw)
@@ -584,6 +604,20 @@ def generate_seed_variants(context: dict[str, Any], count: int, variation_seed: 
     seed = _clean(str(context["normalized"].get("normalized_seed") or ""))
   if seed:
     variants.append(seed)
+  # Prefer seed-derived phrases from context brief
+  brief = _clean(str(context.get("context_brief") or ""))
+  if brief and brief.lower() != seed.lower():
+    for part in re.split(r"[,;.]|\band\b", brief, flags=re.I):
+      part = _clean(part.lower())
+      part = re.sub(
+        r"^(?:we\s+(?:are|run|sell|offer|provide)|our\s+\w+\s+is)\s+",
+        "",
+        part,
+        flags=re.I,
+      )
+      words = [w for w in part.split() if len(w) > 2 and w not in {"the", "and", "for", "with", "from"}][:5]
+      if 2 <= len(words) <= 5 and words[0] not in {"we", "our", "i"}:
+        variants.append(" ".join(words))
   seen: set[str] = set()
   out: list[str] = []
   for v in _shuffle(variants, variation_seed):
@@ -648,11 +682,14 @@ def semantic_expand_keywords(
       continue
     if is_junk_open_keyword(phrase, context):
       continue
+    if not passes_topic_relevance(phrase, context, min_score=24):
+      continue
     # Prefer multi-word or related-to-seed phrases
     if " " not in phrase and phrase not in seed_low and seed_low.split()[0] not in phrase:
       relevance = 62
     else:
       relevance = 78
+    relevance = int(0.5 * relevance + 0.5 * topic_relevance_score(phrase, context))
     seen.add(phrase)
     out.append({
       "keyword": phrase,
@@ -821,7 +858,11 @@ def classify_intent(keyword: str) -> str:
     return "informational"
   if any(h in k for h in ("official", "login", "website")):
     return "navigational"
-  return "commercial" if len(k.split()) <= 3 else "informational"
+  # Short product/topic phrases are informational by default (not commercial)
+  words = k.split()
+  if len(words) <= 3 and not any(m in k for m in ("services", "agency", "company", "hire", "pricing", "cost")):
+    return "informational"
+  return "commercial" if any(m in k for m in ("services", "agency", "company", "hire")) else "informational"
 
 
 def classify_category(keyword: str, context: dict[str, Any], preset: str | None = None) -> str:
@@ -1120,6 +1161,7 @@ def rank_keywords(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
   return sorted(
     items,
     key=lambda it: (
+      it.get("topic_relevance", it.get("relevance_score", 0)),
       it.get("opportunity_score", 0),
       it.get("relevance_score", 0),
       vol_rank.get(it.get("volume_estimate", "low"), 1),
@@ -1148,6 +1190,9 @@ def build_keyword_row(
   trend = individual_trend(keyword, category=cat, variation_seed=variation_seed)
   monthly = build_trend_monthly(trend, keyword, variation_seed)
   cluster = topic_cluster or _match_topic_cluster(keyword, context.get("topic_clusters", []))
+  topic_rel = topic_relevance_score(keyword, context)
+  # Blend source relevance with seed/context relevance
+  blended_relevance = int(0.5 * relevance + 0.5 * topic_rel)
 
   row: dict[str, Any] = {
     "keyword": keyword,
@@ -1170,10 +1215,11 @@ def build_keyword_row(
     "trend_monthly": monthly,
     "trend_chart": format_trend_chart(monthly),
     "intent": intent,
-    "relevance_score": relevance,
+    "relevance_score": blended_relevance,
+    "topic_relevance": topic_rel,
     "sources": sources,
     "metrics_source": METRICS_SOURCE,
-    "seo_score": int(min(100, relevance * 0.35 + {"low": 25, "medium": 15, "high": 5}[difficulty] + (18 if trend == "up" else 6))),
+    "seo_score": int(min(100, blended_relevance * 0.35 + {"low": 25, "medium": 15, "high": 5}[difficulty] + (18 if trend == "up" else 6))),
     "opportunity_score": 0,
   }
   row["opportunity_breakdown"] = compute_opportunity_breakdown(row)
@@ -1275,6 +1321,7 @@ async def run_seo_keyword_pipeline(
     "primary_domain_id": domain_info.get("primary_domain_id"),
     "domains": domain_info["domains"],
     "domain_slugs": domain_info.get("domain_slugs", []),
+    "domain_scores": domain_info.get("domain_scores", {}),
     "domain_category": domain_info["category"],
     "domain_flags": domain_info.get("flags", {}),
     "disambiguated_entities": disambiguated,
@@ -1403,7 +1450,20 @@ async def run_seo_keyword_pipeline(
   stages["trend_detection"] = {"added": len(trending_extra)}
 
   deduped_candidates, dedupe_meta = dedupe_keyword_candidates(all_candidates)
+  # Final relevance gate — drop off-topic retrieval/expansion noise
+  before_rel = len(deduped_candidates)
+  deduped_candidates = [
+    c for c in deduped_candidates
+    if passes_topic_relevance(c.get("keyword", ""), context, min_score=26)
+  ]
+  dedupe_meta["dropped_off_topic"] = before_rel - len(deduped_candidates)
   stages["keyword_deduplication"] = dedupe_meta
+  stages["relevance_rerank"] = {
+    "method": "seed_context_token_overlap",
+    "min_score": 26,
+    "kept": len(deduped_candidates),
+    "dropped_off_topic": dedupe_meta["dropped_off_topic"],
+  }
 
   raw_items: list[dict[str, Any]] = []
   for i, cand in enumerate(deduped_candidates):

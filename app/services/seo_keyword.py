@@ -149,41 +149,60 @@ async def generate_keywords(
 
   if use_ai and provider is not None and (entities_detected or brief):
     preview = ", ".join(k["keyword"] for k in items[:10])
+    primary = (result.get("pipeline") or {}).get("primary_domain") or ""
     try:
       raw = await provider.chat(
         [{
           "role": "user",
           "content": (
             f"Seed: {seed}\n"
+            f"Primary domain: {primary}\n"
             f"Context: {brief[:1200]}\n"
             f"Add {min(8, n)} unique SEO keywords not already in: {preview}\n"
-            "Derive keywords from the business context (products, audience, location, services)."
+            "Stay strictly on this business topic. Do NOT invent healthcare, "
+            "AI agency, software development, or unrelated industry keywords."
           ),
         }],
         system_prompt=(
-          "SEO keyword researcher. Use the provided context to invent relevant, "
-          "searchable keywords. Return plain lines only, one keyword per line, no numbering."
+          "SEO keyword researcher. Keywords must match the user's context only. "
+          "Reject off-topic verticals. Return plain lines only, one keyword per line."
         ),
         use_rag=False,
         skip_intent=True,
         max_tokens=400,
-        temperature=0.75,
+        temperature=0.55,
       )
-      from app.engine.seo_keyword_rag_pipeline import build_keyword_row, parse_input_context
+      from app.engine.seo_keyword_rag_pipeline import build_keyword_row
+      from app.engine.seo_keyword_relevance import passes_topic_relevance
 
-      ctx = parse_input_context(seed, [], [])
-      ctx["seed_keyword"] = seed
+      ctx = dict(result.get("pipeline", {}).get("context") or {})
+      ctx.setdefault("seed_keyword", seed)
+      ctx.setdefault("context_brief", brief)
+      ctx.setdefault("primary_domain", primary)
+      added = 0
       for kw in _parse_ai_lines(raw, seed, min(8, n)):
         if any(it["keyword"] == kw for it in items):
           continue
+        if not passes_topic_relevance(kw, ctx, min_score=28):
+          continue
         items.append(build_keyword_row(
-          kw, context=ctx, sources=["ai_enrichment"], relevance=70, variation_seed=0,
+          kw, context=ctx, sources=["ai_enrichment"], relevance=78, variation_seed=0,
         ))
-      result["ai"] = {"enabled": True, "model_used": True}
+        added += 1
+      backend = getattr(provider, "last_backend", None) or getattr(provider, "model_id", None)
+      result["ai"] = {
+        "enabled": True,
+        "model_used": True,
+        "backend": backend,
+        "added": added,
+        "hosted": str(backend or "").lower() in ("hosted", "groq") or "hosted" in str(type(provider).__name__).lower(),
+      }
     except Exception:
-      result["ai"] = {"enabled": True, "model_used": False}
+      result["ai"] = {"enabled": True, "model_used": False, "hosted": False}
   elif use_ai and provider is not None:
-    result["ai"] = {"enabled": use_ai, "model_used": False}
+    result["ai"] = {"enabled": use_ai, "model_used": False, "hosted": False}
+  else:
+    result["ai"] = {"enabled": False, "model_used": False, "hosted": False}
 
   result["keywords"] = items[:n]
   result["count"] = len(result["keywords"])
