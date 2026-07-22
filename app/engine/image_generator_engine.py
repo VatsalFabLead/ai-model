@@ -195,15 +195,14 @@ def _fetch_ai_diffusion_image(
   seed: int,
   style_key: str | None = "photorealistic",
 ) -> Image.Image | None:
-  """Fetch ultra-high-fidelity AI text-to-image with maximum pixel clarity & sharpness."""
+  """Fetch ultra-high-fidelity AI text-to-image with noise smoothing and 1024 LANCZOS upscaling."""
   valid_seed = abs(int(seed)) % 2147483647
   clean_prompt = (prompt or "").strip()
 
-  # Native 1024x1024 HD grid for crisp details
   target_w = max(1024, width)
   target_h = max(1024, height)
 
-  quality_boosters = "photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting, professional photography, hyperrealistic"
+  quality_boosters = "photorealistic, 8k uhd, crystal clear, smooth textures, sharp focus, masterpiece, studio lighting, professional photography, hyperrealistic"
   if "8k" not in clean_prompt.lower() and "photorealistic" not in clean_prompt.lower():
     full_prompt = f"{clean_prompt}, {quality_boosters}"
   else:
@@ -215,7 +214,7 @@ def _fetch_ai_diffusion_image(
     "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
   }
 
-  models_to_try = ["flux", "flux-realism", "turbo"]
+  models_to_try = ["flux-realism", "flux", "turbo"]
   for model_name in models_to_try:
     url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={target_w}&height={target_h}&seed={valid_seed}&nologo=true&enhance=false"
     try:
@@ -224,7 +223,19 @@ def _fetch_ai_diffusion_image(
         if resp.status_code == 200 and len(resp.content) > 5000:
           img = Image.open(io.BytesIO(resp.content)).convert("RGB")
           
-          # Resample cleanly with LANCZOS if output dimensions differ
+          # Force 1024x1024 high-resolution upscale via LANCZOS if returned at lower dimensions
+          if img.width < target_w or img.height < target_h:
+            img = img.resize((target_w, target_h), resample=Image.Resampling.LANCZOS)
+
+          # Anti-grain noise-smoothing & edge preservation filter
+          try:
+            img = img.filter(ImageFilter.SMOOTH_MORE)
+            img = ImageEnhance.Sharpness(img).enhance(1.15)
+            img = ImageEnhance.Contrast(img).enhance(1.03)
+          except Exception:
+            pass
+
+          # Downscale/resample cleanly if specific custom resolution requested
           if img.width != width or img.height != height:
             img = img.resize((width, height), resample=Image.Resampling.LANCZOS)
 
