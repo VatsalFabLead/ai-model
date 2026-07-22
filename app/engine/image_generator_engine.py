@@ -108,9 +108,9 @@ STYLE_PRESETS: Dict[str, Dict[str, Any]] = {
 
 def _seed_from_prompt(prompt: str, seed: int | None = None) -> int:
   if seed is not None and seed >= 0:
-    return seed
+    return int(seed) % 2147483647
   h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-  return int(h[:8], 16)
+  return int(h[:8], 16) % 2147483647
 
 
 def _generate_noise_field(width: int, height: int, rng: np.random.Generator, octaves: int = 4) -> np.ndarray:
@@ -196,8 +196,14 @@ def _fetch_ai_diffusion_image(
   seed: int,
 ) -> Image.Image | None:
   """Fetch high-fidelity AI text-to-image matching arbitrary prompts."""
+  valid_seed = abs(int(seed)) % 2147483647
   style_suffix = style_key.replace("_", " ")
-  full_prompt = f"{prompt}, {style_suffix} style, highly detailed, 8k"
+  clean_prompt = prompt.strip()
+  if style_suffix not in clean_prompt.lower():
+    full_prompt = f"{clean_prompt}, {style_suffix} style"
+  else:
+    full_prompt = clean_prompt
+
   encoded = urllib.parse.quote(full_prompt)
   headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -206,9 +212,9 @@ def _fetch_ai_diffusion_image(
 
   models_to_try = ["flux", "turbo", "flux-realism"]
   for model_name in models_to_try:
-    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={width}&height={height}&seed={seed}&nologo=true&enhance=false"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={width}&height={height}&seed={valid_seed}&nologo=true&enhance=false"
     try:
-      with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+      with httpx.Client(timeout=15.0, follow_redirects=True) as client:
         resp = client.get(url, headers=headers)
         if resp.status_code == 200 and len(resp.content) > 1000:
           img = Image.open(io.BytesIO(resp.content)).convert("RGB")

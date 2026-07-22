@@ -381,7 +381,7 @@
           style: f.style || "cyberpunk",
           width: parseInt(f.width || "512"),
           height: parseInt(f.height || "512"),
-          seed: f.seed ? parseInt(f.seed) : undefined,
+          seed: f.seed ? (Math.abs(parseInt(f.seed)) % 2147483647) : (Math.floor(Math.random() * 2147483647)),
           enhance_prompt: useAi
         }}),
         isImage: true
@@ -510,7 +510,16 @@
       const timer = setTimeout(() => ctrl.abort(), timeoutMs || 120000);
       try {{
         const res = await fetch(url, {{ ...options, signal: ctrl.signal }});
-        const data = await res.json();
+        let data;
+        const text = await res.text();
+        try {{
+          data = JSON.parse(text);
+        }} catch (jsonErr) {{
+          if (!res.ok) {{
+            throw new Error("Server HTTP " + res.status + " error (" + res.statusText + ").");
+          }}
+          throw new Error("Invalid response format from server.");
+        }}
         return {{ res, data }};
       }} catch (e) {{
         if (e.name === "AbortError") {{
