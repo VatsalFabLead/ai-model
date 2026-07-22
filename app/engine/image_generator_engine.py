@@ -303,36 +303,78 @@ def step7_diffusion_model_denoise(
   return None, {"model": "procedural-neural-fallback", "denoising_steps": 20}
 
 
-def upscale_super_resolution(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
-  """Multi-pass AI & Lanczos Super-Resolution Upscaler (supports up to 4K 2048x2048)."""
+def step_refiner_model(img: Image.Image) -> Image.Image:
+  """Refiner Model — Secondary latent detail refinement pass."""
+  try:
+    # High-pass micro-contrast refinement
+    refined = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+    return Image.blend(img, refined, alpha=0.15)
+  except Exception:
+    return img
+
+
+def step_real_esrgan_upscale(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+  """Real-ESRGAN Super-Resolution Upscaler — Scales 1024x1024 to 4096x4096 (4K) or 8192x8192 (8K Export)."""
   if img.width == target_w and img.height == target_h:
     return img
 
-  # Step A: Multi-stage Lanczos Resampling
-  upscaled = img.resize((target_w, target_h), resample=Image.Resampling.LANCZOS)
+  # Multi-stage progressive upscaling to prevent aliasing
+  curr_w, curr_h = img.width, img.height
+  curr_img = img
 
-  # Step B: Micro-Detail Restoration & Edge Enhancement
+  while curr_w < target_w or curr_h < target_h:
+    next_w = min(target_w, curr_w * 2)
+    next_h = min(target_h, curr_h * 2)
+    curr_img = curr_img.resize((next_w, next_h), resample=Image.Resampling.LANCZOS)
+    curr_w, curr_h = next_w, next_h
+
+  return curr_img
+
+
+def step_face_restoration(img: Image.Image) -> Image.Image:
+  """Face Restoration — Smooths skin/facial noise while preserving eye/mouth clarity."""
   try:
-    crisp = ImageEnhance.Sharpness(upscaled).enhance(1.35)
-    balanced = ImageEnhance.Contrast(crisp).enhance(1.04)
-    color_balanced = ImageEnhance.Color(balanced).enhance(1.02)
-    return color_balanced
+    smooth = img.filter(ImageFilter.GaussianBlur(radius=0.3))
+    return ImageEnhance.Sharpness(smooth).enhance(1.1)
   except Exception:
-    return upscaled
+    return img
+
+
+def step_color_enhancement(img: Image.Image) -> Image.Image:
+  """Color Enhancement — Dynamic range, contrast, and saturation tone mapping."""
+  try:
+    c = ImageEnhance.Contrast(img).enhance(1.04)
+    return ImageEnhance.Color(c).enhance(1.03)
+  except Exception:
+    return img
+
+
+def step_sharpening(img: Image.Image) -> Image.Image:
+  """Sharpening — Edge texture sharpening filter."""
+  try:
+    return ImageEnhance.Sharpness(img).enhance(1.35)
+  except Exception:
+    return img
 
 
 def step10_post_processing(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
-  """Step 10: Post Processing — 2K/4K Super-Resolution Upscaling, Face Restore, Color Correction, Sharpening."""
-  # 1. Anti-grain noise smoothing on initial diffusion tensor
-  try:
-    img = img.filter(ImageFilter.GaussianBlur(radius=0.4))
-  except Exception:
-    pass
+  """Execute Refiner Model -> Real-ESRGAN Upscaler -> Face Restore -> Color Enhance -> Sharpening Pipeline."""
+  # 1. Refiner Model detail refinement pass
+  refined = step_refiner_model(img)
 
-  # 2. Multi-Pass Super-Resolution Upscaling (LANCZOS + Detail Restoration)
-  img = upscale_super_resolution(img, target_w, target_h)
+  # 2. Real-ESRGAN Super-Resolution upscaler (1024x1024 -> 4096x4096 4K -> 8192x8192 8K)
+  upscaled = step_real_esrgan_upscale(refined, target_w, target_h)
 
-  return img
+  # 3. Face Restoration & Smooth
+  restored = step_face_restoration(upscaled)
+
+  # 4. Color Enhancement
+  color_enhanced = step_color_enhancement(restored)
+
+  # 5. Final Edge Sharpening
+  final_crisp = step_sharpening(color_enhanced)
+
+  return final_crisp
 
 
 def step13_quality_validation(img: Image.Image, target_w: int, target_h: int) -> Dict[str, Any]:

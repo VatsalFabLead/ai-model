@@ -369,7 +369,7 @@
         fields: [
           {{ id: "prompt", label: "Prompt *", type: "textarea", required: true, full: true,
              placeholder: "A magnificent floating kingdom above the clouds with crystal castles, waterfalls, dragons..." }},
-          {{ id: "resolution", label: "Image Quality & Upscale Resolution", type: "select", options: ["1024 (HD 1K)", "1536 (Ultra HD 2K Upscaled)", "2048 (Super Res 4K Upscaled)", "768", "512"] }},
+          {{ id: "resolution", label: "Image Quality & Upscale Resolution", type: "select", options: ["1024 (HD 1K)", "2048 (2K Super Res)", "4096 (4K Ultra HD)", "8192 (8K Master Export)", "768", "512"] }},
         ],
         endpoint: "/image-generator/generate",
         build: (f, useAi) => {{
@@ -1067,7 +1067,7 @@
             '<span>⚡ <strong>Generation Time:</strong> ' + elapsed + 'ms</span>' +
           '</div>' +
           '<div style="margin-top:0.25rem;">' +
-            '<a href="' + imgUrl + '" target="_blank" download="ai_upscaled_image_' + seed + '.png" style="display:inline-block; padding:0.45rem 1rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🔍 Download Super-Resolution (2K/4K) Image</a>' +
+            '<a href="' + imgUrl + '" target="_blank" download="ai_8k_master_export_' + seed + '.png" style="display:inline-block; padding:0.45rem 1rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🚀 Download 4K / 8K Master Export Image</a>' +
           '</div>' +
         '</div>';
       

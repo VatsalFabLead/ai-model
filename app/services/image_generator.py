@@ -69,9 +69,9 @@ async def generate_image(
   if not raw_prompt:
     raise ValueError("Prompt cannot be empty")
 
-  # Dimensions bounds check
-  width = max(128, min(2048, width))
-  height = max(128, min(2048, height))
+  # Dimensions bounds check (supports up to 4K 4096 and 8K 8192)
+  width = max(128, min(8192, width))
+  height = max(128, min(8192, height))
 
   # Enhanced prompt via LLM if requested
   final_prompt = raw_prompt
