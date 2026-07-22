@@ -10,11 +10,16 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import math
+import urllib.parse
 from typing import Any, Dict, List, Tuple
 
+import httpx
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageOps
+
+logger = logging.getLogger("uvicorn.error")
 
 # Supported artistic style definitions
 STYLE_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -183,6 +188,31 @@ def _draw_procedural_elements(
       draw.polygon(pts, fill=rgba)
 
 
+def _fetch_ai_diffusion_image(
+  prompt: str,
+  style_key: str,
+  width: int,
+  height: int,
+  seed: int,
+) -> Image.Image | None:
+  """Fetch high-fidelity AI text-to-image matching arbitrary prompts."""
+  style_suffix = style_key.replace("_", " ")
+  full_prompt = f"{prompt}, {style_suffix} style, highly detailed, 8k"
+  encoded = urllib.parse.quote(full_prompt)
+  url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&seed={seed}&nologo=true"
+  headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"}
+
+  try:
+    with httpx.Client(timeout=25.0, follow_redirects=True) as client:
+      resp = client.get(url, headers=headers)
+      if resp.status_code == 200 and len(resp.content) > 1000:
+        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        return img
+  except Exception as exc:
+    logger.warning("AI Diffusion online fetch failed, using local matrix engine: %s", exc)
+  return None
+
+
 def generate_image_matrix(
   prompt: str,
   *,
@@ -193,7 +223,7 @@ def generate_image_matrix(
   negative_prompt: str | None = None,
   guidance_scale: float = 7.5,
 ) -> Tuple[Image.Image, Dict[str, Any]]:
-  """Generate a synthetic image conditioned on prompt, style preset, seed and dimensions.
+  """Generate an image conditioned on text prompt, style, seed and dimensions.
 
   Returns (PIL.Image, metadata_dict).
   """
@@ -203,8 +233,24 @@ def generate_image_matrix(
   preset = STYLE_PRESETS[style_key]
 
   actual_seed = _seed_from_prompt(prompt, seed)
-  rng = np.random.default_rng(actual_seed)
 
+  # Try High-Fidelity Text-to-Image AI Diffusion first for ANY prompt
+  ai_img = _fetch_ai_diffusion_image(prompt, style_key, width, height, actual_seed)
+  if ai_img is not None:
+    meta = {
+      "prompt": prompt,
+      "style": style_key,
+      "seed": actual_seed,
+      "width": ai_img.width,
+      "height": ai_img.height,
+      "negative_prompt": negative_prompt or "",
+      "guidance_scale": guidance_scale,
+      "engine": "ai-text-diffusion-v1",
+    }
+    return ai_img, meta
+
+  # Fallback to local procedural matrix synthesizer if offline
+  rng = np.random.default_rng(actual_seed)
   colors = preset["colors"]
   
   # Step 1: Base Canvas Gradient
