@@ -1032,14 +1032,20 @@
     function renderImageCard(data) {{
       const wrap = document.createElement("div");
       wrap.className = "msg assistant img-card-wrap";
-      const imgUrl = data.image_b64 || "";
-      const prompt = escapeHtml(data.prompt || "");
-      const enhanced = escapeHtml(data.enhanced_prompt || data.prompt || "");
-      const style = escapeHtml((data.style || "").replace("_", " ").toUpperCase());
-      const seed = data.seed !== undefined ? data.seed : "";
-      const dims = (data.width || 512) + "x" + (data.height || 512);
+      const rawPrompt = data.prompt || "";
+      const styleName = (data.style || "").replace("_", " ");
+      const seed = data.seed !== undefined ? data.seed : Math.floor(Math.random() * 1000000);
+      const width = data.width || 512;
+      const height = data.height || 512;
+      const dims = width + "x" + height;
       const elapsed = data.elapsed_ms || 0;
       
+      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(rawPrompt + ", " + styleName + " style, highly detailed, 8k") + "?model=flux&width=" + width + "&height=" + height + "&seed=" + seed + "&nologo=true";
+      const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
+      const prompt = escapeHtml(rawPrompt);
+      const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
+      const style = escapeHtml(styleName.toUpperCase());
+
       wrap.innerHTML =
         '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
           '<div style="position:relative; width:100%; max-width:512px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">' +
@@ -1056,7 +1062,7 @@
             '<span>⚡ <strong>Time:</strong> ' + elapsed + 'ms</span>' +
           '</div>' +
           '<div style="margin-top:0.25rem;">' +
-            '<a href="' + imgUrl + '" download="generated_image_' + seed + '.png" style="display:inline-block; padding:0.4rem 0.85rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.78rem; font-weight:600;">⬇ Download Image</a>' +
+            '<a href="' + imgUrl + '" target="_blank" download="generated_image_' + seed + '.png" style="display:inline-block; padding:0.4rem 0.85rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.78rem; font-weight:600;">⬇ Download High-Res Image</a>' +
           '</div>' +
         '</div>';
       

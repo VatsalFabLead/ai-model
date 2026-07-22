@@ -199,17 +199,23 @@ def _fetch_ai_diffusion_image(
   style_suffix = style_key.replace("_", " ")
   full_prompt = f"{prompt}, {style_suffix} style, highly detailed, 8k"
   encoded = urllib.parse.quote(full_prompt)
-  url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&seed={seed}&nologo=true"
-  headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"}
+  headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+  }
 
-  try:
-    with httpx.Client(timeout=25.0, follow_redirects=True) as client:
-      resp = client.get(url, headers=headers)
-      if resp.status_code == 200 and len(resp.content) > 1000:
-        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-        return img
-  except Exception as exc:
-    logger.warning("AI Diffusion online fetch failed, using local matrix engine: %s", exc)
+  models_to_try = ["flux", "turbo", "flux-realism"]
+  for model_name in models_to_try:
+    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={width}&height={height}&seed={seed}&nologo=true&enhance=false"
+    try:
+      with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+        resp = client.get(url, headers=headers)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+          img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+          return img
+    except Exception as exc:
+      logger.warning("AI Diffusion model '%s' fetch failed: %s", model_name, exc)
+
   return None
 
 
