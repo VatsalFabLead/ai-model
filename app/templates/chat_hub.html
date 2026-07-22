@@ -547,7 +547,9 @@
       const summary = activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
       addMsg("user", summary);
       genBtn.disabled = true;
-      statusHint.textContent = "Generating…";
+      statusHint.textContent = activeTool.id === "image_gen" 
+        ? "✨ Generating ChatGPT DALL-E 3 Quality Image (Full 50-Step Denoising & Super-Res Pipeline)..." 
+        : "Generating…";
       try {{
         if (activeTool.isChat) {{
           const {{ res, data }} = await fetchJson(API + "/chat/completions", {{

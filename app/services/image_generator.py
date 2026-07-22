@@ -21,31 +21,40 @@ async def enhance_prompt(
   prompt: str,
   style: str,
 ) -> str:
-  """Use LLM provider to enrich raw user prompt into detailed visual prompt descriptions."""
-  if not provider:
-    return prompt.strip()
+  """Use ChatGPT DALL-E 3 style prompt expansion to enrich raw prompts into studio masterworks."""
+  raw = prompt.strip()
+  if not raw:
+    return raw
 
-  system_prompt = (
-    "You are an expert AI Image Prompt Engineer. Expand the user's prompt into a vivid, "
-    "detailed visual image description. Describe lighting, atmosphere, artistic style, camera angle, "
-    "composition, textures, and color tones. Keep your response under 75 words, focused purely on visual details. "
-    "Do not include meta-text or introductory comments."
-  )
-  user_msg = f"Style: {style}\nPrompt: {prompt}"
-
-  try:
-    enhanced = await provider.generate(
-      system_prompt=system_prompt,
-      user_message=user_msg,
-      temperature=0.7,
-      max_tokens=150,
+  if provider and hasattr(provider, "generate"):
+    system_prompt = (
+      "You are an expert ChatGPT DALL-E 3 Image Prompt Engineer. Expand the user's prompt into a vivid, "
+      "photorealistic visual description. Include exact lighting, camera lens specs (35mm f/1.8), atmosphere, "
+      "volumetric fog, ray tracing, textures, materials, and hyper-detailed composition. "
+      "Keep under 80 words, focused purely on visual details. Output only the prompt."
     )
-    if enhanced and len(enhanced.strip()) > 10:
-      return enhanced.strip()
-  except Exception as exc:
-    logger.warning("Prompt enhancement skipped due to provider error: %s", exc)
+    user_msg = f"Prompt: {raw}"
+    try:
+      enhanced = await provider.generate(
+        system_prompt=system_prompt,
+        user_message=user_msg,
+        temperature=0.7,
+        max_tokens=150,
+      )
+      if enhanced and len(enhanced.strip()) > 10:
+        return enhanced.strip()
+    except Exception as exc:
+      logger.warning("Prompt enhancement skipped due to provider error: %s", exc)
 
-  return prompt.strip()
+  # Fallback ChatGPT DALL-E 3 Style Rule-Based Prompt Enricher
+  boosters = (
+    "ChatGPT DALL-E 3 quality masterpiece, photorealistic, 8k uhd, 35mm f/1.8 lens, "
+    "cinematic lighting, ray tracing, global illumination, physically based rendering, "
+    "studio pristine, hyperrealistic textures, sharp focus, vibrant colors, zero grain"
+  )
+  if "dall-e" not in raw.lower() and "8k" not in raw.lower():
+    return f"{raw}, {boosters}"
+  return raw
 
 
 async def generate_image(

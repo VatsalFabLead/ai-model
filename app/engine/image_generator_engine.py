@@ -370,7 +370,7 @@ def step7_diffusion_model_denoise(
   for model_name in models_to_try:
     url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={target_w}&height={target_h}&seed={valid_seed}&nologo=true&enhance=false"
     try:
-      with httpx.Client(timeout=40.0, follow_redirects=True) as client:
+      with httpx.Client(timeout=55.0, follow_redirects=True) as client:
         resp = client.get(url, headers=headers)
         if resp.status_code == 200 and len(resp.content) > 5000:
           img = Image.open(io.BytesIO(resp.content)).convert("RGB")
