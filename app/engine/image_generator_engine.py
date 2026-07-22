@@ -195,12 +195,15 @@ def _fetch_ai_diffusion_image(
   seed: int,
   style_key: str | None = "photorealistic",
 ) -> Image.Image | None:
-  """Fetch ultra-high-fidelity AI text-to-image matching arbitrary prompts."""
+  """Fetch ultra-high-fidelity AI text-to-image with maximum pixel clarity & sharpness."""
   valid_seed = abs(int(seed)) % 2147483647
   clean_prompt = (prompt or "").strip()
 
-  # Quality prompt booster for realistic rendering
-  quality_boosters = "8k resolution, ultra detailed, photorealistic, masterpiece, cinematic lighting, sharp focus, high contrast"
+  # Request 1024x1024 HD native AI diffusion grid for crisp details
+  target_w = max(1024, width)
+  target_h = max(1024, height)
+
+  quality_boosters = "8k resolution, ultra detailed, photorealistic, masterpiece, 8k uhd, dslr quality, cinematic lighting, sharp focus, hyperrealistic"
   if "8k" not in clean_prompt.lower() and "detailed" not in clean_prompt.lower():
     full_prompt = f"{clean_prompt}, {quality_boosters}"
   else:
@@ -214,12 +217,23 @@ def _fetch_ai_diffusion_image(
 
   models_to_try = ["flux", "flux-realism", "turbo"]
   for model_name in models_to_try:
-    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={width}&height={height}&seed={valid_seed}&nologo=true&enhance=true"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={target_w}&height={target_h}&seed={valid_seed}&nologo=true&enhance=true"
     try:
-      with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+      with httpx.Client(timeout=22.0, follow_redirects=True) as client:
         resp = client.get(url, headers=headers)
         if resp.status_code == 200 and len(resp.content) > 1000:
           img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+          
+          # Sharpening filter for crisp micro-details and edge contrast
+          try:
+            img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=130, threshold=2))
+          except Exception:
+            pass
+
+          # High-quality LANCZOS resampling if downscaling to requested resolution
+          if img.width != width or img.height != height:
+            img = img.resize((width, height), resample=Image.Resampling.LANCZOS)
+
           return img
     except Exception as exc:
       logger.warning("AI Diffusion model '%s' fetch failed: %s", model_name, exc)
@@ -344,11 +358,15 @@ def generate_image_matrix(
 
 
 def image_to_base64(img: Image.Image, format: str = "PNG") -> str:
-  """Convert PIL Image to base64 data URI string."""
+  """Convert PIL Image to base64 data URI string with high quality encoding."""
   buf = io.BytesIO()
-  img.save(buf, format=format, quality=92)
+  if format.upper() == "JPEG" or format.upper() == "JPG":
+    img.save(buf, format="JPEG", quality=98, subsampling=0)
+    mime = "image/jpeg"
+  else:
+    img.save(buf, format="PNG", compress_level=1)
+    mime = "image/png"
   b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
-  mime = "image/png" if format.upper() == "PNG" else "image/jpeg"
   return f"data:{mime};base64,{b64_str}"
 
 

@@ -1047,16 +1047,16 @@
       const dims = width + "x" + height;
       const elapsed = data.elapsed_ms || 0;
       
-      const qualityPrompt = rawPrompt + ", 8k resolution, ultra detailed, photorealistic, masterpiece, cinematic lighting";
-      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(qualityPrompt) + "?model=flux&width=" + width + "&height=" + height + "&seed=" + seed + "&nologo=true&enhance=true";
+      const qualityPrompt = rawPrompt + ", 8k resolution, ultra detailed, photorealistic, masterpiece, dslr quality, 8k uhd, sharp focus";
+      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(qualityPrompt) + "?model=flux&width=1024&height=1024&seed=" + seed + "&nologo=true&enhance=true";
       const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
       const prompt = escapeHtml(rawPrompt);
       const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
 
       wrap.innerHTML =
         '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
-          '<div style="position:relative; width:100%; max-width:640px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">' +
-            '<img src="' + imgUrl + '" alt="' + prompt + '" style="width:100%; height:auto; display:block;" />' +
+          '<div style="position:relative; width:100%; max-width:680px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">' +
+            '<img src="' + imgUrl + '" alt="' + prompt + '" style="width:100%; height:auto; display:block; image-rendering:-webkit-optimize-contrast; image-rendering:high-quality;" />' +
           '</div>' +
           '<div style="font-size:0.85rem; color:var(--text); line-height:1.4;">' +
             '<div><strong>Prompt:</strong> ' + prompt + '</div>' +
