@@ -364,6 +364,28 @@
         }}),
         format: fmtResume
       }},
+      {{ id: "image_gen", label: "Image Generator", desc: "Text-to-Image synthesis",
+        nexusTool: "image_generator",
+        fields: [
+          {{ id: "prompt", label: "Prompt *", type: "textarea", required: true, full: true,
+             placeholder: "Cyberpunk neon city skyline at night, glowing rain reflection..." }},
+          {{ id: "style", label: "Artistic Style", type: "select",
+             options: ["cyberpunk", "photorealistic", "anime", "synthwave", "3d_render", "oil_painting", "minimalist", "dark_fantasy", "watercolor", "abstract"] }},
+          {{ id: "width", label: "Width (px)", type: "select", options: ["512", "768", "1024"] }},
+          {{ id: "height", label: "Height (px)", type: "select", options: ["512", "768", "1024"] }},
+          {{ id: "seed", label: "Seed (optional)", type: "text", placeholder: "Random if left blank" }},
+        ],
+        endpoint: "/image-generator/generate",
+        build: (f, useAi) => ({{
+          prompt: f.prompt,
+          style: f.style || "cyberpunk",
+          width: parseInt(f.width || "512"),
+          height: parseInt(f.height || "512"),
+          seed: f.seed ? parseInt(f.seed) : undefined,
+          enhance_prompt: useAi
+        }}),
+        isImage: true
+      }},
       {{ id: "chat", label: "Chat / Completions", desc: "Free chat + /tools commands",
         isChat: true,
         fields: [
@@ -551,6 +573,8 @@
           }}
           if (activeTool.isPlagiarism) {{
             renderPlagiarismCard(payload, fields.content);
+          }} else if (activeTool.isImage) {{
+            renderImageCard(payload);
           }} else {{
             addMsg("assistant", activeTool.format(payload));
           }}
@@ -1005,6 +1029,41 @@
     function escapeHtml(s) {{
       return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }}
+    function renderImageCard(data) {{
+      const wrap = document.createElement("div");
+      wrap.className = "msg assistant img-card-wrap";
+      const imgUrl = data.image_b64 || "";
+      const prompt = escapeHtml(data.prompt || "");
+      const enhanced = escapeHtml(data.enhanced_prompt || data.prompt || "");
+      const style = escapeHtml((data.style || "").replace("_", " ").toUpperCase());
+      const seed = data.seed !== undefined ? data.seed : "";
+      const dims = (data.width || 512) + "x" + (data.height || 512);
+      const elapsed = data.elapsed_ms || 0;
+      
+      wrap.innerHTML =
+        '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
+          '<div style="position:relative; width:100%; max-width:512px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">' +
+            '<img src="' + imgUrl + '" alt="' + prompt + '" style="width:100%; height:auto; display:block;" />' +
+          '</div>' +
+          '<div style="font-size:0.82rem; color:var(--text); line-height:1.4;">' +
+            '<div><strong>Prompt:</strong> ' + prompt + '</div>' +
+            (data.enhanced_prompt && data.enhanced_prompt !== data.prompt ? '<div style="color:var(--muted); margin-top:0.25rem;"><strong>AI Enhanced:</strong> <em>' + enhanced + '</em></div>' : '') +
+          '</div>' +
+          '<div style="display:flex; flex-wrap:wrap; gap:0.6rem; font-size:0.75rem; color:var(--muted); border-top:1px solid var(--border); padding-top:0.5rem;">' +
+            '<span>🎨 <strong>Style:</strong> ' + style + '</span>' +
+            '<span>📐 <strong>Size:</strong> ' + dims + '</span>' +
+            '<span>🎲 <strong>Seed:</strong> ' + seed + '</span>' +
+            '<span>⚡ <strong>Time:</strong> ' + elapsed + 'ms</span>' +
+          '</div>' +
+          '<div style="margin-top:0.25rem;">' +
+            '<a href="' + imgUrl + '" download="generated_image_' + seed + '.png" style="display:inline-block; padding:0.4rem 0.85rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.78rem; font-weight:600;">⬇ Download Image</a>' +
+          '</div>' +
+        '</div>';
+      
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }}
+
     function fmtCoverLetter(d) {{
       const letter = (d.cover_letter || "").trim();
       if (!letter) return "No cover letter was generated.";
