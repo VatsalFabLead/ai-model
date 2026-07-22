@@ -193,11 +193,11 @@ def _fetch_ai_diffusion_image(
   width: int,
   height: int,
   seed: int,
-  style_key: str = "photorealistic",
+  style_key: str | None = "photorealistic",
 ) -> Image.Image | None:
   """Fetch ultra-high-fidelity AI text-to-image matching arbitrary prompts."""
   valid_seed = abs(int(seed)) % 2147483647
-  clean_prompt = prompt.strip()
+  clean_prompt = (prompt or "").strip()
 
   # Quality prompt booster for realistic rendering
   quality_boosters = "8k resolution, ultra detailed, photorealistic, masterpiece, cinematic lighting, sharp focus, high contrast"
@@ -230,7 +230,7 @@ def _fetch_ai_diffusion_image(
 def generate_image_matrix(
   prompt: str,
   *,
-  style: str = "photorealistic",
+  style: str | None = "photorealistic",
   width: int = 1024,
   height: int = 1024,
   seed: int | None = None,
@@ -241,7 +241,7 @@ def generate_image_matrix(
 
   Returns (PIL.Image, metadata_dict).
   """
-  style_key = (style or "photorealistic").lower().strip()
+  style_key = str(style or "photorealistic").lower().strip()
   if style_key not in STYLE_PRESETS:
     style_key = "photorealistic"
   preset = STYLE_PRESETS[style_key]

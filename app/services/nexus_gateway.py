@@ -230,14 +230,14 @@ async def invoke_nexus_tool(
     result = await image_generator.generate_image(
       _provider(registry, model, use_ai=enhance_prompt),
       prompt=inp["prompt"],
-      style=inp.get("style", "cyberpunk"),
-      width=int(inp.get("width", 512)),
-      height=int(inp.get("height", 512)),
+      style=inp.get("style") or "photorealistic",
+      width=int(inp.get("width") or 1024),
+      height=int(inp.get("height") or 1024),
       seed=inp.get("seed"),
       negative_prompt=inp.get("negative_prompt"),
-      guidance_scale=float(inp.get("guidance_scale", 7.5)),
+      guidance_scale=float(inp.get("guidance_scale") or 7.5),
       enhance_prompt_with_ai=enhance_prompt,
-      format=inp.get("format", "PNG"),
+      format=inp.get("format") or "PNG",
     )
   else:
     raise ValueError(f"Tool not implemented: {tool_id}")

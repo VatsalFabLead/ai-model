@@ -52,7 +52,7 @@ async def generate_image(
   provider: Optional[ModelProvider] = None,
   *,
   prompt: str,
-  style: str = "photorealistic",
+  style: Optional[str] = "photorealistic",
   width: int = 1024,
   height: int = 1024,
   seed: Optional[int] = None,
@@ -62,6 +62,7 @@ async def generate_image(
   format: str = "PNG",
 ) -> Dict[str, Any]:
   """Generate image via custom engine with optional LLM prompt enrichment."""
+  style = style or "photorealistic"
   t0 = time.perf_counter()
 
   raw_prompt = prompt.strip()
