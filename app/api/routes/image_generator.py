@@ -16,10 +16,10 @@ router = APIRouter(prefix="/image-generator", tags=["image-generator"])
 
 
 class ImageGenerateRequest(BaseModel):
-  prompt: str = Field(..., min_length=1, max_length=1000, examples=["Futuristic cyberpunk city at night with neon lights"])
-  style: str = Field(default="cyberpunk", description="Artistic style preset", examples=["cyberpunk", "photorealistic", "anime", "synthwave", "3d_render"])
-  width: int = Field(default=512, ge=128, le=2048, description="Image width in pixels")
-  height: int = Field(default=512, ge=128, le=2048, description="Image height in pixels")
+  prompt: str = Field(..., min_length=1, max_length=1000, examples=["A magnificent floating kingdom above the clouds with crystal castles"])
+  style: Optional[str] = Field(default=None, description="Optional artistic style preset")
+  width: int = Field(default=1024, ge=128, le=2048, description="Image width in pixels")
+  height: int = Field(default=1024, ge=128, le=2048, description="Image height in pixels")
   seed: Optional[int] = Field(default=None, description="Random seed for deterministic generation")
   negative_prompt: Optional[str] = Field(default=None, description="Attributes to avoid in synthesis")
   guidance_scale: float = Field(default=7.5, ge=1.0, le=20.0, description="Prompt conditioning weight")
@@ -32,7 +32,7 @@ class ImageGenerateResponse(BaseModel):
   format: str
   prompt: str
   enhanced_prompt: str
-  style: str
+  style: Optional[str] = None
   seed: int
   width: int
   height: int

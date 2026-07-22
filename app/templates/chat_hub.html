@@ -364,24 +364,19 @@
         }}),
         format: fmtResume
       }},
-      {{ id: "image_gen", label: "Image Generator", desc: "Text-to-Image synthesis",
+      {{ id: "image_gen", label: "Image Generator", desc: "High-Quality AI Text-to-Image",
         nexusTool: "image_generator",
         fields: [
           {{ id: "prompt", label: "Prompt *", type: "textarea", required: true, full: true,
-             placeholder: "Cyberpunk neon city skyline at night, glowing rain reflection..." }},
-          {{ id: "style", label: "Artistic Style", type: "select",
-             options: ["cyberpunk", "photorealistic", "anime", "synthwave", "3d_render", "oil_painting", "minimalist", "dark_fantasy", "watercolor", "abstract"] }},
-          {{ id: "width", label: "Width (px)", type: "select", options: ["512", "768", "1024"] }},
-          {{ id: "height", label: "Height (px)", type: "select", options: ["512", "768", "1024"] }},
-          {{ id: "seed", label: "Seed (optional)", type: "text", placeholder: "Random if left blank" }},
+             placeholder: "Describe any image you want to generate (e.g. A magnificent floating kingdom above the clouds with crystal castles, waterfalls, dragons...)" }},
+          {{ id: "width", label: "Width (px)", type: "select", options: ["1024", "768", "512"] }},
+          {{ id: "height", label: "Height (px)", type: "select", options: ["1024", "768", "512"] }},
         ],
         endpoint: "/image-generator/generate",
         build: (f, useAi) => ({{
           prompt: f.prompt,
-          style: f.style || "cyberpunk",
-          width: parseInt(f.width || "512"),
-          height: parseInt(f.height || "512"),
-          seed: f.seed ? (Math.abs(parseInt(f.seed)) % 2147483647) : (Math.floor(Math.random() * 2147483647)),
+          width: parseInt(f.width || "1024"),
+          height: parseInt(f.height || "1024"),
           enhance_prompt: useAi
         }}),
         isImage: true
@@ -1042,22 +1037,20 @@
       const wrap = document.createElement("div");
       wrap.className = "msg assistant img-card-wrap";
       const rawPrompt = data.prompt || "";
-      const styleName = (data.style || "").replace("_", " ");
-      const seed = data.seed !== undefined ? data.seed : Math.floor(Math.random() * 1000000);
-      const width = data.width || 512;
-      const height = data.height || 512;
+      const seed = (data.seed !== undefined && data.seed !== null) ? Math.abs(data.seed) % 2147483647 : Math.floor(Math.random() * 1000000);
+      const width = data.width || 1024;
+      const height = data.height || 1024;
       const dims = width + "x" + height;
       const elapsed = data.elapsed_ms || 0;
       
-      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(rawPrompt + ", " + styleName + " style, highly detailed, 8k") + "?model=flux&width=" + width + "&height=" + height + "&seed=" + seed + "&nologo=true";
+      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(rawPrompt + ", masterpiece, ultra high quality, photorealistic, 8k resolution, sharp focus") + "?model=flux&width=" + width + "&height=" + height + "&seed=" + seed + "&nologo=true";
       const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
       const prompt = escapeHtml(rawPrompt);
       const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
-      const style = escapeHtml(styleName.toUpperCase());
 
       wrap.innerHTML =
         '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
-          '<div style="position:relative; width:100%; max-width:512px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">' +
+          '<div style="position:relative; width:100%; max-width:640px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">' +
             '<img src="' + imgUrl + '" alt="' + prompt + '" style="width:100%; height:auto; display:block;" />' +
           '</div>' +
           '<div style="font-size:0.82rem; color:var(--text); line-height:1.4;">' +
@@ -1065,13 +1058,11 @@
             (data.enhanced_prompt && data.enhanced_prompt !== data.prompt ? '<div style="color:var(--muted); margin-top:0.25rem;"><strong>AI Enhanced:</strong> <em>' + enhanced + '</em></div>' : '') +
           '</div>' +
           '<div style="display:flex; flex-wrap:wrap; gap:0.6rem; font-size:0.75rem; color:var(--muted); border-top:1px solid var(--border); padding-top:0.5rem;">' +
-            '<span>🎨 <strong>Style:</strong> ' + style + '</span>' +
-            '<span>📐 <strong>Size:</strong> ' + dims + '</span>' +
-            '<span>🎲 <strong>Seed:</strong> ' + seed + '</span>' +
+            '<span>📐 <strong>Resolution:</strong> ' + dims + '</span>' +
             '<span>⚡ <strong>Time:</strong> ' + elapsed + 'ms</span>' +
           '</div>' +
           '<div style="margin-top:0.25rem;">' +
-            '<a href="' + imgUrl + '" target="_blank" download="generated_image_' + seed + '.png" style="display:inline-block; padding:0.4rem 0.85rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.78rem; font-weight:600;">⬇ Download High-Res Image</a>' +
+            '<a href="' + imgUrl + '" target="_blank" download="ai_generated_image.png" style="display:inline-block; padding:0.4rem 0.85rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.78rem; font-weight:600;">⬇ Download High-Res Image</a>' +
           '</div>' +
         '</div>';
       
