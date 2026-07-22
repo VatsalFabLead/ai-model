@@ -52,7 +52,7 @@ async def generate_image(
   provider: Optional[ModelProvider] = None,
   *,
   prompt: str,
-  style: Optional[str] = None,
+  style: str = "photorealistic",
   width: int = 1024,
   height: int = 1024,
   seed: Optional[int] = None,

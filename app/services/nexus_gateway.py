@@ -230,9 +230,9 @@ async def invoke_nexus_tool(
     result = await image_generator.generate_image(
       _provider(registry, model, use_ai=enhance_prompt),
       prompt=inp["prompt"],
-      style=inp.get("style"),
-      width=int(inp.get("width", 1024)),
-      height=int(inp.get("height", 1024)),
+      style=inp.get("style", "cyberpunk"),
+      width=int(inp.get("width", 512)),
+      height=int(inp.get("height", 512)),
       seed=inp.get("seed"),
       negative_prompt=inp.get("negative_prompt"),
       guidance_scale=float(inp.get("guidance_scale", 7.5)),

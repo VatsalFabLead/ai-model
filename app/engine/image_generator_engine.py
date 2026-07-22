@@ -190,17 +190,19 @@ def _draw_procedural_elements(
 
 def _fetch_ai_diffusion_image(
   prompt: str,
-  style_key: str,
   width: int,
   height: int,
   seed: int,
+  style_key: str = "photorealistic",
 ) -> Image.Image | None:
-  """Fetch high-fidelity AI text-to-image matching arbitrary prompts."""
+  """Fetch ultra-high-fidelity AI text-to-image matching arbitrary prompts."""
   valid_seed = abs(int(seed)) % 2147483647
-  style_suffix = style_key.replace("_", " ")
   clean_prompt = prompt.strip()
-  if style_suffix not in clean_prompt.lower():
-    full_prompt = f"{clean_prompt}, {style_suffix} style"
+
+  # Quality prompt booster for realistic rendering
+  quality_boosters = "8k resolution, ultra detailed, photorealistic, masterpiece, cinematic lighting, sharp focus, high contrast"
+  if "8k" not in clean_prompt.lower() and "detailed" not in clean_prompt.lower():
+    full_prompt = f"{clean_prompt}, {quality_boosters}"
   else:
     full_prompt = clean_prompt
 
@@ -210,11 +212,11 @@ def _fetch_ai_diffusion_image(
     "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
   }
 
-  models_to_try = ["flux", "turbo", "flux-realism"]
+  models_to_try = ["flux", "flux-realism", "turbo"]
   for model_name in models_to_try:
-    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={width}&height={height}&seed={valid_seed}&nologo=true&enhance=false"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={width}&height={height}&seed={valid_seed}&nologo=true&enhance=true"
     try:
-      with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+      with httpx.Client(timeout=20.0, follow_redirects=True) as client:
         resp = client.get(url, headers=headers)
         if resp.status_code == 200 and len(resp.content) > 1000:
           img = Image.open(io.BytesIO(resp.content)).convert("RGB")
@@ -228,26 +230,26 @@ def _fetch_ai_diffusion_image(
 def generate_image_matrix(
   prompt: str,
   *,
-  style: str = "cyberpunk",
-  width: int = 512,
-  height: int = 512,
+  style: str = "photorealistic",
+  width: int = 1024,
+  height: int = 1024,
   seed: int | None = None,
   negative_prompt: str | None = None,
   guidance_scale: float = 7.5,
 ) -> Tuple[Image.Image, Dict[str, Any]]:
-  """Generate an image conditioned on text prompt, style, seed and dimensions.
+  """Generate an ultra-high-definition image conditioned on text prompt.
 
   Returns (PIL.Image, metadata_dict).
   """
-  style_key = style.lower().strip()
+  style_key = (style or "photorealistic").lower().strip()
   if style_key not in STYLE_PRESETS:
-    style_key = "cyberpunk"
+    style_key = "photorealistic"
   preset = STYLE_PRESETS[style_key]
 
   actual_seed = _seed_from_prompt(prompt, seed)
 
   # Try High-Fidelity Text-to-Image AI Diffusion first for ANY prompt
-  ai_img = _fetch_ai_diffusion_image(prompt, style_key, width, height, actual_seed)
+  ai_img = _fetch_ai_diffusion_image(prompt, width, height, actual_seed, style_key=style_key)
   if ai_img is not None:
     meta = {
       "prompt": prompt,
