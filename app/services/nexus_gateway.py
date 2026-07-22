@@ -8,6 +8,7 @@ from typing import Any
 from app.services import (
   cover_letter,
   email_assistant,
+  image_generator,
   plagiarism_checker,
   resume_builder,
   schema_markup,
@@ -36,6 +37,7 @@ NEXUS_TOOL_CATALOG: list[dict[str, Any]] = [
   {"id": "plagiarism_remove", "label": "Plagiarism Remove & Rewrite", "endpoint": "/plagiarism-check/remove"},
   {"id": "cover_letter", "label": "Professional Cover Letter", "endpoint": "/cover-letter/generate"},
   {"id": "resume_builder", "label": "Resume Builder", "endpoint": "/resume-builder/generate"},
+  {"id": "image_generator", "label": "Image Generator", "endpoint": "/image-generator/generate"},
 ]
 
 _VALID_TOOLS = frozenset(t["id"] for t in NEXUS_TOOL_CATALOG)
@@ -222,6 +224,20 @@ async def invoke_nexus_tool(
       use_ai=use_ai,
       use_rag=bool(inp.get("use_rag", True)),
       variation_seed=inp.get("variation_seed"),
+    )
+  elif tool_id == "image_generator":
+    enhance_prompt = bool(inp.get("enhance_prompt", True))
+    result = await image_generator.generate_image(
+      _provider(registry, model, use_ai=enhance_prompt),
+      prompt=inp["prompt"],
+      style=inp.get("style", "cyberpunk"),
+      width=int(inp.get("width", 512)),
+      height=int(inp.get("height", 512)),
+      seed=inp.get("seed"),
+      negative_prompt=inp.get("negative_prompt"),
+      guidance_scale=float(inp.get("guidance_scale", 7.5)),
+      enhance_prompt_with_ai=enhance_prompt,
+      format=inp.get("format", "PNG"),
     )
   else:
     raise ValueError(f"Tool not implemented: {tool_id}")

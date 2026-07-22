@@ -14,6 +14,7 @@ from app.api.routes import (
   cover_letter,
   email_assistant,
   health,
+  image_generator,
   model_test,
   nexus,
   plagiarism_checker,
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
   app.include_router(email_assistant.router, prefix=settings.api_prefix)
   app.include_router(resume_builder.router, prefix=settings.api_prefix)
   app.include_router(cover_letter.router, prefix=settings.api_prefix)
+  app.include_router(image_generator.router, prefix=settings.api_prefix)
 
   return app
 
