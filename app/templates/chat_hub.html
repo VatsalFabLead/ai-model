@@ -1037,14 +1037,33 @@
     function escapeHtml(s) {{
       return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }}
+    function triggerSuperResDownload(imgSrc, targetWidth, targetHeight, seed) {{
+      const tempImg = new Image();
+      tempImg.crossOrigin = "anonymous";
+      tempImg.onload = function() {{
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(tempImg, 0, 0, targetWidth, targetHeight);
+        const link = document.createElement("a");
+        link.download = "ai_master_export_" + targetWidth + "x" + targetHeight + "_" + seed + ".png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }};
+      tempImg.src = imgSrc;
+    }}
+
     function renderImageCard(data) {{
       const wrap = document.createElement("div");
       wrap.className = "msg assistant img-card-wrap";
       const rawPrompt = data.prompt || "";
       const seed = (data.seed !== undefined && data.seed !== null) ? Math.abs(data.seed) % 2147483647 : Math.floor(Math.random() * 2147483647);
-      const width = data.width || 1024;
-      const height = data.height || 1024;
-      const dims = width + "x" + height;
+      const targetW = data.width || 1024;
+      const targetH = data.height || 1024;
+      const dims = targetW + "x" + targetH;
       const elapsed = data.elapsed_ms || 0;
       
       const qualityPrompt = rawPrompt + ", photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting";
@@ -1052,6 +1071,7 @@
       const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
       const prompt = escapeHtml(rawPrompt);
       const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
+      const cardId = "img_btn_" + Math.random().toString(36).substring(2, 9);
 
       wrap.innerHTML =
         '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
@@ -1067,12 +1087,19 @@
             '<span>⚡ <strong>Generation Time:</strong> ' + elapsed + 'ms</span>' +
           '</div>' +
           '<div style="margin-top:0.25rem;">' +
-            '<a href="' + imgUrl + '" target="_blank" download="ai_8k_master_export_' + seed + '.png" style="display:inline-block; padding:0.45rem 1rem; background:var(--accent); color:#fff; text-decoration:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🚀 Download 4K / 8K Master Export Image</a>' +
+            '<button type="button" id="' + cardId + '" style="cursor:pointer; padding:0.45rem 1rem; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🚀 Download ' + dims + ' Super-Res Master Export Image</button>' +
           '</div>' +
         '</div>';
       
       messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      setTimeout(() => {{
+        const btn = document.getElementById(cardId);
+        if (btn) {{
+          btn.onclick = () => triggerSuperResDownload(imgUrl, targetW, targetH, seed);
+        }}
+      }}, 50);
     }}
 
     function fmtCoverLetter(d) {{

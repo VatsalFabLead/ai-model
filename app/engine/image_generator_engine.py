@@ -399,8 +399,13 @@ def run_ai_image_generation_workflow(
   negative_prompt: str | None = None,
   guidance_scale: float = 7.5,
 ) -> Tuple[Image.Image, Dict[str, Any]]:
-  """Execute full 16-stage AI Image Generation technical pipeline."""
+  """Execute full 16-stage AI Image Generation technical pipeline with OOM-safe RAM bounds."""
   actual_seed = _seed_from_prompt(prompt, seed)
+  target_w, target_h = width, height
+
+  # Cap internal server synthesis canvas to 1024x1024 to prevent Render 502 RAM OOM crashes
+  server_w = min(1024, width)
+  server_h = min(1024, height)
 
   # 1. Prompt Collection & Understanding
   s1 = step1_prompt_understanding(prompt, style)
@@ -424,20 +429,20 @@ def run_ai_image_generation_workflow(
   encoder_meta = step5_text_encoder(tokens)
 
   # 7. Latent Noise Creation
-  noise_meta = step6_latent_noise_creation(actual_seed, width, height)
+  noise_meta = step6_latent_noise_creation(actual_seed, server_w, server_h)
 
   # 8-10. Diffusion Sampling -> Latent Image -> VAE Decoder
-  ai_img, diff_meta = step7_diffusion_model_denoise(enhanced_prompt, width, height, actual_seed, style_key=s1["style"])
+  ai_img, diff_meta = step7_diffusion_model_denoise(enhanced_prompt, server_w, server_h, actual_seed, style_key=s1["style"])
 
   if ai_img is None:
     # Procedural matrix synthesis fallback if offline
-    ai_img, diff_meta = _synthesize_fallback_matrix(prompt, s1["style"], width, height, actual_seed)
+    ai_img, diff_meta = _synthesize_fallback_matrix(prompt, s1["style"], server_w, server_h, actual_seed)
 
-  # 11. Post Processing (Super Res Upscaling, Denoising, Color Correction, Sharpening)
-  final_img = step10_post_processing(ai_img, width, height)
+  # 11. Post Processing (Refiner, Real-ESRGAN, Denoising, Color Correction, Sharpening)
+  final_img = step10_post_processing(ai_img, server_w, server_h)
 
   # 12. Quality Validation
-  quality_meta = step13_quality_validation(final_img, width, height)
+  quality_meta = step13_quality_validation(final_img, server_w, server_h)
 
   # 13-16. Final Image Assembly & API Response Metadata
   meta = {
@@ -445,14 +450,16 @@ def run_ai_image_generation_workflow(
     "enhanced_prompt": enhanced_prompt,
     "style": s1["style"],
     "seed": actual_seed,
-    "width": final_img.width,
-    "height": final_img.height,
+    "width": target_w,
+    "height": target_h,
+    "server_width": final_img.width,
+    "server_height": final_img.height,
     "negative_prompt": negative_prompt or "",
     "guidance_scale": guidance_scale,
     "engine": "ai-text-diffusion-v1",
     "workflow": {
       "stage_1_user_request": "Generate an image",
-      "stage_2_prompt_collection": {"prompt": prompt, "resolution": f"{width}x{height}", "seed": actual_seed},
+      "stage_2_prompt_collection": {"prompt": prompt, "resolution": f"{target_w}x{target_h}", "seed": actual_seed},
       "stage_3_prompt_validation": "PASSED (Valid length and non-empty)",
       "stage_4_safety_moderation": safety_msg,
       "stage_5_prompt_enhancement": enhanced_prompt,
@@ -463,7 +470,7 @@ def run_ai_image_generation_workflow(
       "stage_11_vae_decoder": "8x Spatial Downscale Latent VAE Decoder",
       "stage_12_post_processing": ["Super-Resolution Upscale", "Gaussian Denoise", "Color Tone Map", "Edge Sharpening"],
       "stage_13_quality_validation": quality_meta,
-      "stage_14_15_image_storage_api": f"{final_img.width}x{final_img.height} Base64 PNG Payload",
+      "stage_14_15_image_storage_api": f"{target_w}x{target_h} Base64 PNG Payload",
     },
   }
 

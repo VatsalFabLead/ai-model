@@ -102,6 +102,8 @@ async def generate_image(
     "seed": meta["seed"],
     "width": width,
     "height": height,
+    "server_width": meta.get("server_width", img.width),
+    "server_height": meta.get("server_height", img.height),
     "negative_prompt": meta["negative_prompt"],
     "guidance_scale": guidance_scale,
     "engine": meta["engine"],

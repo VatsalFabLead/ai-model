@@ -36,6 +36,8 @@ class ImageGenerateResponse(BaseModel):
   seed: int
   width: int
   height: int
+  server_width: Optional[int] = None
+  server_height: Optional[int] = None
   negative_prompt: Optional[str] = None
   guidance_scale: float
   engine: str
