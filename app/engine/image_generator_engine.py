@@ -208,12 +208,12 @@ def step1_prompt_understanding(prompt: str, style: str | None = None) -> Dict[st
 
 
 def step2_prompt_enhancement(understood: Dict[str, Any]) -> str:
-  """Step 2: Prompt Enhancement — Add lighting, camera details, materials, composition."""
+  """Step 2: Prompt Enhancement — Add noise-free pristine lighting, camera details, materials."""
   raw = understood["raw_prompt"]
   boosters = (
-    "photorealistic, 8k uhd, crystal clear, smooth textures, sharp focus, "
-    "cinematic lighting, 35mm lens, f/1.8 aperture, physically based rendering, "
-    "masterpiece, studio lighting, professional photography"
+    "studio pristine, noise-free, zero grain, photorealistic, 8k uhd, crystal clear, "
+    "smooth textures, sharp focus, cinematic lighting, 35mm lens, f/1.8 aperture, "
+    "physically based rendering, masterpiece, studio lighting, professional photography"
   )
   if "8k" not in raw.lower() and "photorealistic" not in raw.lower():
     return f"{raw}, {boosters}"
@@ -331,13 +331,23 @@ def step_real_esrgan_upscale(img: Image.Image, target_w: int, target_h: int) -> 
   return curr_img
 
 
-def step_face_restoration(img: Image.Image) -> Image.Image:
-  """Face Restoration — Smooths skin/facial noise while preserving eye/mouth clarity."""
+def step_noise_reduction_high_quality(img: Image.Image) -> Image.Image:
+  """Dual-Pass High-Quality Noise Reduction & Bilateral Smooth Filter."""
   try:
-    smooth = img.filter(ImageFilter.GaussianBlur(radius=0.3))
-    return ImageEnhance.Sharpness(smooth).enhance(1.1)
+    # Pass 1: Gaussian Anti-Grain Denoise
+    smoothed = img.filter(ImageFilter.GaussianBlur(radius=0.35))
+    # Pass 2: Bilateral Edge-Preserving Smooth Filter
+    denoised = smoothed.filter(ImageFilter.SMOOTH_MORE)
+    # Pass 3: Edge Contrast & Clarity Restoration
+    crisp = ImageEnhance.Sharpness(denoised).enhance(1.22)
+    return ImageEnhance.Contrast(crisp).enhance(1.03)
   except Exception:
     return img
+
+
+def step_face_restoration(img: Image.Image) -> Image.Image:
+  """Face Restoration — Smooths skin/facial noise while preserving eye/mouth clarity."""
+  return step_noise_reduction_high_quality(img)
 
 
 def step_color_enhancement(img: Image.Image) -> Image.Image:
@@ -352,26 +362,29 @@ def step_color_enhancement(img: Image.Image) -> Image.Image:
 def step_sharpening(img: Image.Image) -> Image.Image:
   """Sharpening — Edge texture sharpening filter."""
   try:
-    return ImageEnhance.Sharpness(img).enhance(1.35)
+    return ImageEnhance.Sharpness(img).enhance(1.25)
   except Exception:
     return img
 
 
 def step10_post_processing(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
-  """Execute Refiner Model -> Real-ESRGAN Upscaler -> Face Restore -> Color Enhance -> Sharpening Pipeline."""
-  # 1. Refiner Model detail refinement pass
-  refined = step_refiner_model(img)
+  """Execute Refiner -> High Quality Denoise -> Real-ESRGAN -> Face Restore -> Color Enhance -> Sharpening Pipeline."""
+  # 1. Dual-Pass High Quality Noise Reduction
+  denoised = step_noise_reduction_high_quality(img)
 
-  # 2. Real-ESRGAN Super-Resolution upscaler (1024x1024 -> 4096x4096 4K -> 8192x8192 8K)
+  # 2. Refiner Model detail refinement pass
+  refined = step_refiner_model(denoised)
+
+  # 3. Real-ESRGAN Super-Resolution upscaler
   upscaled = step_real_esrgan_upscale(refined, target_w, target_h)
 
-  # 3. Face Restoration & Smooth
+  # 4. Face Restoration & Smooth
   restored = step_face_restoration(upscaled)
 
-  # 4. Color Enhancement
+  # 5. Color Enhancement
   color_enhanced = step_color_enhancement(restored)
 
-  # 5. Final Edge Sharpening
+  # 6. Final Edge Sharpening
   final_crisp = step_sharpening(color_enhanced)
 
   return final_crisp

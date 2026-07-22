@@ -1066,14 +1066,12 @@
       const dims = targetW + "x" + targetH;
       const elapsed = data.elapsed_ms || 0;
       
-      const qualityPrompt = rawPrompt + ", photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting";
+      const qualityPrompt = rawPrompt + ", studio pristine, noise-free, zero grain, photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting";
       const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(qualityPrompt) + "?model=flux-realism&width=1024&height=1024&seed=" + seed + "&nologo=true&enhance=false";
       const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
       const prompt = escapeHtml(rawPrompt);
       const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
-      const btn8kId = "img_btn_8k_" + Math.random().toString(36).substring(2, 9);
-      const btn4kId = "img_btn_4k_" + Math.random().toString(36).substring(2, 9);
-      const btnHdId = "img_btn_hd_" + Math.random().toString(36).substring(2, 9);
+      const cardId = "img_btn_" + Math.random().toString(36).substring(2, 9);
 
       wrap.innerHTML =
         '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
@@ -1085,13 +1083,11 @@
             (data.enhanced_prompt && data.enhanced_prompt !== data.prompt ? '<div style="color:var(--muted); margin-top:0.25rem;"><strong>AI Enhanced Prompt:</strong> <em>' + enhanced + '</em></div>' : '') +
           '</div>' +
           '<div style="display:flex; flex-wrap:wrap; gap:0.8rem; font-size:0.78rem; color:var(--muted); border-top:1px solid var(--border); padding-top:0.5rem;">' +
-            '<span>📐 <strong>Selected Resolution:</strong> ' + dims + '</span>' +
+            '<span>📐 <strong>Resolution:</strong> ' + dims + '</span>' +
             '<span>⚡ <strong>Generation Time:</strong> ' + elapsed + 'ms</span>' +
           '</div>' +
-          '<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.35rem;">' +
-            '<button type="button" id="' + btn8kId + '" style="cursor:pointer; padding:0.5rem 1.1rem; background:linear-gradient(135deg, #10b981, #059669); color:#fff; border:none; border-radius:6px; font-size:0.82rem; font-weight:700; box-shadow:0 4px 12px rgba(16,185,129,0.3);">🚀 Download 8K Quality Image (8192x8192)</button>' +
-            '<button type="button" id="' + btn4kId + '" style="cursor:pointer; padding:0.5rem 1rem; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🔍 Download 4K Ultra-HD (4096x4096)</button>' +
-            '<button type="button" id="' + btnHdId + '" style="cursor:pointer; padding:0.5rem 0.9rem; background:#374151; color:#fff; border:none; border-radius:6px; font-size:0.78rem; font-weight:600;">⬇ Download HD (1024x1024)</button>' +
+          '<div style="margin-top:0.25rem;">' +
+            '<button type="button" id="' + cardId + '" style="cursor:pointer; padding:0.45rem 1rem; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🚀 Download ' + dims + ' Super-Res Master Export Image</button>' +
           '</div>' +
         '</div>';
       
@@ -1099,12 +1095,10 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
 
       setTimeout(() => {{
-        const b8k = document.getElementById(btn8kId);
-        if (b8k) b8k.onclick = () => triggerSuperResDownload(imgUrl, 8192, 8192, seed);
-        const b4k = document.getElementById(btn4kId);
-        if (b4k) b4k.onclick = () => triggerSuperResDownload(imgUrl, 4096, 4096, seed);
-        const bhd = document.getElementById(btnHdId);
-        if (bhd) bhd.onclick = () => triggerSuperResDownload(imgUrl, 1024, 1024, seed);
+        const btn = document.getElementById(cardId);
+        if (btn) {{
+          btn.onclick = () => triggerSuperResDownload(imgUrl, targetW, targetH, seed);
+        }}
       }}, 50);
     }}
 
