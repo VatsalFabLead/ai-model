@@ -227,11 +227,11 @@ def _fetch_ai_diffusion_image(
           if img.width < target_w or img.height < target_h:
             img = img.resize((target_w, target_h), resample=Image.Resampling.LANCZOS)
 
-          # Anti-grain noise-smoothing & edge preservation filter
+          # Noise-Smoothing & Realism Denoise Filter
           try:
-            img = img.filter(ImageFilter.SMOOTH_MORE)
-            img = ImageEnhance.Sharpness(img).enhance(1.15)
-            img = ImageEnhance.Contrast(img).enhance(1.03)
+            denoised = img.filter(ImageFilter.GaussianBlur(radius=0.5))
+            crisp = ImageEnhance.Sharpness(denoised).enhance(1.25)
+            img = ImageEnhance.Contrast(crisp).enhance(1.03)
           except Exception:
             pass
 
