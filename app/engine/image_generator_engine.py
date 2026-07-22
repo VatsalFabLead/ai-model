@@ -199,12 +199,12 @@ def _fetch_ai_diffusion_image(
   valid_seed = abs(int(seed)) % 2147483647
   clean_prompt = (prompt or "").strip()
 
-  # Request 1024x1024 HD native AI diffusion grid for crisp details
+  # Native 1024x1024 HD grid for crisp details
   target_w = max(1024, width)
   target_h = max(1024, height)
 
-  quality_boosters = "8k resolution, ultra detailed, photorealistic, masterpiece, 8k uhd, dslr quality, cinematic lighting, sharp focus, hyperrealistic"
-  if "8k" not in clean_prompt.lower() and "detailed" not in clean_prompt.lower():
+  quality_boosters = "photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting, professional photography, hyperrealistic"
+  if "8k" not in clean_prompt.lower() and "photorealistic" not in clean_prompt.lower():
     full_prompt = f"{clean_prompt}, {quality_boosters}"
   else:
     full_prompt = clean_prompt
@@ -217,20 +217,14 @@ def _fetch_ai_diffusion_image(
 
   models_to_try = ["flux", "flux-realism", "turbo"]
   for model_name in models_to_try:
-    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={target_w}&height={target_h}&seed={valid_seed}&nologo=true&enhance=true"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&width={target_w}&height={target_h}&seed={valid_seed}&nologo=true&enhance=false"
     try:
-      with httpx.Client(timeout=22.0, follow_redirects=True) as client:
+      with httpx.Client(timeout=40.0, follow_redirects=True) as client:
         resp = client.get(url, headers=headers)
-        if resp.status_code == 200 and len(resp.content) > 1000:
+        if resp.status_code == 200 and len(resp.content) > 5000:
           img = Image.open(io.BytesIO(resp.content)).convert("RGB")
           
-          # Sharpening filter for crisp micro-details and edge contrast
-          try:
-            img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=130, threshold=2))
-          except Exception:
-            pass
-
-          # High-quality LANCZOS resampling if downscaling to requested resolution
+          # Resample cleanly with LANCZOS if output dimensions differ
           if img.width != width or img.height != height:
             img = img.resize((width, height), resample=Image.Resampling.LANCZOS)
 

@@ -1047,8 +1047,8 @@
       const dims = width + "x" + height;
       const elapsed = data.elapsed_ms || 0;
       
-      const qualityPrompt = rawPrompt + ", 8k resolution, ultra detailed, photorealistic, masterpiece, dslr quality, 8k uhd, sharp focus";
-      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(qualityPrompt) + "?model=flux&width=1024&height=1024&seed=" + seed + "&nologo=true&enhance=true";
+      const qualityPrompt = rawPrompt + ", photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting";
+      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(qualityPrompt) + "?model=flux&width=1024&height=1024&seed=" + seed + "&nologo=true&enhance=false";
       const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
       const prompt = escapeHtml(rawPrompt);
       const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
