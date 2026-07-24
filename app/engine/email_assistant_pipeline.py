@@ -54,6 +54,12 @@ def _clean_llm_email(text: str) -> str:
   )
   text = re.sub(r"^\s*(subject(?:\s*line)?|email|body|reply)\s*:\s*", "", text, flags=re.I)
   text = re.sub(r"^\s*subject(?:\s*line)?\s*[:\-].*\n+", "", text, flags=re.I)
+  text = re.sub(
+    r"^(hello|hi|dear)[^\n,]*,\s*\n+(?:I hope this message finds you well\.?\s*|Hope this email finds you well\.?\s*)",
+    r"\1,\n\n",
+    text,
+    flags=re.I,
+  )
   return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 

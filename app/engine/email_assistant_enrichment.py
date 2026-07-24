@@ -166,9 +166,9 @@ _CTA_BY_INTENT: dict[str, list[str]] = {
 # Per-industry cold-email framing (opener context, value intro, domain CTA).
 _COLD_DOMAIN_TEMPLATES: dict[str, dict[str, str]] = {
   "Technology": {
-    "context_line": "We partner with product and engineering teams on {purpose}.",
-    "value_intro": "Typical outcomes for tech teams:",
-    "cta": "Would a 15-minute technical overview be useful this week?",
+    "context_line": "We partner with engineering and product teams to {purpose}.",
+    "value_intro": "Key outcomes for technology leaders:",
+    "cta": "Would a 10-minute introductory conversation make sense this week?",
   },
   "Healthcare": {
     "context_line": "We work with healthcare organizations focused on {purpose}.",
@@ -216,9 +216,9 @@ _COLD_DOMAIN_TEMPLATES: dict[str, dict[str, str]] = {
     "cta": "Could we schedule a short exploratory call?",
   },
   "General Business": {
-    "context_line": "We help teams like yours with {purpose}.",
-    "value_intro": "What we offer:",
-    "cta": "Would you be open to a brief conversation to explore this?",
+    "context_line": "We assist growth-focused companies with {purpose}.",
+    "value_intro": "Key business benefits we bring to your organization:",
+    "cta": "Would you be open to a brief 10-minute conversation to explore this?",
   },
 }
 
@@ -584,6 +584,51 @@ def _trim_subject(subject: str) -> str:
   return s[: SUBJECT_MAX - 3].rsplit(" ", 1)[0] + "..."
 
 
+def _clean_cold_phrase(text: str) -> str:
+  s = (text or "").strip().lower()
+  replacements = {
+    "invitation for meeting": "exploring a potential collaboration and introductory discussion",
+    "invitation msg": "streamlining outreach communications and boosting engagement rates",
+    "meeting": "scheduling a brief introductory discussion",
+    "demo": "providing an interactive walkthrough of our solution",
+    "sales": "accelerating sales pipeline growth and team efficiency",
+    "partnership": "exploring potential partnership opportunities",
+    "collaboration": "identifying strategic joint initiatives",
+  }
+  for k, v in replacements.items():
+    if s == k or s == k + "s":
+      return v
+  return text.strip()
+
+
+def _expand_cold_value_prop(value: str, purpose: str, company: str) -> list[str]:
+  val_raw = (value or "").strip()
+  val_clean = _clean_cold_phrase(val_raw)
+
+  if not val_raw or len(val_raw) <= 15 or val_raw.lower() in ("invitation msg", "invitation", "msg", "value prop", "offer", "sales"):
+    return [
+      f"Streamline team workflows and eliminate communication friction for {company}",
+      "Boost outreach engagement and increase response rates across key stakeholders",
+      f"Deliver measurable business impact and save valuable team hours at {company}",
+    ]
+
+  parts = [p.strip() for p in re.split(r"[\n;,•]+", val_raw) if len(p.strip()) > 2]
+  if len(parts) >= 2:
+    return [parts[0], parts[1]]
+
+  text_lower = val_clean[0].lower() + val_clean[1:] if val_clean else val_clean
+  if text_lower.startswith(("reduce", "increase", "automate", "boost", "drive", "improve", "streamline")):
+    return [
+      f"{text_lower.capitalize()}",
+      f"Drive higher team efficiency and measurable ROI for {company}",
+    ]
+
+  return [
+    f"Streamline key processes to deliver {text_lower}",
+    f"Drive higher team performance and ROI for {company}",
+  ]
+
+
 def generate_subject_options(ctx: dict[str, Any], mode: str, *, intent: str = "inform", seed: int = 0) -> list[str]:
   candidates: list[str] = []
   if mode == "new_email":
@@ -606,15 +651,18 @@ def generate_subject_options(ctx: dict[str, Any], mode: str, *, intent: str = "i
     ]
   else:
     company = ctx.get("company_name", "your team")
-    purpose = (ctx.get("purpose_offer") or "partnership")[:35]
-    domain = company.split()[0] if company else "team"
+    purpose_raw = ctx.get("purpose_offer") or ""
     candidates = [
-      f"Quick idea for {company}"[:SUBJECT_MAX],
-      f"{purpose} — {domain}"[:SUBJECT_MAX],
-      f"Introduction: {company}"[:SUBJECT_MAX],
+      f"Quick question for {company}"[:SUBJECT_MAX],
+      f"Exploring a partnership with {company}"[:SUBJECT_MAX],
+      f"Ideas for {company}"[:SUBJECT_MAX],
+      f"Connecting with {company}"[:SUBJECT_MAX],
       f"Potential fit for {company}"[:SUBJECT_MAX],
+      f"Brief intro — {company}"[:SUBJECT_MAX],
       f"Question for the {company} team"[:SUBJECT_MAX],
     ]
+    if purpose_raw and len(purpose_raw) > 5 and purpose_raw.lower() not in ("invitation for meeting", "meeting", "invitation", "invitation msg"):
+      candidates.insert(0, f"{purpose_raw.capitalize()[:30]} for {company}"[:SUBJECT_MAX])
   scored: list[tuple[int, str]] = []
   for s in candidates:
     s = _trim_subject(s)
@@ -709,23 +757,22 @@ def _opening_cold(
 ) -> tuple[str, str, str, str]:
   """Return greeting, opener, value intro line, and domain-specific CTA."""
   tmpl = _cold_domain_template(domain_name)
-  purpose_clean = purpose.rstrip(".")
-  context_line = tmpl["context_line"].format(purpose=purpose_clean)
+  purpose_clean = _clean_cold_phrase(purpose)
   if tone == "formal":
     greeting = f"Dear {company} Team,"
-    opener = f"I am writing to introduce an opportunity related to {purpose_clean}. {context_line}"
+    opener = f"I am writing to introduce a strategic opportunity regarding {purpose_clean}."
   elif tone == "friendly":
-    greeting = "Hi there,"
-    opener = (
-      f"I came across {company} and thought this might be relevant — {context_line}"
-    )
+    greeting = f"Hi {company} Team,"
+    opener = f"I came across {company} and wanted to reach out regarding {purpose_clean}."
   elif tone == "casual":
-    greeting = "Hi,"
-    opener = f"I've been following {company} — {context_line}"
-  else:
-    greeting = "Hello,"
-    opener = f"I hope this message finds you well. {context_line}"
-  return greeting, opener, tmpl["value_intro"], tmpl["cta"]
+    greeting = "Hi there,"
+    opener = f"Quick note for the {company} team regarding {purpose_clean}."
+  else:  # professional
+    greeting = f"Hello {company} Team,"
+    opener = f"I am reaching out to {company} to discuss {purpose_clean}."
+  value_intro = f"Key business benefits we bring to organizations like {company}:"
+  cta = tmpl.get("cta") or f"Would you be open to a brief 10-minute conversation next week to explore if this aligns with {company}'s goals?"
+  return greeting, opener, value_intro, cta
 
 
 def compose_email(
@@ -776,7 +823,7 @@ def compose_email(
       greeting = loc_greeting
       closing = loc_closing
     cta = domain_cta
-    bullets = [value] if value else []
+    bullets = _expand_cold_value_prop(value, purpose, company)
     parts = [greeting, "", opener, ""]
     if bullets and value_intro:
       parts.extend(["", value_intro, ""])
@@ -1027,13 +1074,19 @@ def build_llm_refinement_prompts(
     "new_email": "Preserve all key points. Lead with the most important update.",
     "reply": "Acknowledge the original thread. Address each reply point directly.",
     "cold_email": (
-      "Keep it concise (under 150 words). Personalize for the company. "
-      "No hype or spam triggers. One clear CTA only."
+      "CRITICAL COLD EMAIL REQUIREMENTS:\n"
+      "1. Mention the target company naturally.\n"
+      "2. NEVER repeat raw user input text word-for-word (expand generic terms like 'invitation for meeting' or 'invitation msg' into articulate business benefits and value propositions).\n"
+      "3. Expand the value proposition into 2-3 clear business benefits.\n"
+      "4. Keep the total email body strictly under 180 words.\n"
+      "5. Include a single strong call-to-action.\n"
+      "6. Maintain the selected tone.\n"
+      "7. NEVER use generic clichés like 'I hope this message finds you well'."
     ),
   }
 
   system = (
-    "You are an expert B2B email copywriter refining a draft for production use.\n"
+    "You are an expert B2B cold email copywriter refining a draft for production use.\n"
     f"Mode: {mode}. Tone: {tone}. Intent: {primary_intent}. "
     f"Urgency: {urgency_level}. Recipient: {recipient_role}. "
     f"Relationship: {rel} ({warmth}). Industry: {primary_domain}. "
@@ -1054,6 +1107,13 @@ def build_llm_refinement_prompts(
       f"Company: {context.get('company_name', '')}",
       f"Purpose: {context.get('purpose_offer', '')}",
       f"Value proposition: {context.get('value_proposition', '')}",
+      "Requirements:",
+      "- Mention company naturally.",
+      "- Never repeat raw user text word-for-word.",
+      "- Expand value proposition into clear business benefits.",
+      "- Keep under 180 words.",
+      "- Include single strong CTA.",
+      "- Avoid 'I hope this message finds you well'.",
     ])
   elif mode == "reply":
     thread = context.get("thread") or {}
