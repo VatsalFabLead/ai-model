@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -92,6 +93,12 @@ def create_app() -> FastAPI:
   app.include_router(model_test.router)
   app.include_router(api_docs.router)
   app.include_router(chat_page.router)
+
+  @app.get("/", response_class=HTMLResponse)
+  async def root_page() -> HTMLResponse:
+    from app.api.routes.chat_page import chat_page
+    return await chat_page()
+
   app.include_router(chat.router, prefix=settings.api_prefix)
   app.include_router(nexus.router, prefix=settings.api_prefix)
   app.include_router(plagiarism_checker.router, prefix=settings.api_prefix)
