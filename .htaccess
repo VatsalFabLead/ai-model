@@ -1,5 +1,7 @@
-# Hostinger / Phusion Passenger Python App configuration
-DirectoryIndex passenger_wsgi.py
+# Hostinger Shared Hosting - Python WSGI & CGI Configuration
+
+Options +ExecCGI
+AddHandler cgi-script .py
 
 PassengerEnabled On
 PassengerAppType wsgi
