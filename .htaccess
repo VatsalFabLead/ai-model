@@ -1,0 +1,14 @@
+# Hostinger / Phusion Passenger Python App configuration
+DirectoryIndex passenger_wsgi.py
+
+PassengerEnabled On
+PassengerAppType wsgi
+PassengerStartupFile passenger_wsgi.py
+PassengerAppRoot /home/u378554361/domains/fabai.fableadtech.in/public_html
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ passenger_wsgi.py/$1 [QSA,L]
+</IfModule>
