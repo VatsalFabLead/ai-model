@@ -1,12 +1,7 @@
-# Hostinger Shared Hosting - Python WSGI & CGI Configuration
-
-Options +ExecCGI
-AddHandler cgi-script .py
-
+# Hostinger Shared Hosting - Phusion Passenger Configuration
 PassengerEnabled On
 PassengerAppType wsgi
 PassengerStartupFile passenger_wsgi.py
-PassengerAppRoot /home/u378554361/domains/fabai.fableadtech.in/public_html
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
