@@ -7,10 +7,15 @@ import sys
 import ftplib
 from pathlib import Path
 
-FTP_HOST = os.environ.get("FTP_HOST", "82.29.163.188")
-FTP_USER = os.environ.get("FTP_USER", "u378554361.fabaifptusr")
-FTP_PASS = os.environ.get("FTP_PASS", "W;0xUPg>3XL")
-FTP_PORT = int(os.environ.get("FTP_PORT", 21))
+raw_host = os.environ.get("FTP_HOST", "").strip() or "82.29.163.188"
+for prefix in ("ftp://", "ftps://", "http://", "https://"):
+    if raw_host.startswith(prefix):
+        raw_host = raw_host[len(prefix):]
+FTP_HOST = raw_host.split("/")[0].split(":")[0].strip() or "82.29.163.188"
+
+FTP_USER = os.environ.get("FTP_USER", "").strip() or "u378554361.fabaifptusr"
+FTP_PASS = os.environ.get("FTP_PASS", "").strip() or "W;0xUPg>3XL"
+FTP_PORT = int(os.environ.get("FTP_PORT", 21) or 21)
 
 EXCLUDE_DIRS = {
     ".git",
