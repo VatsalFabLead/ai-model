@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from typing import Any
@@ -102,13 +103,16 @@ async def _maybe_refine_with_llm(
     structure=structure,
   )
   try:
-    raw = await provider.chat(
-      [{"role": "user", "content": user}],
-      system_prompt=system,
-      use_rag=False,
-      skip_intent=True,
-      max_tokens=600,
-      temperature=0.45,
+    raw = await asyncio.wait_for(
+      provider.chat(
+        [{"role": "user", "content": user}],
+        system_prompt=system,
+        use_rag=False,
+        skip_intent=True,
+        max_tokens=600,
+        temperature=0.45,
+      ),
+      timeout=12.0,
     )
     refined = _clean_llm_email(raw)
     return (refined if len(refined) > 50 else draft), True
