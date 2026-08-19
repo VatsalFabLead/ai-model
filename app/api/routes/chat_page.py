@@ -18,11 +18,11 @@ _TEMPLATE = Path(__file__).resolve().parent.parent.parent / "templates" / "chat_
 async def chat_page() -> HTMLResponse:
   settings = get_settings()
   html = _TEMPLATE.read_text(encoding="utf-8")
-  body = html.format(
-    app_name=settings.app_name,
-    api_prefix=settings.api_prefix,
-    model_backend=settings.model_backend,
-    model_id=settings.model_id,
+  body = (
+    html.replace("{app_name}", str(settings.app_name))
+    .replace("{api_prefix}", str(settings.api_prefix))
+    .replace("{model_backend}", str(settings.model_backend))
+    .replace("{model_id}", str(settings.model_id))
   )
   return HTMLResponse(
     content=body,
