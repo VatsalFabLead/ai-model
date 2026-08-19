@@ -691,7 +691,13 @@ async def generate(
       kws = discovered[:5]
 
   primary = kws[0] if kws else topic
+  if len(primary.split()) > 4 and len(kws) > 1:
+    concise_cand = next((k for k in kws[1:] if 2 <= len(k.split()) <= 4), None)
+    if concise_cand:
+      primary = concise_cand
+
   kw_line = ", ".join(kws) if kws else topic
+
   audience_line = f" Target audience: {audience.strip()}." if audience else ""
   lang_line = f" Write in {language} ({lang_code})." if language else ""
   structure = seo_content_engine.category_structure_hint(cat)

@@ -557,6 +557,16 @@ def compute_eeat_score(
   }
 
 
+def _clip_clean(text: str, limit: int = 120) -> str:
+  t = re.sub(r"\s+", " ", (text or "").strip())
+  if len(t) <= limit:
+    return t
+  clipped = t[:limit]
+  if " " in clipped:
+    clipped = clipped.rsplit(" ", 1)[0]
+  return clipped.rstrip(".,;:-") + "..."
+
+
 def generate_trust_and_citation_blocks(
   article: str,
   topic: str,
@@ -568,14 +578,16 @@ def generate_trust_and_citation_blocks(
   if "## Executive Summary" in article or "## Key Takeaways" in article:
     return article
 
+  subject = primary if (primary and len(primary.split()) <= 4) else (topic.split(":")[0].split("-")[0].strip()[:35])
+
   summary_lines = [
     "> **Key Takeaways & Executive Summary**",
-    f"> - **Core Focus**: Essential guidance and key insights on **{topic}**.",
-    f"> - **Primary Takeaway**: Optimizing **{primary}** requires structured execution and data-backed decisions.",
+    f"> - **Core Focus**: Essential guidance and key insights on **{subject}**.",
+    f"> - **Primary Takeaway**: Optimizing **{subject}** requires structured execution and data-backed decisions.",
   ]
   if facts:
-    fact_text = getattr(facts[0], "text", str(facts[0]))[:120]
-    summary_lines.append(f"> - **Verified Fact**: {fact_text}...")
+    fact_text = _clip_clean(getattr(facts[0], "text", str(facts[0])), 120)
+    summary_lines.append(f"> - **Verified Fact**: {fact_text}")
 
   if sources_used:
     summary_lines.append(f"> - **Sources Consulted**: {', '.join(sources_used[:3])}.")
@@ -615,7 +627,6 @@ def generate_image_placeholders_with_alt(
     return article.replace(target, img_markdown + target, 1)
 
   return article
-
 
 
 def build_factor_table(topic: str, profile: str, seed: int) -> str:
@@ -683,6 +694,14 @@ _H3_EXPANSIONS: dict[str, list[str]] = {
 }
 
 
+_DIVE_TEMPLATES = [
+  "When implementing **{subject}**, focus on clear benchmarks, structured execution, and measurable outcomes. Compare alternatives and document requirements before scaling.",
+  "Successful execution of **{subject}** relies on continuous monitoring, team alignment, and risk management. Validate key assumptions before full rollout.",
+  "Optimizing **{subject}** requires periodic audits, data-backed decisions, and clear governance. Track performance indicators to measure true business impact.",
+  "Key considerations for **{subject}** include scalable architecture, vendor compliance, and user adoption strategies. Ensure cross-department alignment early.",
+]
+
+
 def expand_article_depth(
   article: str,
   outline: list[dict[str, str]],
@@ -697,6 +716,8 @@ def expand_article_depth(
   if _count_words(article) >= max(600, int(target_words * 0.75)):
     return _inject_semantic_entities(article, semantic_entities, locations)
 
+  subject = primary if (primary and len(primary.split()) <= 4) else (topic.split(":")[0].split("-")[0].strip()[:35])
+
   sections: list[str] = []
   blocks = re.split(r"\n(?=## )", article)
   for block in blocks:
@@ -705,6 +726,8 @@ def expand_article_depth(
     if not m:
       continue
     heading = m.group(1).strip()
+    if any(skip in heading.lower() for skip in ("table of contents", "executive summary", "key takeaways", "conclusion")):
+      continue
     h3s = _H3_EXPANSIONS.get(heading, [])
     if not h3s and "pricing" in heading.lower():
       h3s = _H3_EXPANSIONS["Pricing Factors"]
@@ -713,12 +736,12 @@ def expand_article_depth(
       extra += f"\n\n### {h3}\n\n"
       if profile in ("adult_services", "local_services"):
         extra += (
-          f"When evaluating {h3.lower()} for {topic}, confirm policies with the provider, "
+          f"When evaluating {h3.lower()} for {subject}, confirm policies with the provider, "
           "compare options, and document agreed terms for transparency."
         )
       else:
         extra += (
-          f"Break down {h3.lower()} with concrete examples tied to {primary}. "
+          f"Break down {h3.lower()} with concrete examples tied to {subject}. "
           f"Note what to measure, what to avoid, and one practical next step."
         )
       if locations and h3.lower() == "location":
@@ -727,30 +750,38 @@ def expand_article_depth(
       sections.append(extra.strip())
 
   expanded = "\n\n".join(s for s in sections if s)
-  headings = re.findall(r"^##\s+(.+)$", expanded, re.M)
+  headings = [
+    h for h in re.findall(r"^##\s+(.+)$", expanded, re.M)
+    if not any(skip in h.lower() for skip in ("table of contents", "executive summary", "conclusion", "key terms", "related guides"))
+  ]
+
+  conclusion_block = ""
+  if "## Conclusion" in expanded:
+    parts = expanded.split("## Conclusion", 1)
+    expanded = parts[0].strip()
+    conclusion_block = "\n\n## Conclusion" + parts[1]
+
   pad_idx = 0
-  while _count_words(expanded) < max(750, int(target_words * 0.8)) and pad_idx < 16:
-    h = headings[pad_idx % len(headings)] if headings else topic
-    expanded += (
-      f"\n\n### Deeper dive: {h}\n\n"
-      f"When working with **{primary}** for **{topic}**, focus on proven methods, measurable outcomes, "
-      "and continuous improvement. Document decisions, compare alternatives, and validate assumptions "
-      "with reliable references before scaling your approach."
-    )
+  while _count_words(expanded + conclusion_block) < max(750, int(target_words * 0.8)) and pad_idx < 16:
+    h = headings[pad_idx % len(headings)] if headings else subject
+    tpl = _DIVE_TEMPLATES[pad_idx % len(_DIVE_TEMPLATES)].format(subject=subject)
+    expanded += f"\n\n### Deeper dive: {h}\n\n{tpl}"
     if semantic_entities:
       ent = semantic_entities[pad_idx % len(semantic_entities)]
       expanded += f" Key concept: **{ent}**."
     pad_idx += 1
 
-  if _count_words(expanded) < max(600, target_words // 2):
+  if _count_words(expanded + conclusion_block) < max(600, target_words // 2):
     expanded += (
       f"\n\n## Additional Considerations\n\n"
-      f"Readers researching **{topic}** should also evaluate long-term value, support quality, "
-      f"and alignment with goals related to {primary}. "
+      f"Readers researching **{subject}** should also evaluate long-term value, support quality, "
+      f"and alignment with organizational goals. "
       + (f"Local context in {', '.join(locations[:3])} may affect availability and pricing. " if locations else "")
       + "Use the FAQ section for quick answers to common questions."
     )
-  return _inject_semantic_entities(expanded, semantic_entities, locations)
+
+  full_article = expanded + conclusion_block
+  return _inject_semantic_entities(full_article, semantic_entities, locations)
 
 
 def _inject_semantic_entities(

@@ -677,11 +677,17 @@ def generate_content_table(
 def _inject_table_into_article(article: str, table_md: str, heading: str = "Comparison") -> str:
   if not table_md or table_md in article:
     return article
-  m = re.search(r"^##\s+.+$", article, re.M)
-  if m:
-    pos = m.end()
-    return article[:pos] + "\n\n" + table_md + "\n" + article[pos:]
+  headings = re.finditer(r"^##\s+(.+)$", article, re.M)
+  target_pos = -1
+  for m in headings:
+    h_name = m.group(1).strip().lower()
+    if not any(skip in h_name for skip in ("table of contents", "executive summary", "key takeaways", "quick answer")):
+      target_pos = m.end()
+      break
+  if target_pos != -1:
+    return article[:target_pos] + "\n\n" + table_md + "\n" + article[target_pos:]
   return article + f"\n\n## {heading}\n\n" + table_md
+
 
 
 def _display_primary(topic: str, keywords: list[str], locations: list[str]) -> str:
