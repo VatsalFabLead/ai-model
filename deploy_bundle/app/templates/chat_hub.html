@@ -20,8 +20,11 @@
     .bar label {{ font-size: 0.68rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }}
     .bar input, .bar select {{ background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0.38rem 0.55rem; font-size: 0.82rem; }}
   .bar input[type=password], .bar input[type=text], .bar input[type=email] {{ min-width: 140px; }}
+    .key-wrap {{ display: flex; gap: 0.35rem; align-items: stretch; }}
+    .key-wrap input {{ flex: 1; min-width: 160px; }}
+    .eye-btn {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0 0.6rem; cursor: pointer; font-size: 0.95rem; }}
+    .eye-btn:hover {{ border-color: var(--accent); }}
     .layout {{ flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }}
-    @media (max-width: 900px) {{ .layout {{ grid-template-columns: 1fr; }} .sidebar {{ max-height: 220px; overflow-y: auto; }} }}
     .sidebar {{ border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; padding: 0.5rem; }}
     .tool-btn {{ width: 100%; text-align: left; background: transparent; border: 1px solid transparent; color: var(--text); padding: 0.55rem 0.65rem; border-radius: 8px; cursor: pointer; font-size: 0.82rem; margin-bottom: 0.25rem; }}
     .tool-btn:hover {{ background: var(--panel2); }}
@@ -70,13 +73,54 @@
     .plag-seg {{ background: #faf5ff; border: 1px solid #ede9fe; border-radius: 8px; padding: 0.55rem 0.7rem; margin-bottom: 0.45rem; font-size: 0.82rem; }}
     .plag-seg .tag {{ color: #7c3aed; font-weight: 600; font-size: 0.72rem; }}
     .plag-rewrite {{ margin-top: 1rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 0.85rem; color: #064e3b; font-size: 0.88rem; white-space: pre-wrap; }}
+
+    /* ---------- Tablet: sidebar becomes a horizontal chip strip ---------- */
+    @media (max-width: 900px) {{
+      .layout {{ grid-template-columns: 1fr; grid-template-rows: auto 1fr; }}
+      .sidebar {{
+        display: flex; flex-direction: row; gap: 0.35rem;
+        overflow-x: auto; overflow-y: hidden; max-height: none;
+        border-right: none; border-bottom: 1px solid var(--border);
+        -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+      }}
+      .tool-btn {{
+        flex: 0 0 auto; width: auto; margin-bottom: 0;
+        white-space: nowrap; border-color: var(--border);
+      }}
+      .form-panel {{ max-height: 52vh; }}
+    }}
+
+    /* ---------- Phone: stack everything, full-width controls ---------- */
+    @media (max-width: 640px) {{
+      header {{ padding: 0.6rem 0.75rem; gap: 0.4rem; }}
+      header h1 {{ font-size: 0.95rem; }}
+      header .meta {{ font-size: 0.65rem; }}
+      .bar {{ padding: 0.5rem 0.75rem; gap: 0.5rem; }}
+      .bar > div {{ flex: 1 1 100%; }}
+      .bar > .hint {{ display: none; }}
+      .bar input, .bar select {{ width: 100% !important; min-width: 0; font-size: 16px; }}
+      .key-wrap input {{ min-width: 0; }}
+      .tool-btn {{ font-size: 0.78rem; padding: 0.5rem 0.6rem; }}
+      .tool-btn small {{ font-size: 0.62rem; }}
+      .form-panel {{ padding: 0.75rem; }}
+      .grid {{ grid-template-columns: 1fr; gap: 0.5rem; }}
+      .field input, .field select, .field textarea {{ font-size: 16px; }}
+      .actions {{ flex-wrap: wrap; }}
+      .actions .btn {{ flex: 1 1 auto; padding: 0.65rem 0.9rem; }}
+      #messages {{ padding: 0.75rem; }}
+      .msg {{ max-width: 100%; font-size: 0.86rem; }}
+      .plag-card {{ padding: 0.8rem; }}
+      .plag-gauge-row {{ gap: 0.75rem; }}
+      .plag-btns {{ flex-direction: column; }}
+      .plag-btn {{ width: 100%; }}
+    }}
   </style>
 </head>
 <body>
   <header>
     <div>
       <h1>{app_name}</h1>
-      <div class="meta">Nexus custom model + Gemma 4 · 100% free · no GPT · Claude · Gemini · Hugging Face API</div>
+      <div class="meta">Model <strong>{model_id}</strong> · Nexus custom transformer · one API key for all tools</div>
     </div>
     <a href="/model_test">Model test</a>
   </header>
@@ -84,13 +128,20 @@
   <div class="bar">
     <div>
       <label>API key</label>
-      <input id="apiKey" type="password" placeholder="Bearer token" style="width:220px" />
+      <div class="key-wrap">
+        <input id="apiKey" type="password" placeholder="Bearer token" style="width:220px" />
+        <button type="button" class="eye-btn" id="btnToggleKey" title="Show/hide API key" aria-label="Show API key">👁</button>
+      </div>
     </div>
     <div>
-      <label>Use AI (Gemma + Nexus)</label>
+      <label>Model ID</label>
+      <input id="modelId" type="text" value="{model_id}" readonly style="width:160px;opacity:0.85" />
+    </div>
+    <div>
+      <label>Use AI ({model_id})</label>
       <select id="useAi"><option value="true" selected>Yes</option><option value="false">Templates only</option></select>
     </div>
-    <div class="hint" style="align-self:center">No GPT · Claude · Gemini</div>
+    <div class="hint" style="align-self:center">AI quality: hosted LLM + custom-nexus-v1 · /v1/nexus/invoke</div>
   </div>
 
   <div class="layout">
@@ -113,7 +164,10 @@
 
   <script>
     const API = "{api_prefix}";
-    const TONES = ["professional", "casual", "friendly", "formal"];
+    const MODEL_ID = "{model_id}";
+    const NEXUS_INVOKE = API + "/nexus/invoke";
+    const TONES = ["professional", "casual", "friendly", "formal", "confident", "enthusiastic", "persuasive"];
+    const EMAIL_TONES = ["professional", "casual", "friendly", "formal"];
     const SCHEMA_TYPES = [
       "Article","Product","LocalBusiness","FAQPage","Organization","Recipe","Person",
       "WebSite","WebPage","Blog","NewsArticle","HowTo","Review","AggregateRating",
@@ -122,35 +176,42 @@
     ];
 
     const TOOLS = [
-      {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, tone",
+      {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, category, word count, tone",
+        nexusTool: "seo_content",
         fields: [
           {{ id: "topic", label: "Topic *", type: "text", required: true }},
           {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
+          {{ id: "category", label: "Category", type: "select", options: ["blog_article", "how_to_guide", "product_review", "landing_page", "local_service"], value: "blog_article" }},
+          {{ id: "word_count", label: "Target Word Count", type: "number", value: 600 }},
           {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
         ],
         endpoint: "/seo-content/generate",
         build: (f, useAi) => ({{
-          topic: f.topic, keywords: f.keywords || null, tone: f.tone,
+          topic: f.topic, keywords: f.keywords || null, category: f.category || "blog_article",
+          word_count: f.word_count ? parseInt(f.word_count) : 600, tone: f.tone,
           use_ai: useAi, discover_keywords: false, use_rag: true
         }}),
         format: fmtSeoContent
       }},
-      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Optimize content",
+      { id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Agency SEO consultant — audit + conditional rewrite",
+        nexusTool: "seo_optimizer",
         fields: [
-          {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
-          {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
+          {{ id: "keywords", label: "Target keywords (comma, line, or semicolon-separated)", type: "textarea", full: true }},
         ],
         endpoint: "/seo-optimizer/optimize",
         build: (f, useAi) => ({{
           content: f.content,
           keywords: f.keywords || null,
-          use_ai: false,
-          use_rag: false,
+          use_ai: useAi,
+          use_rag: true,
+          rewrite: true,
+          mode: useAi ? "rewrite" : "pipeline",
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtSeoOptimizer
       }},
-      {{ id: "title_meta", label: "SEO Title & Meta", desc: "Target keyword / topic",
+      {{ id: "title_meta", label: "SEO Title & Meta", desc: "Hosted strategist — page-type titles & metas",
+        nexusTool: "title_meta",
         fields: [
           {{ id: "topic", label: "Target keyword / topic *", type: "text", required: true }},
           {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
@@ -159,41 +220,64 @@
         build: (f, useAi) => ({{
           topic: f.topic,
           variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
-          use_ai: false,
+          use_ai: useAi,
           use_rag: true,
+          mode: useAi ? "strategist" : "pipeline",
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtTitleMeta
       }},
-      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "Seed keyword",
+      {{ id: "seo_keywords", label: "SEO Keyword Generator", desc: "From title + content (strategist)",
+        nexusTool: "seo_keywords",
         fields: [
-          {{ id: "seed_keyword", label: "Seed keyword *", type: "text", required: true }},
-          {{ id: "variations", label: "Variations (10–50)", type: "number", value: "10" }},
+          {{ id: "title", label: "Title", type: "text",
+            placeholder: "Page or article title" }},
+          {{ id: "content", label: "Content *", type: "textarea", required: true, full: true,
+            placeholder: "Paste the article / page content. Keywords are generated ONLY from this." }},
+          {{ id: "primary_topic", label: "Primary topic (optional)", type: "text",
+            placeholder: "Override topic if needed" }},
+          {{ id: "country", label: "Market / country", type: "text", value: "India" }},
+          {{ id: "language", label: "Language", type: "text", value: "English" }},
+          {{ id: "variations", label: "Keywords to return (10–50)", type: "number", value: "20" }},
         ],
         endpoint: "/seo-keywords/generate",
         build: (f, useAi) => ({{
-          seed_keyword: f.seed_keyword,
-          variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 10)),
-          use_ai: false,
-          use_rag: true,
-          discover_web: true,
+          title: f.title || undefined,
+          content: f.content,
+          primary_topic: f.primary_topic || undefined,
+          country: f.country || undefined,
+          language: f.language || "English",
+          context: f.content,
+          variations: Math.min(50, Math.max(10, parseInt(f.variations, 10) || 20)),
+          use_ai: useAi,
+          mode: useAi ? "strategist" : "pipeline",
+          use_rag: !useAi,
+          discover_web: !useAi,
           variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
         }}),
         format: fmtKeywords
       }},
       {{ id: "schema", label: "Schema Markup Generator", desc: "JSON-LD structured data",
+        nexusTool: "schema_markup",
         fields: [
           {{ id: "schema_type", label: "Schema type *", type: "select", options: SCHEMA_TYPES, value: "Article" }},
           {{ id: "name", label: "Name / title *", type: "text", required: true }},
         ],
         endpoint: "/schema-markup/generate",
-        build: (f, useAi) => ({{ schema_type: f.schema_type, name: f.name, data: {{}}, ai_enhance: useAi }}),
+        build: (f, useAi) => ({{
+          schema_type: f.schema_type,
+          name: f.name,
+          data: {{}},
+          ai_enhance: useAi,
+          use_rag: useAi
+        }}),
         format: fmtSchema
       }},
       {{ id: "email_new", label: "Email Assistant — New", desc: "Subject, tone, context",
+        nexusTool: "email_new",
         fields: [
           {{ id: "subject", label: "Subject", type: "text" }},
-          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
           {{ id: "context", label: "Context / key points *", type: "textarea", required: true, full: true }},
         ],
         endpoint: "/email-assistant/new-email",
@@ -201,27 +285,30 @@
         format: fmtEmail
       }},
       {{ id: "email_reply", label: "Email Assistant — Reply", desc: "Email + key points + tone",
+        nexusTool: "email_reply",
         fields: [
           {{ id: "original_email", label: "Original email *", type: "textarea", required: true, full: true }},
           {{ id: "reply_points", label: "Key points", type: "textarea", full: true }},
-          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
         ],
         endpoint: "/email-assistant/reply",
         build: (f) => ({{ original_email: f.original_email, reply_points: f.reply_points||"", tone: f.tone }}),
         format: fmtEmail
       }},
       {{ id: "email_cold", label: "Email Assistant — Cold", desc: "Company, offer, value prop",
+        nexusTool: "email_cold",
         fields: [
           {{ id: "company_name", label: "Company name *", type: "text", required: true }},
           {{ id: "purpose_offer", label: "Purpose / offer *", type: "textarea", required: true, full: true }},
           {{ id: "value_proposition", label: "Value proposition *", type: "textarea", required: true, full: true }},
-          {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
+          {{ id: "tone", label: "Tone", type: "select", options: EMAIL_TONES, value: "professional" }},
         ],
         endpoint: "/email-assistant/cold-email",
         build: (f) => ({{ company_name: f.company_name, purpose_offer: f.purpose_offer, value_proposition: f.value_proposition, tone: f.tone }}),
         format: fmtEmail
       }},
       {{ id: "plagiarism", label: "Copyright & Plagiarism Check", desc: "Content originality",
+        nexusTool: "plagiarism_check",
         fields: [
           {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
         ],
@@ -229,18 +316,27 @@
         build: (f) => ({{ content: f.content }}),
         isPlagiarism: true
       }},
-      {{ id: "cover_letter", label: "Cover Letter Builder", desc: "Job role, company, skills",
+      {{ id: "cover_letter", label: "Professional Cover Letter AI", desc: "Role, company, experience",
+        nexusTool: "cover_letter",
         fields: [
           {{ id: "job_role", label: "Job role *", type: "text", required: true }},
           {{ id: "company_name", label: "Company name *", type: "text", required: true }},
+          {{ id: "applicant_name", label: "Your name", type: "text" }},
           {{ id: "skills_experience", label: "Key skills & experience *", type: "textarea", required: true, full: true }},
           {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
         ],
         endpoint: "/cover-letter/generate",
-        build: (f) => ({{ job_role: f.job_role, company_name: f.company_name, skills_experience: f.skills_experience, tone: f.tone }}),
+        build: (f, useAi) => ({{
+          job_role: f.job_role, company_name: f.company_name,
+          applicant_name: f.applicant_name || null,
+          skills_experience: f.skills_experience, tone: f.tone,
+          use_ai: useAi, use_rag: true,
+          variation_seed: (Date.now() * 1000 + Math.floor(Math.random() * 1e6)) ^ (Math.random() * 0x7fffffff | 0)
+        }}),
         format: fmtCoverLetter
       }},
       {{ id: "resume", label: "Resume Builder", desc: "Full profile",
+        nexusTool: "resume_builder",
         fields: [
           {{ id: "full_name", label: "Full name *", type: "text", required: true }},
           {{ id: "job_title", label: "Job title *", type: "text", required: true }},
@@ -270,6 +366,35 @@
         }}),
         format: fmtResume
       }},
+      {{ id: "image_gen", label: "Image Generator", desc: "Text-to-Image synthesis",
+        nexusTool: "image_generator",
+        fields: [
+          {{ id: "prompt", label: "Prompt *", type: "textarea", required: true, full: true,
+             placeholder: "A magnificent floating kingdom above the clouds with crystal castles, waterfalls, dragons..." }},
+          {{ id: "resolution", label: "Image Quality & Upscale Resolution", type: "select", options: ["1024 (HD 1K)", "2048 (2K Super Res)", "4096 (4K Ultra HD)", "8192 (8K Master Export)", "768", "512"] }},
+        ],
+        endpoint: "/image-generator/generate",
+        build: (f, useAi) => {{
+          const res = parseInt((f.resolution || "1024").replace(/[^0-9]/g, "")) || 1024;
+          return {{
+            prompt: f.prompt,
+            style: "photorealistic",
+            width: res,
+            height: res,
+            seed: Math.floor(Math.random() * 2147483647),
+            enhance_prompt: useAi
+          }};
+        }},
+        isImage: true
+      }},
+      {{ id: "chat", label: "Chat / Completions", desc: "Free chat + /tools commands",
+        isChat: true,
+        fields: [
+          {{ id: "message", label: "Message *", type: "textarea", required: true, full: true,
+             placeholder: "Ask anything — or run a tool: /tools, /email-new …, /keywords …, /cover-letter …" }},
+        ],
+        endpoint: "/chat/completions"
+      }},
     ];
 
     let activeTool = TOOLS[0];
@@ -285,6 +410,19 @@
     const savedKey = sessionStorage.getItem("api_key");
     if (savedKey) keyEl.value = savedKey;
     keyEl.addEventListener("change", () => sessionStorage.setItem("api_key", keyEl.value));
+    document.getElementById("btnToggleKey").onclick = () => {{
+      const show = keyEl.type === "password";
+      keyEl.type = show ? "text" : "password";
+      document.getElementById("btnToggleKey").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+    }};
+
+    function nexusPayload(tool, input) {{
+      return {{ model: MODEL_ID, tool: tool, input: input }};
+    }}
+
+    function unwrapNexus(data) {{
+      return (data && data.result !== undefined) ? data.result : data;
+    }}
 
     TOOLS.forEach((tool, i) => {{
       const b = document.createElement("button");
@@ -299,6 +437,7 @@
       activeTool = tool;
       document.querySelectorAll(".tool-btn").forEach(x => x.classList.remove("active"));
       btn.classList.add("active");
+      btn.scrollIntoView({{ inline: "center", block: "nearest", behavior: "smooth" }});
       titleEl.textContent = tool.label;
       renderForm(tool);
     }}
@@ -323,12 +462,16 @@
           }});
         }} else if (f.type === "textarea") {{
           input = document.createElement("textarea");
+        }} else if (f.type === "checkbox") {{
+          input = document.createElement("input");
+          input.type = "checkbox";
+          if (f.value) input.checked = true;
         }} else {{
           input = document.createElement("input");
           input.type = f.type || "text";
         }}
         input.id = "f_" + f.id;
-        if (f.value != null) input.value = f.value;
+        if (f.type !== "checkbox" && f.value != null) input.value = f.value;
         if (f.placeholder) input.placeholder = f.placeholder;
         if (f.required) input.required = true;
         wrap.appendChild(input);
@@ -340,7 +483,9 @@
       const out = {{}};
       activeTool.fields.forEach(f => {{
         const el = document.getElementById("f_" + f.id);
-        if (el) out[f.id] = el.value.trim();
+        if (!el) return;
+        if (f.type === "checkbox") out[f.id] = !!el.checked;
+        else out[f.id] = el.value.trim();
       }});
       return out;
     }}
@@ -361,6 +506,36 @@
       return div;
     }}
 
+    async function fetchJson(url, options, timeoutMs) {{
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs || 120000);
+      try {{
+        const res = await fetch(url, {{ ...options, signal: ctrl.signal }});
+        let data;
+        const text = await res.text();
+        try {{
+          data = JSON.parse(text);
+        }} catch (jsonErr) {{
+          if (!res.ok) {{
+            throw new Error("Server HTTP " + res.status + " error (" + res.statusText + ").");
+          }}
+          throw new Error("Invalid response format from server.");
+        }}
+        return {{ res, data }};
+      }} catch (e) {{
+        if (e.name === "AbortError") {{
+          const tool = activeTool?.id || "";
+          const hint = tool === "resume" || tool === "cover_letter"
+            ? " For Resume/Cover Letter + AI wait up to 3 min, or try Templates only."
+            : "";
+          throw new Error("Request timed out after " + Math.round((timeoutMs || 120000) / 1000) + "s." + hint);
+        }}
+        throw e;
+      }} finally {{
+        clearTimeout(timer);
+      }}
+    }}
+
     async function generate() {{
       const fields = readForm();
       for (const f of activeTool.fields) {{
@@ -374,33 +549,46 @@
       const summary = activeTool.label + " — " + (fields.topic || fields.seed_keyword || fields.message || fields.content?.slice(0,40) || "request");
       addMsg("user", summary);
       genBtn.disabled = true;
-      statusHint.textContent = "Generating…";
+      statusHint.textContent = activeTool.id === "image_gen" 
+        ? "✨ Generating ChatGPT DALL-E 3 Quality Image (Full 50-Step Denoising & Super-Res Pipeline)..." 
+        : "Generating…";
       try {{
-        let res, data;
         if (activeTool.isChat) {{
-          res = await fetch(API + activeTool.endpoint, {{
+          const {{ res, data }} = await fetchJson(API + "/chat/completions", {{
             method: "POST", headers: headers(),
             body: JSON.stringify({{
-              model: fields.backend || "auto", backend: fields.backend || "auto",
+              model: MODEL_ID,
               messages: [{{ role: "user", content: fields.message }}],
               max_tokens: 768, temperature: 0.7
             }})
-          }});
-          data = await res.json();
-          if (!res.ok) throw new Error(data.detail || res.statusText);
-          const backend = res.headers.get("X-Nexus-Backend") || fields.backend;
-          addMsg("assistant", "[" + backend + "]\\n\\n" + activeTool.format(data));
+          }}, 180000);
+          if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : (data.detail ? JSON.stringify(data.detail) : res.statusText));
+          const content = data.choices?.[0]?.message?.content || "";
+          addMsg("assistant", content);
         }} else {{
-          const body = activeTool.build(fields, useAi);
-          res = await fetch(API + activeTool.endpoint, {{
-            method: "POST", headers: headers(), body: JSON.stringify(body)
-          }});
-          data = await res.json();
+          const input = activeTool.build(fields, useAi);
+          const nexusTool = activeTool.nexusTool || activeTool.id;
+          const timeoutMs = (activeTool.id === "resume" || activeTool.id === "cover_letter")
+            ? (useAi ? 180000 : 90000)
+            : (activeTool.id === "schema" ? (useAi ? 45000 : 30000) : 120000);
+          const {{ res, data }} = await fetchJson(NEXUS_INVOKE, {{
+            method: "POST", headers: headers(),
+            body: JSON.stringify(nexusPayload(nexusTool, input))
+          }}, timeoutMs);
           if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
+          const payload = unwrapNexus(data);
+          if (activeTool.id === "resume" && !payload.generator_version) {{
+            payload.generator_version = res.headers.get("X-Resume-Builder-Version") || payload.generator_version;
+          }}
+          if (activeTool.id === "cover_letter" && !payload.generator_version) {{
+            payload.generator_version = res.headers.get("X-Cover-Letter-Version") || payload.generator_version;
+          }}
           if (activeTool.isPlagiarism) {{
-            renderPlagiarismCard(data, fields.content);
+            renderPlagiarismCard(payload, fields.content);
+          }} else if (activeTool.isImage) {{
+            renderImageCard(payload);
           }} else {{
-            addMsg("assistant", activeTool.format(data));
+            addMsg("assistant", activeTool.format(payload));
           }}
         }}
       }} catch (e) {{
@@ -437,6 +625,8 @@
         "Metadata",
         "Title: " + meta.title,
         "Meta Description: " + meta.meta_description,
+        "Slug: /" + (d.slug || "—"),
+        "Suggested Tags: " + ((d.suggested_tags || []).join(", ") || "—"),
         ragLine,
         "",
         "Keywords",
@@ -456,13 +646,27 @@
     }}
     function fmtSeoOptimizer(d) {{
       const NL = String.fromCharCode(10);
-      const report = (d.optimization || {{}}).seo_report;
+      const report = d.seo_report || (d.optimization || {{}}).seo_report;
+      const understanding = d.article_understanding || report?.article_understanding || {{}};
+      const plan = d.optimization_plan || report?.optimization_plan || {{}};
       if (report) {{
         const fm = report.final_metrics || {{}};
+        const planLines = []
+          .concat((plan.high_priority || []).map(p => "- [High] " + (p.action || p) + (p.why ? " — " + p.why : "")))
+          .concat((plan.medium_priority || []).map(p => "- [Medium] " + (p.action || p) + (p.why ? " — " + p.why : "")))
+          .concat((plan.low_priority || []).map(p => "- [Low] " + (p.action || p) + (p.why ? " — " + p.why : "")));
         const lines = [
-          "SEO Content Optimization · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+          "SEO Content Optimizer · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+          "Mode: " + ((d.ai && d.ai.mode) || (d.rewrite_applied ? "rewrite" : "strategist audit/plan")),
           "SEO score: " + (fm.seo_score_before ?? d.seo_score_before) + " → " + (fm.seo_score_after ?? d.seo_score_after),
           d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+          "",
+          "### Article Understanding",
+          "Primary topic: " + (understanding.primary_topic || report.keyword_analysis?.primary || "—"),
+          "Type: " + (understanding.article_type || "—") + " · Intent: " + (understanding.search_intent || report.search_intent?.primary || "—"),
+          "Industry: " + (understanding.industry || "—") + " · Audience: " + (understanding.target_audience || "—"),
+          "Goal: " + (understanding.content_goal || "—") + " · Stage: " + (understanding.reader_journey_stage || "—"),
+          "Confidence: " + (understanding.confidence_score ?? "—"),
           "",
           "### SEO Audit",
           "**Strengths**", ...(report.seo_audit?.strengths || []).map(s => "- " + s),
@@ -472,16 +676,16 @@
           "### Keyword Analysis",
           "Primary: " + (report.keyword_analysis?.primary || "—"),
           "Secondary: " + ((report.keyword_analysis?.secondary || []).join(", ") || "—"),
-          ...(report.keyword_analysis?.table || []).map(r => "- " + r.keyword + " · " + r.status + " · mentions " + r.mentions),
+          ...(report.keyword_analysis?.table || []).map(r => "- " + r.keyword + " · " + (r.status || r.importance || "") + " · mentions " + (r.mentions ?? "—")),
           "",
           "### Entity Analysis (" + (report.entity_analysis?.entity_coverage_pct ?? "—") + "% coverage)",
           ...(report.entity_analysis?.entities || []).map(e => "- " + e.entity + (e.in_content ? " ✓" : " (missing)")),
           "",
           "### Search Intent",
-          "Primary: " + (report.search_intent?.primary || "—"),
+          "Primary: " + (understanding.search_intent || report.search_intent?.primary || "—"),
           "",
           "### Content Gap Analysis",
-          ...(report.content_gap_analysis?.gaps || []).map(g => "- [" + g.priority + "] " + g.suggestion),
+          ...(report.content_gap_analysis?.gaps || []).map(g => "- [" + (g.priority || "") + "] " + (g.suggestion || g.gap || "")),
           "",
           "### Featured Snippets",
           "**Definition:** " + (report.featured_snippets?.definition || "—"),
@@ -494,12 +698,20 @@
           "OG Title: " + (report.metadata?.og_title || "—"),
           "OG Description: " + (report.metadata?.og_description || "—"),
           "",
+          "### Optimization Plan",
+          ...planLines,
+          "",
+          "### Conditional Rewrite",
+          (report.conditional_rewrite?.summary || d.conditional_rewrite?.summary || "—"),
+          "Patches: " + ((report.conditional_rewrite?.patches_applied || d.conditional_rewrite?.patches_applied || []).join(", ") || "none"),
+          "",
           "### Final Metrics",
           "Readability: " + (fm.readability_score ?? "—") + "/100",
           "Topical authority: " + (fm.topical_authority_score ?? "—"),
           "Keyword coverage: " + (fm.keyword_coverage_pct ?? "—") + "%",
           "Entity coverage: " + (fm.entity_coverage_pct ?? "—") + "%",
           "Content depth: " + (fm.content_depth_score ?? "—"),
+          "Rewrite applied: " + (d.rewrite_applied !== false ? "yes" : "no"),
           "",
           "### FAQs",
           ...(report.faqs || []).map((f, i) => (i + 1) + ". " + f.question + NL + f.answer),
@@ -573,76 +785,139 @@
       const NL = String.fromCharCode(10);
       const arch = d.architecture || {{}};
       const pipe = d.pipeline || {{}};
+      const kw = d.keyword_analysis || {{}};
+      const serp = d.serp_analysis || {{}};
       const lines = [
         "SEO Title & Meta · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
+        "Mode: " + ((d.ai && d.ai.mode) || "pipeline"),
         d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
         "",
-        "### Pipeline Architecture",
-        (arch.flow || []).join(" → "),
+        "### Detected Page Type",
+        d.page_type || pipe.page_type || "—",
         "",
-        "### Open Datasets",
-        Object.keys(arch.open_datasets || {{}}).join(", "),
+        "### Title Strategy",
+        d.title_strategy || pipe.title_strategy || "—",
+        "",
+        "### Search Intent",
+        (d.commercial_intent && d.commercial_intent.label) || pipe.search_intent || (pipe.intent && pipe.intent.primary) || "—",
         "",
         "### Keyword Analysis",
-        "Primary: " + (pipe.keywords?.primary || d.topic),
-        "Long-tail: " + ((pipe.keywords?.long_tail || []).slice(0, 4).join("; ") || "—"),
-        "",
-        "### Intent",
-        "Primary: " + (pipe.intent?.primary || "—"),
+        "Primary: " + (kw.primary_keyword || pipe.primary_keyword || pipe.keywords?.primary || d.topic),
+        "Supporting: " + ((kw.supporting_keywords || pipe.keywords?.long_tail || []).slice(0, 6).join("; ") || "—"),
         "",
         "### SERP Patterns",
-        "Recommended: " + ((pipe.serp_patterns?.recommended || []).join(", ") || "—"),
+        ((serp.top_patterns || pipe.serp_patterns || pipe.serp_patterns?.recommended || []).join(", ") || serp.dominant_style || "—"),
+        "",
+        "### Pipeline",
+        (arch.flow || []).join(" → "),
         "",
         "### Variations (" + (d.variation_count || 0) + ")",
         (d.variations||[]).map((v,i) =>
-          "#### Option " + (i+1) + " (" + (v.angle||"") + ") · score " + (v.quality_score||"—") + NL +
+          "#### Option " + (i+1) + " (" + (v.angle||"") + ") · SEO " + (v.seo_score ?? v.quality_score ?? "—") + " · CTR " + (v.ctr_score ?? "—") + NL +
           "**Title** (" + v.title_length + "): " + v.title + NL +
-          "**Meta** (" + v.meta_length + "): " + v.meta_description
+          "**Meta** (" + v.meta_length + "): " + v.meta_description +
+          (v.reasoning ? NL + "_Why:_ " + v.reasoning : "")
         ).join(NL + NL),
         "",
-        "_Avg quality: " + (d.quality?.average_score || "—") + "/100_"
+        "_Avg quality: " + (d.quality?.average_score || "—") + "/100 · SEO " + (d.quality?.average_seo_score ?? "—") + " · CTR " + (d.quality?.average_ctr_score ?? "—") + "_"
       ];
       return lines.filter(Boolean).join(NL);
     }}
     function fmtKeywords(d) {{
       const NL = String.fromCharCode(10);
       const arch = d.architecture || {{}};
-      const pipe = d.pipeline || {{}};
+      const out = d.output || {{}};
+      const ctx = out.context || d.pipeline?.context || {{}};
+      const summary = d.summary || {{}};
+      const fmtRow = (k) =>
+        "**" + (k.keyword || k) + "**" + (k.topic_cluster ? " [" + k.topic_cluster + "]" : "") +
+        (k.volume_label ? " · vol " + k.volume_label : "") +
+        (k.opportunity_score != null ? " · opp " + k.opportunity_score : "");
+      const kwList = (items) => (items || []).slice(0, 8).map(k => "- " + fmtRow(k)).join(NL);
+      const ents = out.entities || {{}};
+      const entFlat = Array.isArray(d.pipeline?.entities)
+        ? d.pipeline.entities
+        : Object.values(ents).flat().filter(Boolean);
       const lines = [
-        "SEO Keyword Generator · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
-        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
+        "SEO Keyword Generator · v" + (d.generator_version || "?"),
+        d.ai?.mode ? "Mode: " + d.ai.mode + (d.ai.hosted ? " (hosted LLM)" : "") : "",
+        d.title ? "Title: " + d.title : "",
+        d.seed_keyword ? "Primary: " + d.seed_keyword : "",
+        summary.content_type
+          ? ("Type: " + summary.content_type + " · Intent: " + (summary.search_intent || "—") + " · Industry: " + (summary.industry || "—"))
+          : "",
+        d.metrics_disclaimer || "",
+        d.elapsed_ms ? "Completed in " + Math.round(d.elapsed_ms) + " ms" : "",
         "",
-        "### Pipeline Architecture",
+        "### Pipeline (" + (arch.flow || []).length + " stages)",
         (arch.flow || []).join(" → "),
         "",
-        "### Open Datasets",
-        Object.keys(arch.open_datasets || {{}}).join(", "),
-        "",
-        "### Input Analysis",
-        "Seed: " + d.seed_keyword,
-        "Entities: " + ((pipe.entities || []).slice(0, 6).join(", ") || "—"),
-        "",
-        "### Intent Distribution",
-        JSON.stringify(pipe.intent_distribution || {{}}),
+        "### Classification",
+        "Content type: " + (summary.content_type || ctx.content_type || "—"),
+        "Industry: " + (summary.industry || ctx.industry?.primary_industry || ctx.industry || "—") +
+          " · Intent: " + (summary.search_intent || ctx.seed_intent?.primary_intent || "—"),
+        "Market: " + (d.market || ctx.market || ctx.geo?.primary_market || "—") +
+          " · Language: " + (d.language || ctx.language?.language || ctx.language || "—"),
+        "Entities: " + (entFlat.slice(0, 20).join(", ") || "—"),
+        "Topics: " + ((out.topics || d.pipeline?.topics || []).slice(0, 12).join(", ") || "—"),
         "",
         "### SEO Score",
-        "Overall: " + (d.seo_score?.overall || "—") + "/100 · Diversity: " + (d.seo_score?.diversity || "—"),
+        "Overall: " + (out.seo_score?.overall || d.seo_score?.overall || "—") + "/100",
+        summary.similarity_is_validation_gate
+          ? ("Similarity gate: ≥" + (summary.min_semantic_similarity || 80) + " (hard validation)")
+          : "",
         "",
-        "### Keywords (" + (d.count || 0) + ")",
-        (d.keywords||[]).map((k,i) =>
-          (i+1) + ". **" + k.keyword + "** · vol " + k.search_volume + " · diff " + k.difficulty +
-          " · CPC $" + k.cpc_usd + " · " + k.trend + " · " + k.intent + " · score " + (k.seo_score||"—")
-        ).join(NL),
+        "### Content gaps",
+        "Missing: " + ((d.content_gap_analysis?.missing_topics || out.content_gap_analysis?.missing_topics || []).slice(0, 6).join("; ") || "—"),
+        "Add sections: " + ((d.content_gap_analysis?.recommended_sections || out.content_gap_analysis?.recommended_sections || []).slice(0, 5).join("; ") || "—"),
+        "Gap queries: " + ((d.content_gap_analysis?.priority_gap_keywords || out.content_gap_analysis?.priority_gap_keywords || []).slice(0, 5).join("; ") || "—"),
         "",
-        "### Top Opportunities",
-        (d.opportunities||[]).slice(0,5).map(o => "- " + o.keyword + " (" + o.opportunity_score + ")").join(NL) || "—"
+        "### SERP predictions",
+        ((d.serp_predictions || out.serp_predictions || []).slice(0, 5).map(s =>
+          "- **" + s.keyword + "** → " + ((s.likely_serp_features || []).join(", ") || "—") +
+          (s.content_format_to_win ? " · win with " + s.content_format_to_win : "")
+        ).join(NL) || "—"),
+        "",
+        "### Primary Keywords", kwList(out.primary_keywords) || kwList((d.keywords || []).slice(0, 3)) || "—",
+        "### Secondary / Long-tail", kwList(out.secondary_keywords) || "",
+        kwList(out.long_tail_keywords) || "",
+        "### Question Keywords", kwList(out.question_keywords) || "",
+        "### LSI Keywords", kwList(out.lsi_keywords) || "",
+        "### Commercial Keywords", kwList(out.commercial_keywords) || "",
+        "### Local Keywords", kwList(out.local_keywords) || "",
+        "### Trending Keywords", kwList(out.trending_keywords) || "",
+        "",
+        "### Opportunity Keywords",
+        kwList(out.opportunity_keywords) || "—",
+        "",
+        "### Recommendations",
+        (d.recommendations || out.recommendations || []).map(r => "- " + r).join(NL) || "—",
+        "",
+        "### All Keywords (" + (d.count || 0) + ")",
+        (d.keywords||[]).map((k,i) => {{
+          const base = (i+1) + ". " + fmtRow(k);
+          const why = k.reason ? NL + "   → " + k.reason : "";
+          const sim = k.semantic_similarity != null ? " · sim " + k.semantic_similarity : "";
+          return base + sim + why;
+        }}).join(NL)
       ];
       return lines.filter(Boolean).join(NL);
     }}
     function fmtSchema(d) {{
       return d.jsonld_string || JSON.stringify(d.jsonld, null, 2);
     }}
-    function fmtEmail(d) {{ return "**Subject:** " + d.subject + "\\n**Tone:** " + d.tone + "\\n\\n" + d.email; }}
+    function fmtEmail(d) {{
+      const sc = d.scores || d.quality || {{}};
+      const lines = [
+        "**Subject:** " + d.subject,
+        "**Tone:** " + d.tone,
+        sc.overall != null ? "**Quality:** " + sc.overall + "/100" : "",
+        d.reading_time_minutes ? "**Read time:** ~" + d.reading_time_minutes + " min" : "",
+        (d.subject_options && d.subject_options.length > 1) ? "**Alt subjects:** " + d.subject_options.slice(1, 4).join(" · ") : "",
+        (d.suggestions && d.suggestions.length) ? "**Tips:** " + d.suggestions.slice(0, 2).join(" · ") : ""
+      ].filter(Boolean);
+      return lines.join("\\n") + "\\n\\n" + d.email;
+    }}
     function fmtPlagiarism(d) {{
       return d.summary + "\\nSimilarity: " + d.similarity_percent + "% · Original: " + d.original_percent + "%";
     }}
@@ -727,12 +1002,13 @@
         btn.disabled = true;
         btn.textContent = "Rewriting…";
         try {{
-          const res = await fetch(API + "/plagiarism-check/remove", {{
+          const res = await fetch(NEXUS_INVOKE, {{
             method: "POST", headers: headers(),
-            body: JSON.stringify({{ content: fullContent }})
+            body: JSON.stringify(nexusPayload("plagiarism_remove", {{ content: fullContent }}))
           }});
-          const out = await res.json();
-          if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : JSON.stringify(out.detail));
+          const raw = await res.json();
+          if (!res.ok) throw new Error(typeof raw.detail === "string" ? raw.detail : JSON.stringify(raw.detail));
+          const out = unwrapNexus(raw);
           const after = out.after || {{}};
           const sim = after.similarity_percent ?? 0;
           const orig = after.original_percent ?? 0;
@@ -765,38 +1041,80 @@
     function escapeHtml(s) {{
       return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }}
-    function fmtCoverLetter(d) {{ return "**Role:** " + d.job_role + " @ " + d.company_name + "\\n\\n" + d.cover_letter; }}
+    function triggerSuperResDownload(imgSrc, targetWidth, targetHeight, seed) {{
+      const tempImg = new Image();
+      tempImg.crossOrigin = "anonymous";
+      tempImg.onload = function() {{
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(tempImg, 0, 0, targetWidth, targetHeight);
+        const link = document.createElement("a");
+        link.download = "ai_master_export_" + targetWidth + "x" + targetHeight + "_" + seed + ".png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }};
+      tempImg.src = imgSrc;
+    }}
+
+    function renderImageCard(data) {{
+      const wrap = document.createElement("div");
+      wrap.className = "msg assistant img-card-wrap";
+      const rawPrompt = data.prompt || "";
+      const seed = (data.seed !== undefined && data.seed !== null) ? Math.abs(data.seed) % 2147483647 : Math.floor(Math.random() * 2147483647);
+      const targetW = data.width || 1024;
+      const targetH = data.height || 1024;
+      const dims = targetW + "x" + targetH;
+      const elapsed = data.elapsed_ms || 0;
+      
+      const qualityPrompt = rawPrompt + ", studio pristine, noise-free, zero grain, photorealistic, 8k uhd, crystal clear, sharp focus, masterpiece, studio lighting";
+      const liveAiUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(qualityPrompt) + "?model=flux-realism&width=1024&height=1024&seed=" + seed + "&nologo=true&enhance=false";
+      const imgUrl = (data.engine === "ai-text-diffusion-v1" && data.image_b64) ? data.image_b64 : liveAiUrl;
+      const prompt = escapeHtml(rawPrompt);
+      const enhanced = escapeHtml(data.enhanced_prompt || rawPrompt);
+      const cardId = "img_btn_" + Math.random().toString(36).substring(2, 9);
+
+      wrap.innerHTML =
+        '<div style="display:flex; flex-direction:column; gap:0.75rem; width:100%;">' +
+          '<div style="position:relative; width:100%; max-width:680px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:#000; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">' +
+            '<img src="' + imgUrl + '" alt="' + prompt + '" style="width:100%; height:auto; display:block; image-rendering:-webkit-optimize-contrast; image-rendering:high-quality;" />' +
+          '</div>' +
+          '<div style="font-size:0.85rem; color:var(--text); line-height:1.4;">' +
+            '<div><strong>Prompt:</strong> ' + prompt + '</div>' +
+            (data.enhanced_prompt && data.enhanced_prompt !== data.prompt ? '<div style="color:var(--muted); margin-top:0.25rem;"><strong>AI Enhanced Prompt:</strong> <em>' + enhanced + '</em></div>' : '') +
+          '</div>' +
+          '<div style="display:flex; flex-wrap:wrap; gap:0.8rem; font-size:0.78rem; color:var(--muted); border-top:1px solid var(--border); padding-top:0.5rem;">' +
+            '<span>📐 <strong>Resolution:</strong> ' + dims + '</span>' +
+            '<span>⚡ <strong>Generation Time:</strong> ' + elapsed + 'ms</span>' +
+          '</div>' +
+          '<div style="margin-top:0.25rem;">' +
+            '<button type="button" id="' + cardId + '" style="cursor:pointer; padding:0.45rem 1rem; background:var(--accent); color:#fff; border:none; border-radius:6px; font-size:0.8rem; font-weight:600;">🚀 Download ' + dims + ' Super-Res Master Export Image</button>' +
+          '</div>' +
+        '</div>';
+      
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      setTimeout(() => {{
+        const btn = document.getElementById(cardId);
+        if (btn) {{
+          btn.onclick = () => triggerSuperResDownload(imgUrl, targetW, targetH, seed);
+        }}
+      }}, 50);
+    }}
+
+    function fmtCoverLetter(d) {{
+      const letter = (d.cover_letter || "").trim();
+      if (!letter) return "No cover letter was generated.";
+      return letter;
+    }}
     function fmtResume(d) {{
-      const NL = String.fromCharCode(10);
-      const arch = d.architecture || {{}};
-      const pipe = d.pipeline || {{}};
-      const ats = d.ats_keywords || {{}};
-      const lines = [
-        "Resume Builder · v" + (d.generator_version || "?") + (d.variation_seed ? " · seed " + d.variation_seed : ""),
-        d.elapsed_ms ? "Completed in " + d.elapsed_ms + " ms" : "",
-        "",
-        "### Pipeline Architecture",
-        (arch.flow || []).join(" → "),
-        "",
-        "### Open Datasets",
-        Object.keys(arch.open_datasets || {{}}).join(", "),
-        "",
-        "### Scores",
-        "Completeness: " + (d.quality?.completeness_score || "—") + "/100 · ATS: " + (d.quality?.ats_score || "—") + "/100",
-        "",
-        "### ATS Keywords",
-        (ats.keywords || []).slice(0, 12).join(", ") || "—",
-        "",
-        "### AI Resume (Markdown)",
-        d.resume_markdown || d.resume_ai_text || "",
-        "",
-        "### ATS Plain Text",
-        d.ats_resume_text || "—",
-        "",
-        (d.export?.pdf_available ? "_PDF export included in API response (base64)_" : ""),
-        (d.export?.docx_available ? "_DOCX export included in API response (base64)_" : "")
-      ];
-      return lines.filter(Boolean).join(NL);
+      const md = (d.resume_markdown || d.resume_ai_text || "").trim();
+      if (!md) return "No resume was generated.";
+      return md;
     }}
 
     document.getElementById("generateBtn").onclick = generate;

@@ -176,24 +176,26 @@
     ];
 
     const TOOLS = [
-      {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, tone",
+      {{ id: "seo_content", label: "SEO Content Generator", desc: "Topic, keyword, category, word count, tone",
         nexusTool: "seo_content",
         fields: [
           {{ id: "topic", label: "Topic *", type: "text", required: true }},
           {{ id: "keywords", label: "Keywords (comma-separated)", type: "text" }},
+          {{ id: "category", label: "Category", type: "select", options: ["blog_article", "how_to_guide", "product_review", "landing_page", "local_service"], value: "blog_article" }},
+          {{ id: "word_count", label: "Target Word Count", type: "number", value: 600 }},
           {{ id: "tone", label: "Tone", type: "select", options: TONES, value: "professional" }},
         ],
         endpoint: "/seo-content/generate",
         build: (f, useAi) => ({{
-          topic: f.topic, keywords: f.keywords || null, tone: f.tone,
+          topic: f.topic, keywords: f.keywords || null, category: f.category || "blog_article",
+          word_count: f.word_count ? parseInt(f.word_count) : 600, tone: f.tone,
           use_ai: useAi, discover_keywords: false, use_rag: true
         }}),
         format: fmtSeoContent
       }},
-      {{ id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Agency SEO consultant — audit + conditional rewrite",
+      { id: "seo_optimizer", label: "SEO Content Optimizer", desc: "Agency SEO consultant — audit + conditional rewrite",
         nexusTool: "seo_optimizer",
         fields: [
-          {{ id: "content", label: "Content *", type: "textarea", required: true, full: true }},
           {{ id: "keywords", label: "Target keywords (comma, line, or semicolon-separated)", type: "textarea", full: true }},
         ],
         endpoint: "/seo-optimizer/optimize",
