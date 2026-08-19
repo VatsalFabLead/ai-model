@@ -8,6 +8,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.routes import (
+  api_docs,
   chat,
   chat_page,
   cover_letter,
@@ -88,6 +89,8 @@ def create_app() -> FastAPI:
   app.include_router(health.router)
   app.include_router(model_test.router)
   app.include_router(chat_page.router)
+  app.include_router(api_docs.router)
+
   app.include_router(chat.router, prefix=settings.api_prefix)
   app.include_router(plagiarism_checker.router, prefix=settings.api_prefix)
   app.include_router(post_scheduler.router, prefix=settings.api_prefix)
