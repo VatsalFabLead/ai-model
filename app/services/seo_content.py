@@ -217,8 +217,17 @@ def _trim_meta(meta: str, limit: int = 160) -> str:
   return meta[: limit - 3].rsplit(" ", 1)[0].rstrip() + "..."
 
 
+def _repair_json(raw: str) -> str:
+  """Clean up common LLM JSON syntax anomalies (unescaped quotes, markdown wrappers, trailing commas)."""
+  text = (raw or "").strip()
+  text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+  text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
+  text = re.sub(r",\s*([\}\]])", r"\1", text)
+  return text.strip()
+
+
 def _try_json(text: str) -> dict | None:
-  t = (text or "").strip()
+  t = _repair_json(text)
   if not t:
     return None
   if not t.startswith("{"):
@@ -228,7 +237,13 @@ def _try_json(text: str) -> dict | None:
     obj = json.loads(t)
     return obj if isinstance(obj, dict) else None
   except Exception:
-    return None
+    try:
+      t_clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', t)
+      obj = json.loads(t_clean)
+      return obj if isinstance(obj, dict) else None
+    except Exception:
+      return None
+
 
 
 def _coerce_faqs(raw: Any) -> list[dict[str, str]]:
@@ -501,6 +516,8 @@ def _pack_response(
     "ai": {"enabled": use_ai, "model_used": ai_used},
     "variation_seed": structured.get("variation_seed"),
     "domain": structured.get("domain"),
+    "eeat": structured.get("eeat"),
+    "keyword_density": structured.get("keyword_density"),
     "generator_version": GENERATOR_VERSION,
   }
   if pipeline_meta:
@@ -508,6 +525,7 @@ def _pack_response(
     result["pipeline_stages"] = pipeline_meta.get("stages")
     result["elapsed_ms"] = pipeline_meta.get("elapsed_ms")
     result["intent"] = pipeline_meta.get("intent")
+
     result["snippet"] = structured.get("snippet")
     result["schema"] = structured.get("schema")
   return result

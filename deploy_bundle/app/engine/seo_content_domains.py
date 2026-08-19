@@ -20,7 +20,19 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
   ],
   "health": [
     "health", "wellness", "nutrition", "diet", "sleep", "mental health", "stress",
-    "meditation", "vitamin", "immune", "hydration", "healthy lifestyle",
+    "meditation", "vitamin", "immune", "hydration", "healthy lifestyle", "medical",
+  ],
+  "coffee": [
+    "coffee", "espresso", "brew", "grinder", "beans", "roast", "barista", "caffeine",
+    "french press", "pour over", "latte", "cappuccino", "roastery", "arabica",
+  ],
+  "finance": [
+    "finance", "investment", "budget", "crypto", "stocks", "savings", "banking",
+    "credit", "loans", "real estate", "wealth", "asset", "tax", "portfolio",
+  ],
+  "ecommerce": [
+    "product", "store", "buy", "review", "shop", "ecommerce", "discount", "price",
+    "shipping", "deals", "best price", "checkout",
   ],
   "food": [
     "recipe", "cooking", "meal", "breakfast", "dinner", "baking", "cuisine", "food",
@@ -46,6 +58,17 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
     "odoo", "sap", "business software", "cloud erp",
   ],
 }
+
+_DYNAMIC_STARTERS = [
+  "Understanding", "Mastering", "Evaluating", "Navigating", "Exploring",
+  "Optimizing", "Implementing", "Leveraging", "Streamlining", "Building",
+]
+
+
+def dynamic_sentence_starter(seed: int, topic: str) -> str:
+  starter = _DYNAMIC_STARTERS[seed % len(_DYNAMIC_STARTERS)]
+  return f"{starter} {topic} effectively requires a clear roadmap and data-driven execution."
+
 
 _SECONDARY_SUGGESTIONS: dict[str, list[str]] = {
   "fitness": [

@@ -350,3 +350,61 @@ def seo_score_from_analysis(metrics: dict[str, Any], issues: list[dict[str, str]
   if metrics.get("word_count", 0) < 100:
     score -= 10
   return max(0, min(100, score))
+
+
+def analyze_keyword_density(text: str, keywords: list[str]) -> dict[str, Any]:
+  """Analyze primary and secondary keyword density (optimal 1.0%–1.8%) & structural distribution."""
+  raw = text or ""
+  low = raw.lower()
+  wc = count_words(raw)
+  if not wc or not keywords:
+    return {"primary_density": 0.0, "status": "unknown", "distribution": {}, "keyword_metrics": []}
+
+  # Split sections for structural distribution check
+  paras = [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
+  intro = paras[0].lower() if paras else ""
+  headings = " ".join([ln.lower() for ln in raw.splitlines() if ln.strip().startswith("#")])
+  conclusion = paras[-1].lower() if len(paras) > 1 else ""
+  body = " ".join([p.lower() for p in paras[1:-1]]) if len(paras) > 2 else low
+
+  primary = keywords[0].strip()
+  metrics_list: list[dict[str, Any]] = []
+
+  for kw in keywords[:6]:
+    k_low = kw.strip().lower()
+    if not k_low:
+      continue
+    kw_words = len(re.findall(r"\b[\w'-]+\b", k_low))
+    occurrences = len(re.findall(r"\b" + re.escape(k_low) + r"\b", low))
+    density = round((occurrences * kw_words / wc) * 100, 2)
+    in_intro = bool(re.search(r"\b" + re.escape(k_low) + r"\b", intro))
+    in_headings = bool(re.search(r"\b" + re.escape(k_low) + r"\b", headings))
+    in_conclusion = bool(re.search(r"\b" + re.escape(k_low) + r"\b", conclusion))
+
+    metrics_list.append({
+      "keyword": kw,
+      "count": occurrences,
+      "density_percent": density,
+      "in_intro": in_intro,
+      "in_headings": in_headings,
+      "in_conclusion": in_conclusion,
+    })
+
+  primary_metric = metrics_list[0] if metrics_list else {"density_percent": 0.0}
+  pd = primary_metric.get("density_percent", 0.0)
+
+  if pd < 0.5:
+    status = "underused"
+  elif 0.5 <= pd <= 2.2:
+    status = "optimal"
+  else:
+    status = "overused"
+
+  return {
+    "primary_keyword": primary,
+    "primary_density": pd,
+    "status": status,
+    "optimal_range": "1.0% - 1.8%",
+    "keyword_metrics": metrics_list,
+  }
+
