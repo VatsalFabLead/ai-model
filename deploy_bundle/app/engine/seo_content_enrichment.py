@@ -567,6 +567,8 @@ def _clip_clean(text: str, limit: int = 120) -> str:
   return clipped.rstrip(".,;:-") + "..."
 
 
+from app.engine.seo_content_domains import extract_short_subject, get_localized_heading
+
 def generate_trust_and_citation_blocks(
   article: str,
   topic: str,
@@ -578,7 +580,7 @@ def generate_trust_and_citation_blocks(
   if "## Executive Summary" in article or "## Key Takeaways" in article:
     return article
 
-  subject = primary if (primary and len(primary.split()) <= 4) else (topic.split(":")[0].split("-")[0].strip()[:35])
+  subject = extract_short_subject(primary) if (primary and len(primary.split()) <= 4) else extract_short_subject(topic)
 
   summary_lines = [
     "> **Key Takeaways & Executive Summary**",

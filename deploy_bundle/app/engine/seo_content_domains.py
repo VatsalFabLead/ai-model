@@ -52,12 +52,93 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
   "education": [
     "learn", "course", "study", "exam", "student", "tutorial", "lesson", "skill",
   ],
-  "enterprise": [
-    "erp", "crm", "enterprise resource", "inventory management", "manufacturing erp",
-    "supply chain", "accounting software", "hrms", "procurement", "warehouse management",
-    "odoo", "sap", "business software", "cloud erp",
-  ],
+def extract_short_subject(text: str, max_words: int = 4) -> str:
+  """Extract a clean, non-truncated short subject string respecting multi-byte Unicode/Devanagari."""
+  if not text:
+    return ""
+  t = re.sub(r"^(?:how\s+to\s+|guide\s+to\s+|complete\s+guide\s+on\s+)", "", text, flags=re.IGNORECASE).strip()
+  t = t.split(":")[0].split("-")[0].strip()
+  words = t.split()
+  if not words:
+    return text[:30]
+  if len(words) <= max_words:
+    return " ".join(words)
+  return " ".join(words[:max_words])
+
+
+_LOCALIZED_HEADINGS: dict[str, dict[str, str]] = {
+  "hi": {
+    "intro": "परिचय",
+    "what_is": "क्या है",
+    "benefits": "लाभ और उपयोग",
+    "how_it_works": "यह कैसे काम करता है",
+    "key_terms": "मुख्य शब्द",
+    "conclusion": "निष्कर्ष",
+    "faqs": "सामान्य प्रश्न",
+    "tools": "आवश्यक टूल्स",
+    "pitfalls": "सामान्य गलतियाँ",
+    "metrics": "सफलता के पैमाने",
+    "guide": "मार्गदर्शिका",
+    "deeper_dive": "गहराई से जानें",
+  },
+  "es": {
+    "intro": "Introducción",
+    "what_is": "¿Qué es",
+    "benefits": "Beneficios y Casos de Uso",
+    "how_it_works": "Cómo Funciona",
+    "key_terms": "Términos Clave",
+    "conclusion": "Conclusión",
+    "faqs": "Preguntas Frecuentes",
+    "tools": "Herramientas Necesarias",
+    "pitfalls": "Errores Comunes",
+    "metrics": "Métricas de Éxito",
+    "guide": "Guía Completa",
+    "deeper_dive": "Análisis Detallado",
+  },
+  "de": {
+    "intro": "Einführung",
+    "what_is": "Was ist",
+    "benefits": "Vorteile und Anwendungsfälle",
+    "how_it_works": "Wie es funktioniert",
+    "key_terms": "Schlüsselbegriffe",
+    "conclusion": "Fazit",
+    "faqs": "Häufig gestellte Fragen",
+    "tools": "Wichtige Werkzeuge",
+    "pitfalls": "Häufige Fehler",
+    "metrics": "Erfolgsfaktoren",
+    "guide": "Leitfaden",
+    "deeper_dive": "Vertiefung",
+  },
+  "fr": {
+    "intro": "Introduction",
+    "what_is": "Qu'est-ce que",
+    "benefits": "Avantages et Cas d'Utilisation",
+    "how_it_works": "Comment ça marche",
+    "key_terms": "Termes Clés",
+    "conclusion": "Conclusion",
+    "faqs": "Foire Aux Questions",
+    "tools": "Outils Essentiels",
+    "pitfalls": "Erreurs Courantes",
+    "metrics": "Indicateurs de Succès",
+    "guide": "Guide Complet",
+    "deeper_dive": "Analyse Approfondie",
+  },
 }
+
+
+def get_localized_heading(key: str, lang: str | None = "en") -> str:
+  code = (lang or "en").lower()[:2]
+  loc = _LOCALIZED_HEADINGS.get(code, {})
+  if key in loc:
+    return loc[key]
+  fallback_map = {
+    "intro": "Introduction", "what_is": "What Is", "benefits": "Benefits and Use Cases",
+    "how_it_works": "How It Works", "key_terms": "Key Terms", "conclusion": "Conclusion",
+    "faqs": "FAQs", "tools": "Tools Involved", "pitfalls": "Common Pitfalls",
+    "metrics": "Success Metrics", "guide": "Guide", "deeper_dive": "Deeper dive",
+  }
+  return fallback_map.get(key, key.title())
+
 
 _DYNAMIC_STARTERS = [
   "Understanding", "Mastering", "Evaluating", "Navigating", "Exploring",
@@ -413,13 +494,15 @@ def _general_article(
   audience: str | None,
 ) -> tuple[str, str, str]:
   aud = f" for {audience}" if audience else ""
+  subject = extract_short_subject(primary) if (primary and len(primary.split()) <= 4) else extract_short_subject(topic)
+
   title = _pick(seed, [
-    f"{topic}: A Complete Guide{aud}",
-    f"{primary.title()}: Practical Guide for Beginners",
-    f"Everything You Need to Know About {primary.title()}",
+    f"{subject}: Practical Guide for Beginners{aud}",
+    f"How to Understand and Apply {subject}{aud}",
+    f"Everything You Need to Know About {subject}",
   ])
   meta = _trim(
-    f"Learn about {primary} with clear, practical guidance. "
+    f"Learn about {subject} with clear, practical guidance. "
     f"Covers benefits, step-by-step tips, and expert advice{aud}."
   )
   benefit = {
@@ -434,11 +517,11 @@ def _general_article(
 
   intro_variants = [
     (
-      f"Understanding **{primary}** is valuable for anyone who wants clear, actionable guidance. "
+      f"Understanding **{subject}** is valuable for anyone who wants clear, actionable guidance. "
       f"This article explains what matters most, how to begin, and which mistakes to avoid."
     ),
     (
-      f"Whether you are just starting out or refining your approach, **{primary}** offers real benefits. "
+      f"Whether you are just starting out or refining your approach, **{subject}** offers real benefits. "
       f"This guide breaks the topic into simple steps anyone can follow."
     ),
   ]
@@ -448,11 +531,12 @@ def _general_article(
 
 {_pick(seed + 2, intro_variants)}
 
-## Why {primary.title()} Matters
+## Why {subject} Matters
 
-{primary.title()} {benefit}. Investing time in the right approach pays off through better outcomes and fewer setbacks.
+{subject} {benefit}. Investing time in the right approach pays off through better outcomes and fewer setbacks.
 
-## Key Benefits of {primary.title()}
+## Key Benefits of {subject}
+
 
 - Practical knowledge you can apply immediately
 - Clear structure that saves time and reduces confusion

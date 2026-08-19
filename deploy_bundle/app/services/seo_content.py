@@ -131,11 +131,13 @@ def _strip_boilerplate_lines(article: str) -> str:
 
 def _slugify(text: str, max_len: int = 60) -> str:
   text = (text or "").lower().strip()
-  text = re.sub(r"[^a-z0-9\s-]", "", text)
-  text = re.sub(r"[\s_-]+", "-", text).strip("-")
-  if len(text) > max_len:
-    text = text[:max_len].rsplit("-", 1)[0]
-  return text or "untitled"
+  text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
+  text = re.sub(r"[\s_-]+", "-", text, flags=re.UNICODE).strip("-")
+  if not text or text in ("guide", "comparison", "overview"):
+    words = (text or "").split()
+    text = "-".join([w for w in words if w])[:max_len]
+  return text[:max_len] or "seo-article"
+
 
 
 def _suggest_tags(
