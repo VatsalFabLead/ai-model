@@ -1031,17 +1031,169 @@ def _opening_new_email(tone: str, subject: str, urgency: str, locale: str = "en"
   return "I hope you're doing well. I'm writing with a brief update on the subject above."
 
 
-def _opening_reply(tone: str, thread: dict[str, Any], sentiment: dict[str, Any]) -> str:
+def _opening_reply(tone: str, thread: dict[str, Any], sentiment: dict[str, Any], locale: str = "en") -> str:
+  loc = (locale or "en").lower()[:2]
+  s_type = sentiment.get("sentiment", "neutral")
   subj = thread.get("subject", "")
-  if sentiment.get("sentiment") in ("concerned", "neutral_negative"):
-    return "Thank you for your email — I understand the concern and appreciate you flagging this."
+
+  # 1. Multilingual + Sentiment De-escalation & Warmth Matching
+  if loc == "gu":
+    if s_type in ("concerned", "neutral_negative", "frustrated"):
+      return "આપના ઇમેઇલ બદલ આભાર. અમે તમારી ચિંતા સંપૂર્ણપણે સમજીએ છીએ અને આ બાબતને ખૂબ ગંભીરતાથી લઈએ છીએ."
+    if s_type in ("positive", "appreciative"):
+      return "આપના સુંદર પ્રતિસાદ બદલ ખૂબ ખૂબ આભાર! અમને જાણીને ખૂબ ખુશી થઈ."
+    return "આપના ઇમેઇલ બદલ આપનો ખૂબ ખૂબ આભાર."
+
+  if loc == "hi":
+    if s_type in ("concerned", "neutral_negative", "frustrated"):
+      return "आपके ईमेल के लिए धन्यवाद। हम आपकी चिंता को पूरी तरह समझते हैं और इस मामले को गंभीरता से ले रहे हैं।"
+    if s_type in ("positive", "appreciative"):
+      return "आपकी सुंदर प्रतिक्रिया के लिए बहुत-बहुत धन्यवाद! हमें यह जानकर बेहद खुशी हुई।"
+    return "आपके ईमेल के लिए धन्यवाद।"
+
+  if loc == "mr":
+    if s_type in ("concerned", "neutral_negative", "frustrated"):
+      return "आपल्या ईमेलबद्दल धन्यवाद. आम्ही आपली अडचण समजतो आणि यावर त्वरित योग्य कारवाई करत आहोत."
+    if s_type in ("positive", "appreciative"):
+      return "आपल्या उत्तम प्रतिक्रियेबद्दल खूप खूप धन्यवाद! आम्हाला मनापासून आनंद झाला."
+    return "आपल्या ईमेलबद्दल धन्यवाद."
+
+  if loc == "es":
+    if s_type in ("concerned", "neutral_negative", "frustrated"):
+      return "Gracias por su mensaje. Comprendemos perfectamente su preocupación y asumimos este asunto con máxima prioridad."
+    if s_type in ("positive", "appreciative"):
+      return "¡Muchísimas gracias por sus amables palabras! Nos alegra enormemente saberlo."
+    return "Gracias por su correo electrónico."
+
+  if loc == "fr":
+    if s_type in ("concerned", "neutral_negative", "frustrated"):
+      return "Merci pour votre message. Nous comprenons parfaitement votre inquiétude et nous traitons ce sujet en priorité."
+    if s_type in ("positive", "appreciative"):
+      return "Merci beaucoup pour vos chaleureux retours ! Nous sommes ravis d'apprendre cela."
+    return "Merci pour votre courriel."
+
+  if loc == "de":
+    if s_type in ("concerned", "neutral_negative", "frustrated"):
+      return "Vielen Dank für Ihre E-Mail. Wir verstehen Ihr Anliegen vollkommen und nehmen diesen Fall sehr ernst."
+    if s_type in ("positive", "appreciative"):
+      return "Vielen Dank für Ihr positives Feedback! Wir freuen uns sehr darüber."
+    return "Vielen Dank für Ihre E-Mail."
+
+  # English Fallback
+  if s_type in ("concerned", "neutral_negative", "frustrated"):
+    return "Thank you for your email — we sincerely apologize for the inconvenience and take this matter very seriously."
+  if s_type in ("positive", "appreciative"):
+    return "Thank you so much for your kind words! We are thrilled to hear this and truly appreciate your feedback."
   if subj:
     if tone == "friendly":
       return f"Thanks for your note about {subj.lower()}."
     return f"Thank you for your email regarding {subj.lower()}."
-  if tone == "friendly":
-    return "Thanks for getting back to me — I appreciate the note."
   return "Thank you for your email."
+
+
+def generate_reply_stances(
+  original_email: str,
+  reply_points: str,
+  tone: str,
+  language: str | None = None,
+) -> dict[str, str]:
+  """Generate 3 pre-built stance alternatives for quick replies (Accept, Decline, Clarify)."""
+  lang = (language or "en").lower()[:2]
+
+  if lang == "gu":
+    return {
+      "accept_stance": "આપનો આભાર! અમે આ દરખાસ્ત સાથે સંતોષ વ્યક્ત કરીએ છીએ અને આગળ વધવા માટે તૈયાર છીએ.",
+      "decline_stance": "આપના ઇમેઇલ બદલ આભાર. જો કે, હાલના તબક્કે અમે આ બાબતે આગળ વધી શકીએ તેમ નથી.",
+      "clarify_stance": "આપના ઇમેઇલ બદલ આભાર. આગળ વધતા પહેલાં, શું આપ કૃપા કરીને આ બાબતે વધુ સ્પષ્ટતા કરી શકશો?",
+    }
+  if lang == "hi":
+    return {
+      "accept_stance": "धन्यवाद! हम इस प्रस्ताव से पूरी तरह सहमत हैं और आगे बढ़ने के लिए तैयार हैं।",
+      "decline_stance": "आपके ईमेल के लिए धन्यवाद। हालाँकि, वर्तमान में हम इस प्रस्ताव को स्वीकार करने में असमर्थ हैं।",
+      "clarify_stance": "आपके ईमेल के लिए धन्यवाद। आगे बढ़ने से पहले, क्या आप कृपया इस बिंदु पर थोड़ी और स्पष्टता दे सकते हैं?",
+    }
+  if lang == "es":
+    return {
+      "accept_stance": "¡Muchas gracias! Estamos de acuerdo con la propuesta y listos para avanzar.",
+      "decline_stance": "Gracias por su correo. Lamentablemente, en este momento no nos es posible proceder.",
+      "clarify_stance": "Gracias por los detalles. Antes de continuar, ¿podría aclararnos un par de puntos?",
+    }
+
+  return {
+    "accept_stance": "Thank you! We agree with the proposal and are ready to move forward.",
+    "decline_stance": "Thank you for reaching out. However, at this time we are unable to proceed with this request.",
+    "clarify_stance": "Thank you for the details. Before moving forward, could you please clarify a few points?",
+  }
+
+
+def generate_html_thread_reply(
+  reply_body: str,
+  original_email: str,
+  sender: str = "Sender",
+  subject: str = "Message",
+) -> str:
+  """Generate standard Gmail/Outlook styled thread reply HTML with blockquote divider."""
+  reply_html = "\n".join(
+    f'<p style="margin: 0 0 14px 0;">{p.strip()}</p>'
+    for p in reply_body.split("\n")
+    if p.strip()
+  )
+
+  quoted_html = "<br/>".join(
+    p.strip() for p in (original_email or "").split("\n") if p.strip()
+  )
+
+  return (
+    '<!DOCTYPE html>\n'
+    '<html>\n'
+    '<head>\n'
+    '  <meta charset="utf-8"/>\n'
+    '  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>\n'
+    '</head>\n'
+    '<body style="margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1f2937; line-height: 1.6;">\n'
+    '  <!-- New Reply Body -->\n'
+    f'  <div style="margin-bottom: 24px;">\n'
+    f'    {reply_html}\n'
+    '  </div>\n'
+    '  <!-- Gmail / Outlook Quoted Original Thread -->\n'
+    '  <div style="border-left: 2px solid #cbd5e1; margin-top: 24px; padding-left: 14px; color: #64748b; font-size: 13px; line-height: 1.5;">\n'
+    f'    <p style="margin: 0 0 8px 0; font-weight: 600; color: #475569;">On Re: {subject}, {sender} wrote:</p>\n'
+    '    <blockquote style="margin: 0; padding: 0;">\n'
+    f'      {quoted_html}\n'
+    '    </blockquote>\n'
+    '  </div>\n'
+    '</body>\n'
+    '</html>'
+  )
+
+
+def audit_thread_reply_coverage(original_email: str, reply_body: str) -> dict[str, Any]:
+  """Audit incoming email questions and verify if they were addressed in the reply."""
+  sentences = re.split(r"[.!?\n]+", original_email or "")
+  questions = [
+    s.strip() for s in sentences
+    if len(s.strip()) > 8 and ("?" in s or any(w in s.lower() for w in ("how", "what", "when", "cost", "price", "where", "why", "કેવી રીતે", "શું", "कैसे", "क्या")))
+  ]
+
+  reply_low = (reply_body or "").lower()
+  answered = []
+  for q in questions:
+    keywords = [w for w in re.findall(r"\w+", q.lower()) if len(w) > 3]
+    if any(kw in reply_low for kw in keywords):
+      answered.append(q)
+
+  total_q = len(questions)
+  answered_q = len(answered)
+  coverage = round((answered_q / total_q) * 100) if total_q > 0 else 100
+
+  return {
+    "incoming_questions_found": questions,
+    "answered_questions": answered,
+    "total_questions": total_q,
+    "answered_count": answered_q,
+    "coverage_score": coverage,
+    "all_questions_addressed": coverage >= 80,
+  }
 
 
 def _opening_cold(
@@ -1103,7 +1255,7 @@ def compose_email(
     if locale == "en":
       greeting = _pick(_GREETINGS.get(tone, _GREETINGS["professional"]), seed)
     thread = context.get("thread") or {}
-    opener = _opening_reply(tone, thread, sentiment)
+    opener = _opening_reply(tone, thread, sentiment, locale)
     bullets = list(context.get("reply_points") or [])
     if not bullets:
       bullets = ["I've reviewed your message and outlined my response below."]

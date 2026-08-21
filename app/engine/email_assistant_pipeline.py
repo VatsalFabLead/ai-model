@@ -289,9 +289,12 @@ async def run_email_assistant_pipeline(
 
   from app.engine.email_assistant_enrichment import (
     audit_spam_trigger_words,
+    audit_thread_reply_coverage,
     generate_ab_subject_buckets,
     generate_cta_strategies,
     generate_html_email_template,
+    generate_html_thread_reply,
+    generate_reply_stances,
   )
 
   spam_audit = audit_spam_trigger_words(subject, email_body)
@@ -305,6 +308,17 @@ async def run_email_assistant_pipeline(
     cta=cta_strategies.get("soft_cta"),
   )
 
+  reply_stances = generate_reply_stances(
+    ctx_data.get("original_email", ""), ctx_data.get("reply_points_raw", ""), effective_tone, lang.get("bcp47")
+  )
+  html_thread_reply = generate_html_thread_reply(
+    reply_body=email_body,
+    original_email=ctx_data.get("original_email", ""),
+    sender=recipient.get("primary_role", "Sender"),
+    subject=subject,
+  )
+  thread_audit = audit_thread_reply_coverage(ctx_data.get("original_email", ""), email_body)
+
   return {
     "generator_version": GENERATOR_VERSION,
     "mode": mode,
@@ -315,6 +329,9 @@ async def run_email_assistant_pipeline(
     "requested_tone": tone,
     "email": email_body,
     "html_email": html_email,
+    "html_thread_reply": html_thread_reply,
+    "reply_stances": reply_stances,
+    "thread_audit": thread_audit,
     "word_count": readability["word_count"],
     "reading_time_minutes": readability.get("reading_time_minutes", 1),
     "language": lang,
