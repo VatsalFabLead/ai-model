@@ -37,9 +37,13 @@ class EmailResponse(BaseModel):
   subject: str
   tone: str
   email: str
+  html_email: str | None = None
   word_count: int
   generator_version: str | None = None
   subject_options: list[str] = Field(default_factory=list)
+  ab_subject_buckets: dict[str, str] = Field(default_factory=dict)
+  cta_strategies: dict[str, str] = Field(default_factory=dict)
+  spam_audit: dict[str, Any] = Field(default_factory=dict)
   quality: EmailQuality | dict[str, Any] | None = None
   scores: EmailScores | dict[str, Any] | None = None
   suggestions: list[str] = Field(default_factory=list)

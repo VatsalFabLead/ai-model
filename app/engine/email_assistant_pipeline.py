@@ -287,24 +287,46 @@ async def run_email_assistant_pipeline(
     "output_language": lang.get("language", "English"),
   }
 
+  from app.engine.email_assistant_enrichment import (
+    audit_spam_trigger_words,
+    generate_ab_subject_buckets,
+    generate_cta_strategies,
+    generate_html_email_template,
+  )
+
+  spam_audit = audit_spam_trigger_words(subject, email_body)
+  cta_strategies = generate_cta_strategies(
+    intent["primary_intent"], domain.get("primary_domain", ""), effective_tone, lang.get("bcp47")
+  )
+  ab_subject_buckets = generate_ab_subject_buckets(subject, text_blob, lang.get("bcp47"))
+  html_email = generate_html_email_template(
+    subject=subject,
+    email_body=email_body,
+    cta=cta_strategies.get("soft_cta"),
+  )
+
   return {
     "generator_version": GENERATOR_VERSION,
     "mode": mode,
     "subject": subject,
     "subject_options": subjects,
+    "ab_subject_buckets": ab_subject_buckets,
     "tone": effective_tone,
     "requested_tone": tone,
     "email": email_body,
+    "html_email": html_email,
     "word_count": readability["word_count"],
     "reading_time_minutes": readability.get("reading_time_minutes", 1),
     "language": lang,
     "output_language": lang.get("language", "English"),
+    "cta_strategies": cta_strategies,
+    "spam_audit": spam_audit,
     "quality": scores,
     "scores": {
       "grammar": grammar["score"],
       "readability": readability["reading_ease"],
-      "spam_score": spam["spam_score"],
-      "spam_risk": spam["spam_risk"],
+      "spam_score": spam_audit["spam_score"],
+      "deliverability_rating": spam_audit["deliverability_rating"],
       "professionalism": prof["score"],
       "overall": scores["overall"],
     },

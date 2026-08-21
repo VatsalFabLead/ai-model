@@ -116,19 +116,277 @@ _PII_PATTERNS = (
   (r"\bOTP\s*[:=]?\s*\d{4,8}\b", "otp"),
 )
 
-_GREETINGS: dict[str, list[str]] = {
-  "professional": ["Hello,", "Good day,", "Hi there,"],
-  "formal": ["Dear Team,", "Dear Sir or Madam,", "To Whom It May Concern,"],
-  "friendly": ["Hi,", "Hello there,", "Hope you're doing well —"],
-  "casual": ["Hey,", "Hi!", "Hello —"],
+MULTILINGUAL_EMAIL_CATALOG: dict[str, dict[str, Any]] = {
+  "gu": {
+    "greetings": {
+      "professional": ["નમસ્તે,", "શુભ પ્રભાત / નમસ્કાર,"],
+      "formal": ["આદરણીય શ્રી / શ્રીમતી,", "માનનીય ટીમ,"],
+      "friendly": ["કેમ છો,", "સ્નેહી મિત્ર,"],
+      "casual": ["હેલો,", "કેમ છો,"],
+    },
+    "closings": {
+      "professional": ["આપનો વિશ્વાસુ,", "આભાર સહ,"],
+      "formal": ["સાદર પ્રણામ,", "આપનો નમ્ર,"],
+      "friendly": ["શુભેચ્છાઓ સાથે,", "આભાર,"],
+      "casual": ["આવજો,", "આભાર,"],
+    },
+    "subject_prefix": "વિષય",
+    "soft_cta": "શું આપણે આવતા અઠવાડિયે ૫ મિનિટની ટૂંકી વાતચીત કરી શકીએ?",
+    "direct_cta": "શું તમે આ ગુરુવારે બપોરે ૨ વાગ્યે ૧૦ મિનિટના કૉલ માટે ઉપલબ્ધ છો?",
+    "value_cta": "શું હું આપને અમારી વિગતવાર સર્વિસ પ્રોફાઇલ/ડેક મોકલી શકું?",
+  },
+  "hi": {
+    "greetings": {
+      "professional": ["नमस्ते,", "नमस्कार,"],
+      "formal": ["आदरणीय महोदय / महोदया,", "प्रिय टीम,"],
+      "friendly": ["हेलो,", "नमस्ते,"],
+      "casual": ["हेलो,", "हाय,"],
+    },
+    "closings": {
+      "professional": ["सादर,", "सधन्यवाद,"],
+      "formal": ["भवदीय,", "सादर प्रणाम,"],
+      "friendly": ["शुभकामनाएं,", "धन्यवाद,"],
+      "casual": ["फिर मिलते हैं,", "धन्यवाद,"],
+    },
+    "subject_prefix": "विषय",
+    "soft_cta": "क्या आप अगले सप्ताह ५ मिनट की संक्षिप्त बातचीत के लिए उपलब्ध हैं?",
+    "direct_cta": "क्या आप इस गुरुवार दोपहर २ बजे १० मिनट की कॉल के लिए उपलब्ध हैं?",
+    "value_cta": "क्या मैं आपको हमारी विस्तृत सर्विस प्रोफाइल/केस स्टडी भेज सकता हूँ?",
+  },
+  "mr": {
+    "greetings": {
+      "professional": ["नमस्कार,", "सप्रेम नमस्कार,"],
+      "formal": ["आदरणीय महोदय,", "माननीय टीम,"],
+      "friendly": ["नमस्कार,", "हॅलो,"],
+      "casual": ["हॅलो,"],
+    },
+    "closings": {
+      "professional": ["आपला नम्र,", "सस्नेह धन्यवाद,"],
+      "formal": ["सादर प्रणाम,", "आपला स्नेही,"],
+      "friendly": ["शुभकामना,", "धन्यवाद,"],
+      "casual": ["धन्यवाद,"],
+    },
+    "subject_prefix": "विषय",
+    "soft_cta": "पुढील आठवड्यात ५ मिनिटांच्या संक्षिप्त चर्चेसाठी वेळ मिळेल का?",
+    "direct_cta": "या गुरुवारी दुपारी २ वाजता १० मिनिटांच्या कॉलसाठी उपलब्ध आहात का?",
+    "value_cta": "मी आमची सविस्तर माहिती पत्रक/केस स्टडी पाठवू का?",
+  },
+  "es": {
+    "greetings": {
+      "professional": ["Estimado/a,", "Hola, buen día,"],
+      "formal": ["Estimados señores,", "Estimado/a cliente,"],
+      "friendly": ["Hola,", "Espero que estés muy bien,"],
+      "casual": ["Hola,", "Qué tal,"],
+    },
+    "closings": {
+      "professional": ["Atentamente,", "Un cordial saludo,"],
+      "formal": ["Le saluda atentamente,", "Quedo a su disposición,"],
+      "friendly": ["Saludos cordiales,", "Un saludo,"],
+      "casual": ["Hasta pronto,", "Un abrazo,"],
+    },
+    "subject_prefix": "Asunto",
+    "soft_cta": "¿Estarías libre para una breve charla de 5 minutos la próxima semana?",
+    "direct_cta": "¿Tienes disponibilidad para una llamada de 10 minutos este jueves a las 14:00?",
+    "value_cta": "¿Te gustaría que te envíe nuestra presentación detallada de casos de éxito?",
+  },
+  "fr": {
+    "greetings": {
+      "professional": ["Bonjour,", "Chère équipe,"],
+      "formal": ["Madame, Monsieur,", "Cher/Chère client(e),"],
+      "friendly": ["Bonjour,", "J'espère que vous allez bien,"],
+      "casual": ["Salut,", "Bonjour,"],
+    },
+    "closings": {
+      "professional": ["Cordialement,", "Bien cordialement,"],
+      "formal": ["Veuillez agréer mes salutations distinguées,", "Respectueusement,"],
+      "friendly": ["Bien à vous,", "Amicalement,"],
+      "casual": ["À bientôt,", "Merci,"],
+    },
+    "subject_prefix": "Objet",
+    "soft_cta": "Seriez-vous disponible pour un court échange de 5 minutes la semaine prochaine ?",
+    "direct_cta": "Seriez-vous libre pour un appel de 10 minutes ce jeudi à 14h ?",
+    "value_cta": "Souhaitez-vous que je vous envoie notre présentation détaillée de cas clients ?",
+  },
+  "de": {
+    "greetings": {
+      "professional": ["Guten Tag,", "Hallo,"],
+      "formal": ["Sehr geehrte Damen und Herren,", "Sehr geehrte(r) Herr/Frau,"],
+      "friendly": ["Hallo,", "Hoffe es geht Dir gut,"],
+      "casual": ["Hi,", "Hallo,"],
+    },
+    "closings": {
+      "professional": ["Mit freundlichen Grüßen,", "Beste Grüße,"],
+      "formal": ["Mit vorzüglicher Hochachtung,", "Hochachtungsvoll,"],
+      "friendly": ["Herzliche Grüße,", "Viele Grüße,"],
+      "casual": ["Bis bald,", "Danke,"],
+    },
+    "subject_prefix": "Betreff",
+    "soft_cta": "Hätten Sie nächste Woche Zeit für ein kurzes 5-minütiges Gespräch?",
+    "direct_cta": "Passt Ihnen ein 10-minütiger Anruf diesen Donnerstag um 14:00 Uhr?",
+    "value_cta": "Soll ich Ihnen unsere ausführliche Fallstudien-Präsentation zusenden?",
+  },
+  "en": {
+    "greetings": {
+      "professional": ["Hello,", "Good day,", "Hi there,"],
+      "formal": ["Dear Team,", "Dear Sir or Madam,", "To Whom It May Concern,"],
+      "friendly": ["Hi,", "Hello there,", "Hope you're doing well —"],
+      "casual": ["Hey,", "Hi!", "Hello —"],
+    },
+    "closings": {
+      "professional": ["Best regards,", "Kind regards,", "Thank you,"],
+      "formal": ["Sincerely,", "Yours faithfully,", "Respectfully,"],
+      "friendly": ["Warm regards,", "Thanks so much,", "Best,"],
+      "casual": ["Cheers,", "Thanks,", "Talk soon,"],
+    },
+    "subject_prefix": "Subject",
+    "soft_cta": "Would you be open to a quick 5-minute chat next week?",
+    "direct_cta": "Are you free for a 10-minute call this Thursday at 2 PM IST?",
+    "value_cta": "Should I send over our detailed project overview and case study deck?",
+  },
 }
 
-_CLOSINGS: dict[str, list[str]] = {
-  "professional": ["Best regards,", "Kind regards,", "Thank you,"],
-  "formal": ["Sincerely,", "Yours faithfully,", "Respectfully,"],
-  "friendly": ["Warm regards,", "Thanks so much,", "Best,"],
-  "casual": ["Cheers,", "Thanks,", "Talk soon,"],
-}
+_SPAM_TRIGGER_CATALOG = [
+  ("100% free", "complimentary / no cost"),
+  ("risk free", "guaranteed quality"),
+  ("buy now", "explore details"),
+  ("click here", "visit link"),
+  ("act now", "time sensitive"),
+  ("earn money fast", "increase revenue"),
+  ("guaranteed success", "proven track record"),
+  ("no obligation", "hassle free"),
+  ("winner", "selected partner"),
+  ("congratulations", "pleased to connect"),
+  ("double your income", "accelerate business growth"),
+  ("special promotion", "exclusive offer"),
+]
+
+_GREETINGS: dict[str, list[str]] = MULTILINGUAL_EMAIL_CATALOG["en"]["greetings"]
+_CLOSINGS: dict[str, list[str]] = MULTILINGUAL_EMAIL_CATALOG["en"]["closings"]
+
+
+def audit_spam_trigger_words(subject: str, email_body: str) -> dict[str, Any]:
+  """Audit subject and body for spam trigger words and provide deliverability score."""
+  text = f"{subject} {email_body}".lower()
+  detected = []
+  total_penalty = 0
+
+  for trigger, replacement in _SPAM_TRIGGER_CATALOG:
+    if trigger in text:
+      total_penalty += 15
+      detected.append({
+        "trigger_word": trigger,
+        "risk_level": "High" if total_penalty >= 30 else "Medium",
+        "suggested_replacement": replacement,
+      })
+
+  spam_score = min(100, total_penalty)
+  if spam_score == 0:
+    rating = "Excellent (Inbox Ready)"
+  elif spam_score <= 25:
+    rating = "Good (Low Risk)"
+  elif spam_score <= 50:
+    rating = "Needs Review (Moderate Risk)"
+  else:
+    rating = "High Spam Filter Risk"
+
+  return {
+    "spam_score": spam_score,
+    "deliverability_rating": rating,
+    "clean_deliverability": spam_score < 30,
+    "detected_triggers": detected,
+    "trigger_count": len(detected),
+  }
+
+
+def generate_html_email_template(
+  subject: str,
+  email_body: str,
+  cta: str | None = None,
+  signature: str | None = None,
+) -> str:
+  """Generate copy-pasteable responsive HTML email with inline CSS formatting."""
+  body_paragraphs = "\n".join(
+    f'<p style="margin: 0 0 14px 0;">{p.strip()}</p>'
+    for p in email_body.split("\n")
+    if p.strip()
+  )
+
+  cta_html = ""
+  if cta and cta.strip():
+    cta_html = (
+      '<div style="text-align: center; margin: 25px 0;">\n'
+      '  <a href="#" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; '
+      'text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; '
+      'display: inline-block;">\n'
+      f'    {cta.strip()}\n'
+      '  </a>\n'
+      '</div>\n'
+    )
+
+  sig_html = ""
+  if signature and signature.strip():
+    sig_paragraphs = "<br/>".join(signature.strip().split("\n"))
+    sig_html = (
+      '<div style="border-top: 1px solid #e5e7eb; margin-top: 24px; padding-top: 16px; '
+      'font-size: 13px; color: #4b5563; line-height: 1.5;">\n'
+      f'  {sig_paragraphs}\n'
+      '</div>\n'
+    )
+
+  return (
+    '<!DOCTYPE html>\n'
+    '<html>\n'
+    '<head>\n'
+    '  <meta charset="utf-8"/>\n'
+    '  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>\n'
+    f'  <title>{subject}</title>\n'
+    '</head>\n'
+    '<body style="margin: 0; padding: 20px; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif;">\n'
+    '  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">\n'
+    '    <tr>\n'
+    '      <td style="padding: 32px; font-size: 15px; line-height: 1.6; color: #1f2937;">\n'
+    f'        {body_paragraphs}\n'
+    f'        {cta_html}\n'
+    f'        {sig_html}\n'
+    '      </td>\n'
+    '    </tr>\n'
+    '  </table>\n'
+    '</body>\n'
+    '</html>'
+  )
+
+
+def generate_cta_strategies(
+  intent: str,
+  domain: str,
+  tone: str,
+  language: str | None = None,
+) -> dict[str, str]:
+  """Generate 3 distinct CTA strategy options (Soft, Direct, Value)."""
+  lang = (language or "en").lower()[:2]
+  catalog = MULTILINGUAL_EMAIL_CATALOG.get(lang, MULTILINGUAL_EMAIL_CATALOG["en"])
+
+  return {
+    "soft_cta": catalog["soft_cta"],
+    "direct_cta": catalog["direct_cta"],
+    "value_cta": catalog["value_cta"],
+  }
+
+
+def generate_ab_subject_buckets(
+  subject: str,
+  context_text: str,
+  language: str | None = None,
+) -> dict[str, str]:
+  """Group subject line options into 3 psychological A/B testing strategy buckets."""
+  sub = subject.strip()
+  prefix = (sub.split(":")[0] if ":" in sub else sub).strip()
+
+  return {
+    "curiosity_hook": f"Quick question regarding {prefix.lower()}...",
+    "benefit_value": f"Accelerate your workflow with {prefix}",
+    "direct_action": f"Action Required: {prefix}",
+  }
 
 _CTA_BY_INTENT: dict[str, list[str]] = {
   "schedule": [
@@ -242,6 +500,18 @@ _LOCALE_PHRASES: dict[str, dict[str, list[str]]] = {
     "friendly": {"greetings": ["Hallo,", "Ich hoffe, es geht Ihnen gut —"], "closings": ["Herzliche Grüße,", "Vielen Dank,"]},
     "casual": {"greetings": ["Hi,", "Hallo!"], "closings": ["Viele Grüße,", "Danke,"]},
   },
+  "gu": {
+    "professional": {"greetings": ["નમસ્તે,", "શુભ પ્રભાત,"], "closings": ["આપનો વિશ્વાસુ,", "આભાર સહ,"]},
+    "formal": {"greetings": ["આદરણીય શ્રી / શ્રીમતી,", "માનનીય ટીમ,"], "closings": ["સાદર પ્રણામ,", "આપનો નમ્ર,"]},
+    "friendly": {"greetings": ["કેમ છો,", "સ્નેહી મિત્ર,"], "closings": ["શુભેચ્છાઓ સાથે,", "આભાર,"]},
+    "casual": {"greetings": ["હેલો,", "કેમ છો,"], "closings": ["આવજો,", "આભાર,"]},
+  },
+  "mr": {
+    "professional": {"greetings": ["नमस्कार,", "सप्रेम नमस्कार,"], "closings": ["आपला नम्र,", "सस्नेह धन्यवाद,"]},
+    "formal": {"greetings": ["आदरणीय महोदय,", "माननीय टीम,"], "closings": ["सादर प्रणाम,", "आपला स्नेही,"]},
+    "friendly": {"greetings": ["नमस्कार,", "हॅलो,"], "closings": ["शुभकामना,", "धन्यवाद,"]},
+    "casual": {"greetings": ["हॅलो,"], "closings": ["धन्यवाद,"]},
+  },
   "hi": {
     "professional": {"greetings": ["नमस्ते,", "प्रणाम,"], "closings": ["सादर,", "धन्यवाद,"]},
     "formal": {"greetings": ["माननीय महोदय/महोदया,", "प्रिय टीम,"], "closings": ["भवदीय,", "आपका आभारी,"]},
@@ -353,12 +623,24 @@ def parse_original_email(text: str) -> dict[str, Any]:
 
 def detect_language(text: str) -> dict[str, Any]:
   low = text.lower()
+  # 1. Unicode script detection
+  if re.search(r"[\u0A80-\u0AFF]", text):
+    return {"language": "Gujarati", "bcp47": "gu", "source": "unicode_script"}
+  if re.search(r"[\u0900-\u097F]", text):
+    if any(w in low for w in ("आहे", "आहोत", "करा", "होते", "नाही")):
+      return {"language": "Marathi", "bcp47": "mr", "source": "unicode_script"}
+    return {"language": "Hindi", "bcp47": "hi", "source": "unicode_script"}
+  if re.search(r"[\u0600-\u06FF]", text):
+    return {"language": "Arabic", "bcp47": "ar", "source": "unicode_script"}
+
   hints = {
     "en": ("the", "and", "please", "thank", "regards", "hello", "dear"),
-    "es": ("hola", "gracias", "estimado", "saludos", "buenos"),
-    "fr": ("bonjour", "merci", "cordialement", "madame"),
-    "de": ("hallo", "danke", "freundliche", "guten"),
+    "es": ("hola", "gracias", "estimado", "saludos", "buenos", "propuesta", "servicio"),
+    "fr": ("bonjour", "merci", "cordialement", "madame", "service"),
+    "de": ("hallo", "danke", "freundliche", "guten", "angebot"),
     "hi": ("नमस्ते", "धन्यवाद", "आपका", "सादर"),
+    "gu": ("નમસ્તે", "આભાર", "ગુજરાતી"),
+    "mr": ("नमस्कार", "धन्यवाद"),
     "ar": ("مرحبا", "شكرا", "تحية"),
     "pt": ("obrigado", "prezado", "atenciosamente"),
     "zh": ("您好", "谢谢", "此致"),
@@ -369,7 +651,8 @@ def detect_language(text: str) -> dict[str, Any]:
     best = "en"
   labels = {
     "en": "English", "es": "Spanish", "fr": "French", "de": "German",
-    "hi": "Hindi", "ar": "Arabic", "pt": "Portuguese", "zh": "Chinese",
+    "hi": "Hindi", "gu": "Gujarati", "mr": "Marathi", "ar": "Arabic",
+    "pt": "Portuguese", "zh": "Chinese",
   }
   return {"language": labels.get(best, "English"), "bcp47": best, "source": "auto_detect"}
 
@@ -722,7 +1005,21 @@ def _greeting_closing(tone: str, seed: int, locale: str = "en") -> tuple[str, st
   )
 
 
-def _opening_new_email(tone: str, subject: str, urgency: str) -> str:
+def _opening_new_email(tone: str, subject: str, urgency: str, locale: str = "en") -> str:
+  loc = (locale or "en").lower()[:2]
+  if loc == "gu":
+    return f"હું આપને {subject} સંદર્ભે મહત્વપૂર્ણ માહિતી શેર કરવા માટે લખી રહ્યો છું."
+  if loc == "hi":
+    return f"मैं आपको {subject} के संबंध में महत्वपूर्ण जानकारी साझा करने के लिए लिख रहा हूँ।"
+  if loc == "mr":
+    return f"मी आपणास {subject} बाबत महत्त्वाची माहिती देण्याकरिता हे पत्र लिहित आहे."
+  if loc == "es":
+    return f"Le escribo en relación con {subject.lower()} para compartir información clave."
+  if loc == "fr":
+    return f"Je vous écris concernant {subject.lower()} afin de vous partager une mise à jour."
+  if loc == "de":
+    return f"Ich schreibe Ihnen bezüglich {subject.lower()}, um ein wichtiges Update zu teilen."
+
   if urgency == "high":
     return f"I'm reaching out regarding {subject.lower()} — hoping to align quickly."
   if tone == "casual":
@@ -799,7 +1096,7 @@ def compose_email(
     if locale == "en":
       greeting = _pick(_GREETINGS.get(tone, _GREETINGS["professional"]), seed)
     subject = context.get("subject", "this topic")
-    opener = _opening_new_email(tone, subject, urgency_level)
+    opener = _opening_new_email(tone, subject, urgency_level, locale)
     bullets = list(context.get("key_points") or [])
     parts = [greeting, "", opener, ""]
   elif mode == "reply":
