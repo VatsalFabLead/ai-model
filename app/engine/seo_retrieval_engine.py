@@ -1,12 +1,12 @@
+from __future__ import annotations
+
 """SEO retrieval quality — chunking, cross-encoder rerank, strict facts, disambiguation."""
 
-from __future__ import annotations
+from app.engine.seo_content_domains import detect_language
 
 import re
 from dataclasses import dataclass, field
 from typing import Any
-
-import numpy as np
 
 from app.engine.open_data_retrieval import OpenDoc
 
@@ -503,7 +503,42 @@ def generate_safe_metadata(
   article: str,
   primary: str,
   topic: str,
+  language: str | None = None,
 ) -> str:
+  """Meta description from article only — localized and clean."""
+  lang = detect_language(topic, [primary], language)
+  intro = ""
+  for line in (article or "").splitlines():
+    line = line.strip()
+    if not line or line.startswith("#") or line.startswith(">") or line.startswith("|") or line.startswith("---") or line.startswith("!"):
+      continue
+    intro = line
+    break
+  if not intro:
+    if lang == "hi":
+      intro = f"यह मार्गदर्शिका {topic} और {primary} की संपूर्ण जानकारी प्रदान करती है।"
+    elif lang == "es":
+      intro = f"Guía práctica sobre {primary} y {topic} con información clara."
+    elif lang == "fr":
+      intro = f"Guide pratique sur {primary} et {topic} avec des informations claires."
+    elif lang == "de":
+      intro = f"Praktischer Leitfaden zu {primary} und {topic} mit klaren Informationen."
+    else:
+      intro = f"A practical guide to {primary} covering {topic}."
+  intro = re.sub(r"\*+", "", intro).strip()
+  if len(intro) > 130:
+    intro = intro[:127].rsplit(" ", 1)[0] + "..."
+  if lang == "hi":
+    meta = f"{intro} जानें मुख्य विचार, चरण-दर-चरण प्रक्रिया और व्यावहारिक समाधान।"
+  elif lang == "es":
+    meta = f"{intro} Aprenda consideraciones clave, opciones y respuestas a preguntas frecuentes."
+  elif lang == "fr":
+    meta = f"{intro} Découvrez les points clés, les options et les réponses aux questions."
+  elif lang == "de":
+    meta = f"{intro} Erfahren Sie Wichtiges, Optionen und Antworten auf häufige Fragen."
+  else:
+    meta = f"{intro} Learn key considerations, options, and answers to common questions."
+  return meta[:160].rsplit(" ", 1)[0] + "..." if len(meta) > 160 else meta
   """Meta description from article only — never polluted retrieval chunks."""
   intro = ""
   for line in article.splitlines():

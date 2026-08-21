@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 """SEO Content Generator — 8-stage production workflow.
 
 Keyword → Intent Understanding → Entity Understanding → Fact Gathering
 → Outline Planning → Context-Aware Writing → SEO Optimization → Final Content
 """
 
-from __future__ import annotations
+from app.engine.seo_content_domains import detect_language
 
 import re
 import time
@@ -53,22 +55,31 @@ from app.engine.seo_content_enrichment import (
 )
 
 
-def generate_table_of_contents(article: str) -> str:
+def generate_table_of_contents(article: str, topic: str = "", language: str | None = None) -> str:
   """Generate an anchor-linked Table of Contents for articles with 3+ headings."""
   headings = re.findall(r"^##\s+(.+)$", article, re.M)
-  if len(headings) < 3 or "## Table of Contents" in article:
+  if len(headings) < 3:
     return article
 
-  toc_lines = ["## Table of Contents", ""]
+  from app.engine.seo_content_domains import detect_language, get_localized_heading
+  lang = detect_language(topic or article[:200], [], language)
+  toc_title = get_localized_heading("table_of_contents", lang)
+
+  if f"## {toc_title}" in article or "## Table of Contents" in article or "## अनुक्रमणिका" in article or "## અનુક્રમણિકા" in article:
+    return article
+
+  toc_lines = [f"## {toc_title}", ""]
   for h in headings:
     slug = re.sub(r"[^\w\s-]", "", h.lower()).replace(" ", "-")
     toc_lines.append(f"- [{h}](#{slug})")
 
   toc_block = "\n".join(toc_lines) + "\n\n"
 
-  if "## Introduction" in article:
-    return article.replace("## Introduction", toc_block + "## Introduction", 1)
-  elif article.startswith("#"):
+  for intro_h in ("## Introduction", "## परिचय", "## પ્રસ્તાવના", "## Introducción", "## Introduction"):
+    if intro_h in article:
+      return article.replace(intro_h, toc_block + intro_h, 1)
+
+  if article.startswith("#"):
     nl = article.find("\n")
     if nl > 0:
       return article[: nl + 1] + "\n" + toc_block + article[nl + 1 :].lstrip()
@@ -395,7 +406,27 @@ def run_outline_planning_stage(
 
 # ── Stage 6: Context-Aware Writing ──────────────────────────────────────────
 
-def _intent_intro(intent: str, topic: str, primary: str) -> str:
+def _intent_intro(intent: str, topic: str, primary: str, language: str | None = None) -> str:
+  lang = detect_language(topic, [primary], language)
+  if lang == "hi":
+    if intent == "informational":
+      return f"यह मार्गदर्शिका **{topic}** के विषय में **{primary}** पर स्पष्ट और व्यावहारिक जानकारी प्रदान करती है। इसमें आप मुख्य अवधारणाएं, चरण-दर-चरण प्रक्रिया और महत्वपूर्ण प्रश्नों के उत्तर जानेंगे।"
+    if intent == "commercial":
+      return f"**{topic}** के लिए **{primary}** का सही चयन करना महत्वपूर्ण है। यह लेख आपको सर्वोत्तम विकल्पों और रणनीतियों का मूल्यांकन करने में मदद करेगा।"
+    if intent == "transactional":
+      return f"क्या आप **{primary}** के साथ शुरुआत करने के लिए तैयार हैं? यह मार्गदर्शिका **{topic}** को तुरंत लागू करने के व्यावहारिक उपाय बताती है।"
+    return f"**{topic}** और **{primary}** एक-दूसरे से गहराई से जुड़े हैं। यह लेख आपको संरचित और उपयोगी मार्गदर्शन प्रदान करता है।"
+  elif lang == "es":
+    if intent == "informational":
+      return f"Esta guía explica **{primary}** con información clara sobre **{topic}**. Aprenderá definiciones, pasos prácticos y respuestas."
+    if intent == "commercial":
+      return f"Elegir el enfoque correcto para **{primary}** es importante para **{topic}**. Este artículo compara las consideraciones clave."
+    return f"**{topic}** y **{primary}** están estrechamente conectados. Este artículo ofrece una guía estructurada y práctica."
+  elif lang == "fr":
+    return f"Ce guide explique **{primary}** dans le contexte de **{topic}** avec des informations claires et des conseils pratiques."
+  elif lang == "de":
+    return f"Dieser Leitfaden erklärt **{primary}** im Kontext von **{topic}** mit klaren Informationen und praktischen Ratschlägen."
+
   if intent == "informational":
     return (
       f"This guide explains **{primary}** with clear, evidence-backed information about **{topic}**. "
@@ -435,10 +466,12 @@ def write_context_aware_article(
   domain: str,
   content_profile: str,
   nsfw: dict[str, Any],
+  language: str | None = None,
 ) -> dict[str, Any]:
   """Write article using intent, entities, facts, and section plan."""
   primary = keywords[0] if keywords else topic
   search_intent = intent.get("search_intent", "informational")
+  lang = detect_language(topic, keywords, language)
 
   if nsfw.get("skip_open_retrieval") or content_profile in (
     "adult_services", "local_services", "ambiguous_escort",
@@ -472,9 +505,9 @@ def write_context_aware_article(
       category=category, tone=tone, audience=audience, target_words=target_words,
       intent=intent.get("search_intent", "informational"),
       content_profile=content_profile,
+      language=language,
     )
 
-  primary = keywords[0] if keywords else topic
   strict_facts = [
     StrictFact(
       text=getattr(f, "text", str(f)),
@@ -489,21 +522,40 @@ def write_context_aware_article(
     if p.get("heading", "").lower() not in ("introduction", "conclusion")
   ]
   section_facts = assign_facts_to_sections(h2s, strict_facts, topic=topic, primary=primary)
-  search_intent = intent.get("search_intent", "informational")
 
-  title = outline[0]["text"] if outline else f"{topic} Guide"
+  from app.engine.seo_content_domains import get_localized_heading
+  intro_h = get_localized_heading("intro", lang)
+  conclusion_h = get_localized_heading("conclusion", lang)
+
+  title = outline[0]["text"] if outline else f"{topic}"
   sections: list[str] = [
-    f"# {title}", "", "## Introduction", "",
-    _intent_intro(search_intent, topic, primary), "",
+    f"# {title}", "", f"## {intro_h}", "",
+    _intent_intro(search_intent, topic, primary, language=lang), "",
   ]
   for plan in section_plan:
     heading = plan.get("heading", "")
     if heading.lower() in ("introduction", "conclusion") or not heading:
       continue
     sections.extend([f"## {heading}", "", section_facts.get(heading, ""), ""])
+
+  if lang == "hi":
+    conc_text = f"यह मार्गदर्शिका **{topic}** के विषय में **{primary}** के मुख्य पहलुओं को प्रस्तुत करती है।"
+  elif lang == "es":
+    conc_text = f"Esta guía cubrió los aspectos clave de **{primary}** para **{topic}**."
+  elif lang == "fr":
+    conc_text = f"Ce guide a couvert les aspects clés de **{primary}** pour **{topic}**."
+  elif lang == "de":
+    conc_text = f"Dieser Leitfaden behandelte die wichtigsten Aspekte von **{primary}** für **{topic}**."
+  elif lang == "gu":
+    conc_text = f"આ માર્ગદર્શિકાએ **{topic}** માટે **{primary}**ના મુખ્ય પાસાઓને આવરી લીધા છે."
+  elif lang != "en":
+    conc_text = f"{get_localized_heading('key_takeaways', lang)}: **{primary}** - **{topic}**."
+  else:
+    conc_text = f"This guide covered key aspects of **{primary}** for **{topic}**."
+
   sections.extend([
-    "## Conclusion", "",
-    f"This guide covered key aspects of **{primary}** for **{topic}**.",
+    f"## {conclusion_h}", "",
+    conc_text,
   ])
   article = re.sub(r"\n{3,}", "\n\n", "\n".join(sections)).strip()
 
@@ -514,7 +566,7 @@ def write_context_aware_article(
         profile=content_profile if content_profile != "ambiguous_escort" else "adult_services",
         intent=search_intent,
       )
-      title = outline[0]["text"] if outline else f"{topic} Guide"
+      title = outline[0]["text"] if outline else f"{topic}"
       faqs = generate_paa_faqs(
       topic, primary, [], content_profile, search_intent,
       keywords=keywords, domain=domain, seed=seed,
@@ -548,22 +600,55 @@ def write_context_aware_article(
   }
 
 
-def _build_faqs(primary: str, topic: str, fact_texts: list[str]) -> list[dict[str, str]]:
-  questions = [
-    f"What is {primary}?",
-    f"How do I get started with {primary}?",
-    f"What are the benefits of {primary}?",
-    f"Who should focus on {primary}?",
-  ]
+def _build_faqs(primary: str, topic: str, fact_texts: list[str], language: str | None = None) -> list[dict[str, str]]:
+  lang = detect_language(topic, [primary], language)
+  if lang == "hi":
+    questions = [
+      f"{primary} क्या है?",
+      f"{primary} के साथ शुरुआत कैसे करें?",
+      f"{primary} के मुख्य लाभ क्या हैं?",
+      f"{primary} का उपयोग किसे करना चाहिए?",
+    ]
+  elif lang == "es":
+    questions = [
+      f"¿Qué es {primary}?",
+      f"¿Cómo empezar con {primary}?",
+      f"¿Cuáles son los beneficios de {primary}?",
+      f"¿Quién debería enfocarse en {primary}?",
+    ]
+  elif lang == "fr":
+    questions = [
+      f"Qu'est-ce que {primary} ?",
+      f"Comment commencer avec {primary} ?",
+      f"Quels sont les avantages de {primary} ?",
+      f"Qui devrait se concentrer sur {primary} ?",
+    ]
+  elif lang == "de":
+    questions = [
+      f"Was ist {primary}?",
+      f"Wie fange ich mit {primary} an?",
+      f"Was sind die Vorteile von {primary}?",
+      f"Wer sollte sich auf {primary} konzentrieren?",
+    ]
+  else:
+    questions = [
+      f"What is {primary}?",
+      f"How do I get started with {primary}?",
+      f"What are the benefits of {primary}?",
+      f"Who should focus on {primary}?",
+    ]
   faqs: list[dict[str, str]] = []
   for i, q in enumerate(questions):
     if i < len(fact_texts):
       faqs.append({"question": q, "answer": _clip(fact_texts[i], 300)})
     else:
-      faqs.append({
-        "question": q,
-        "answer": f"{primary.title()} offers practical value for anyone learning about {topic}.",
-      })
+      if lang == "hi":
+        ans = f"{primary} विषय का सही ज्ञान और निष्पादन बेहतर सफलता प्रदान करता है।"
+      elif lang == "es":
+        ans = f"{primary} ofrece un valor práctico para cualquiera que busque mejorar sus resultados."
+      else:
+        ans = f"{primary.title()} offers practical value for anyone learning about {topic}."
+      faqs.append({"question": q, "answer": ans})
   return faqs
 
 
@@ -655,7 +740,9 @@ def generate_content_table(
   keywords: list[str],
   entities: list[str],
   category: str,
+  language: str | None = None,
 ) -> str:
+  lang = detect_language(topic, keywords, language)
   if category not in ("listicle", "how_to_guide", "blog_article"):
     return ""
   rows = [e for e in entities[:6] if e and len(e) < 40 and "generate" not in e.lower()] or [
@@ -664,13 +751,31 @@ def generate_content_table(
   rows = [r for r in rows if r.lower() != (topic or "").lower()][:4]
   if len(rows) < 2:
     return ""
-  header = "| Aspect | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
-  sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
-  body = [
-    f"| Focus | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'Advanced', 40)} |",
-    f"| Best for | Beginners | Intermediate users | Specialists |",
-    f"| Key takeaway | Core {keywords[0] if keywords else topic} principles | Practical use | Optimization |",
-  ]
+
+  if lang == "hi":
+    header = "| पहलू | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
+    sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
+    body = [
+      f"| मुख्य केंद्र | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'उन्नत', 40)} |",
+      f"| किसके लिए उपयुक्त | शुरुआती | मध्यम उपयोगकर्ता | विशेषज्ञ |",
+      f"| मुख्य सीख | मूल सिद्धांत | व्यावहारिक उपयोग | अनुकूलन |",
+    ]
+  elif lang == "es":
+    header = "| Aspecto | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
+    sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
+    body = [
+      f"| Enfoque | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'Avanzado', 40)} |",
+      f"| Ideal para | Principiantes | Intermedios | Especialistas |",
+      f"| Conclusión clave | Principios básicos | Uso práctico | Optimización |",
+    ]
+  else:
+    header = "| Aspect | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
+    sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
+    body = [
+      f"| Focus | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'Advanced', 40)} |",
+      f"| Best for | Beginners | Intermediate users | Specialists |",
+      f"| Key takeaway | Core {keywords[0] if keywords else topic} principles | Practical use | Optimization |",
+    ]
   return "\n".join([header, sep] + body)
 
 
@@ -717,6 +822,7 @@ def run_content_enrichment_stage(
   domain: str,
   content_profile: str,
   confidence: float,
+  language: str | None = None,
 ) -> dict[str, Any]:
   """Expand depth, local SEO, unique FAQs, metadata, schema, tables, internal links."""
   primary = _display_primary(topic, keywords, locations)
@@ -829,6 +935,7 @@ def run_seo_optimization_stage(
   intent: dict[str, Any],
   category: str,
   sources_used: list[str],
+  language: str | None = None,
 ) -> dict[str, Any]:
   article = draft.get("content", {}).get("article", "")
   title = draft.get("metadata", {}).get("title", topic)
@@ -837,23 +944,27 @@ def run_seo_optimization_stage(
   primary = keywords[0] if keywords else topic
   search_intent = intent.get("search_intent", "informational")
 
+  from app.engine.seo_content_domains import detect_language, get_localized_heading
+  lang = detect_language(topic, keywords, language)
+
   # 1. Inject Trust & Citation block
-  article = generate_trust_and_citation_blocks(article, topic, primary, facts, sources_used)
+  article = generate_trust_and_citation_blocks(article, topic, primary, facts, sources_used, language=lang)
 
   # 2. Inject Table of Contents
-  article = generate_table_of_contents(article)
+  article = generate_table_of_contents(article, topic=topic, language=lang)
 
   # 3. Inject Image Placeholders with SEO Alt Text
-  article = generate_image_placeholders_with_alt(article, topic, primary)
+  article = generate_image_placeholders_with_alt(article, topic, primary, language=lang)
 
   coverage = build_coverage_map(article, keywords, entities)
   gaps = gap_analysis(article, coverage, docs, entities, keywords=keywords, short_topic=topic)
 
   snippet = generate_featured_snippet(topic, primary, facts, search_intent)
   profile = draft.get("content_profile", "general")
+  qa_label = get_localized_heading("quick_answer", lang)
   if profile not in ("adult_services", "local_services", "ambiguous_escort"):
-    if "quick answer" not in article.lower():
-      block = f"> **Quick answer:** {snippet}\n\n"
+    if "quick answer" not in article.lower() and qa_label.lower() not in article.lower():
+      block = f"> **{qa_label}:** {snippet}\n\n"
       if article.startswith("#"):
         nl = article.find("\n")
         article = article[: nl + 1] + "\n" + block + article[nl + 1 :].lstrip() if nl > 0 else block + article
@@ -862,7 +973,7 @@ def run_seo_optimization_stage(
 
   table_md = ""
   if profile not in ("adult_services", "local_services"):
-    table_md = generate_content_table(topic, keywords, entities, category)
+    table_md = generate_content_table(topic, keywords, entities, category, language=lang)
   if table_md:
     article = _inject_table_into_article(article, table_md)
 
@@ -873,12 +984,25 @@ def run_seo_optimization_stage(
     category=category, locations=draft.get("locations"),
   )
 
-  if sources_used and len(facts) >= 2 and not re.search(r"##\s*(sources|credibility)", article, re.I):
+  src_heading = get_localized_heading("sources_credibility", lang)
+  if sources_used and len(facts) >= 2 and not re.search(r"##\s*(" + re.escape(src_heading) + r"|sources|credibility)", article, re.I):
     src_line = ", ".join(sorted(set(sources_used))[:5])
-    article += (
-      f"\n\n## Sources & credibility\n\n"
-      f"This article synthesizes information from open datasets including {src_line}."
-    )
+    if lang == "hi":
+      src_body = f"यह लेख {src_line} सहित खुले डेटासेट से प्राप्त जानकारी को संश्लेषित करता है।"
+    elif lang == "gu":
+      src_body = f"આ લેખ {src_line} સહિત ખુલ્લા ડેટાબેઝમાંથી પ્રાપ્ત માહિતીને આધારે તૈયાર કરાયો છે."
+    elif lang == "mr":
+      src_body = f"हा लेख {src_line} सह खुल्या डेटासेटमधील माहिती संकलित करून तयार केला आहे."
+    elif lang == "es":
+      src_body = f"Este artículo sintetiza información de conjuntos de datos abiertos, incluidos {src_line}."
+    elif lang == "fr":
+      src_body = f"Cet article synthétise des informations provenant de jeux de données ouverts, notamment {src_line}."
+    elif lang == "de":
+      src_body = f"Dieser Artikel synthetisiert Informationen aus offenen Datensätzen, einschließlich {src_line}."
+    else:
+      src_body = f"This article synthesizes information from open datasets including {src_line}."
+
+    article += f"\n\n## {src_heading}\n\n{src_body}"
 
   article, read_notes = improve_readability(article)
   r_score = readability_score(article)
@@ -974,6 +1098,7 @@ async def run_seo_content_pipeline(
   target_words: int = 1000,
   variation_seed: int | None = None,
   use_rag: bool = True,
+  language: str | None = None,
 ) -> dict[str, Any]:
   """Full SEO content workflow with per-stage telemetry."""
   t0 = time.perf_counter()
@@ -1078,6 +1203,7 @@ async def run_seo_content_pipeline(
     domain=kw["domain"],
     content_profile=content_profile,
     nsfw=nsfw,
+    language=language,
   )
   draft = writing["draft"]
   article = draft.get("content", {}).get("article", "")
@@ -1103,6 +1229,7 @@ async def run_seo_content_pipeline(
     domain=kw["domain"],
     content_profile=content_profile,
     confidence=float(fact_stage.get("confidence") or 0.0),
+    language=language,
   )
   draft = enrichment["draft"]
   article = draft.get("content", {}).get("article", "")
@@ -1149,6 +1276,7 @@ async def run_seo_content_pipeline(
     intent=intent,
     category=category,
     sources_used=fact_stage.get("sources_used") or [],
+    language=language,
   )
   stages["readability_optimizer"] = {
     "readability": seo.get("readability_score"),

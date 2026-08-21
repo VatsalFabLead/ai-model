@@ -1,3 +1,4 @@
+from app.engine.seo_content_domains import detect_language
 """SEO Content Generator — advanced, multilingual, worldwide.
 
 Structured output: metadata, keywords, outline, content (article + tone), FAQs.
@@ -133,10 +134,9 @@ def _slugify(text: str, max_len: int = 60) -> str:
   text = (text or "").lower().strip()
   text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
   text = re.sub(r"[\s_-]+", "-", text, flags=re.UNICODE).strip("-")
-  if not text or text in ("guide", "comparison", "overview"):
-    words = (text or "").split()
-    text = "-".join([w for w in words if w])[:max_len]
-  return text[:max_len] or "seo-article"
+  if not text or text in ("guide", "comparison", "overview", "untitled"):
+    return "seo-article"
+  return text[:max_len].strip("-")
 
 
 
@@ -167,6 +167,9 @@ def _suggest_tags(
       return
     if low in ("introduction", "conclusion", "overview", "summary", "faq", "faqs"):
       return
+    if detect_language(topic, [primary], language) != "en":
+      if low in ("beginner guide", "step-by-step", "best practices", "tips and tricks", "how it works", "benefits and use cases", "step-by-step guide"):
+        return
     seen.add(low)
     tags.append(t)
 
@@ -715,6 +718,7 @@ async def generate(
       target_words=target,
       variation_seed=seed,
       use_rag=use_rag,
+      language=language,
     )
   except Exception:
     pipeline_out = None

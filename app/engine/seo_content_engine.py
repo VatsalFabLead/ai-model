@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 """Advanced SEO content engine — worldwide, multilingual, category-aware.
 
 Uses data/seo_content_knowledge.jsonl for training guidance.
 100% custom — no GPT, Claude, Gemini.
 """
 
-from __future__ import annotations
+from app.engine.seo_content_domains import detect_language, get_language_name, get_localized_heading
 
 from pathlib import Path
 from typing import Any
@@ -187,9 +189,127 @@ def category_structure_hint(category: str) -> str:
   return hints.get(category, hints["blog_article"])
 
 
-def build_outline(topic: str, keywords: list[str], category: str) -> list[str]:
-  """Article section outline (H2-level)."""
+def build_outline(topic: str, keywords: list[str], category: str, *, language: str | None = None) -> list[str]:
+  """Article section outline (H2-level) with full multilingual support."""
+  lang = detect_language(topic, keywords, language)
   primary = (keywords[0] if keywords else topic).strip().title()
+
+  if lang == "hi":
+    if category == "how_to_guide":
+      return [
+        f"{primary} शुरू करने से पहले आवश्यक जानकारी",
+        f"चरण 1: {primary} के मूल सिद्धांतों को समझें",
+        "चरण 2: सर्वोत्तम कार्यप्रणालियों को लागू करें",
+        "चरण 3: परिणामों का अनुकूलन और विस्तार करें",
+        "सामान्य गलतियाँ और उनसे कैसे बचें",
+        "निष्कर्ष और अगले कदम",
+      ]
+    if category == "listicle":
+      return [
+        f"1. अपनी {primary} रणनीति को परिभाषित करें",
+        f"2. {primary} के लिए सही टूल्स चुनें",
+        "3. उच्च गुणवत्ता वाली सामग्री बनाएं",
+        "4. निरंतर मापें और सुधार करें",
+        "5. नवीनतम रुझानों से अपडेट रहें",
+        "सारांश और कार्य योजना",
+      ]
+    if category == "landing_page":
+      return [
+        "मुख्य मूल्य प्रस्ताव (Hero Value Proposition)",
+        "प्रमुख लाभ और उपयोगिता",
+        "यह कैसे काम करता है",
+        "विश्वास संकेत और समीक्षाएं",
+        "आगे बढ़ें (Call to Action)",
+      ]
+    return [
+      f"{primary}: एक संपूर्ण अवलोकन",
+      f"आज {primary} का महत्व क्यों है?",
+      f"{primary} के मुख्य लाभ",
+      "सर्वोत्तम कार्यप्रणालियाँ और रणनीतियाँ",
+      f"{primary} के साथ शुरुआत कैसे करें",
+      "निष्कर्ष",
+    ]
+
+  if lang == "es":
+    if category == "how_to_guide":
+      return [
+        f"Lo que necesita antes de comenzar con {primary}",
+        f"Paso 1: Comprender los conceptos básicos de {primary}",
+        "Paso 2: Aplicar mejores prácticas",
+        "Paso 3: Optimizar y escalar resultados",
+        "Errores comunes a evitar",
+        "Conclusión y próximos pasos",
+      ]
+    return [
+      f"Introducción a {primary}",
+      f"Por qué es importante {primary} hoy en día",
+      f"Beneficios clave de {primary}",
+      "Mejores prácticas y estrategias",
+      f"Cómo empezar con {primary}",
+      "Conclusión",
+    ]
+
+  if lang == "fr":
+    return [
+      f"Introduction à {primary}",
+      f"Pourquoi {primary} est important aujourd'hui",
+      f"Principaux avantages de {primary}",
+      "Meilleures pratiques et stratégies",
+      f"Comment démarrer avec {primary}",
+      "Conclusion et prochaines étapes",
+    ]
+
+  if lang == "de":
+    return [
+      f"Einführung in {primary}",
+      f"Warum {primary} heute wichtig ist",
+      f"Hauptvorteile von {primary}",
+      "Bewährte Verfahren und Strategien",
+      f"Erste Schritte mit {primary}",
+      "Fazit und nächste Schritte",
+    ]
+
+  if lang == "mr":
+    return [
+      f"{primary}: सविस्तर परिचय",
+      f"आज {primary} चे महत्व का आहे?",
+      f"{primary} चे मुख्य फायदे",
+      "उत्कृष्ट पद्धती आणि धोरणे",
+      f"{primary} सह सुरुवात कशी करावी",
+      "निष्कर्ष",
+    ]
+
+  if lang == "bn":
+    return [
+      f"{primary}: প্রাথমিক পরিচিতি",
+      f"বর্তমানে {primary}-এর গুরুত্ব কেন?",
+      f"{primary}-এর প্রধান সুবিধাসমূহ",
+      "সেরা অনুশীলন এবং কৌশলসমূহ",
+      f"{primary} দিয়ে কীভাবে শুরু করবেন",
+      "উপসংহার",
+    ]
+
+  if lang == "gu":
+    return [
+      f"{primary}: સચોટ પરિચય અને માર્ગદર્શિકા",
+      f"શા માટે {primary} મહત્વપૂર્ણ છે?",
+      f"{primary} ના મુખ્ય ફાયદાઓ",
+      "ઉત્તમોત્તમ પદ્ધતિઓ અને ટિપ્સ",
+      f"{primary} સાથે શરૂઆત કેવી રીતે કરવી",
+      "નિષ્કર્ષ અને આગળના પગલાં",
+    ]
+
+  if lang != "en":
+    # Universal fallback for any non-English language (Gujarati, Punjabi, Telugu, Kannada, Malayalam, etc.)
+    return [
+      f"{primary}: {get_localized_heading('intro', lang)}",
+      f"{get_localized_heading('what_is', lang)} {primary}",
+      f"{primary} - {get_localized_heading('benefits', lang)}",
+      f"{get_localized_heading('how_it_works', lang)}",
+      f"{get_localized_heading('guide', lang)}",
+      f"{get_localized_heading('conclusion', lang)}",
+    ]
+
   if category == "how_to_guide":
     return [
       f"What You Need Before Starting With {primary}",
@@ -227,39 +347,149 @@ def build_outline(topic: str, keywords: list[str], category: str) -> list[str]:
 
 
 def build_faqs(topic: str, keywords: list[str], *, language: str | None = None) -> list[dict[str, str]]:
-  """FAQ list — question + answer pairs."""
+  """FAQ list — question + answer pairs localized to target language."""
+  lang = detect_language(topic, keywords, language)
   primary = (keywords[0] if keywords else topic).strip()
-  lang_note = f" ({language})" if language else ""
+
+  if lang == "hi":
+    return [
+      {
+        "question": f"{primary} क्या है?",
+        "answer": f"{primary} एक महत्वपूर्ण तकनीक और कार्यपद्धति है जिसका उद्देश्य बेहतर प्रदर्शन और सफलता प्राप्त करना है।",
+      },
+      {
+        "question": f"{primary} से परिणाम दिखने में कितना समय लगता है?",
+        "answer": "सही रणनीति और निरंतर प्रयास के साथ, 4 से 8 सप्ताह के भीतर सकारात्मक परिणाम दिखाई देने लगते हैं।",
+      },
+      {
+        "question": f"{primary} का उपयोग किसे करना चाहिए?",
+        "answer": "यह व्यवसाय स्वामियों, पेशेवरों और उन सभी के लिए उपयोगी है जो अपनी डिजिटल उपस्थिति और दक्षता बढ़ाना चाहते हैं।",
+      },
+      {
+        "question": f"{primary} के मुख्य लाभ क्या हैं?",
+        "answer": "मुख्य लाभों में उच्च उत्पादकता, बेहतर गुणवत्ता, लागत प्रभावी निष्पादन और मापने योग्य परिणाम शामिल हैं।",
+      },
+      {
+        "question": f"{primary} की शुरुआत कैसे करें?",
+        "answer": "अपनी आवश्यकताओं का विश्लेषण करें, सही टूल्स का चयन करें और एक चरणबद्ध योजना का पालन करें।",
+      },
+    ]
+
+  if lang == "gu":
+    return [
+      {
+        "question": f"{primary} શું છે?",
+        "answer": f"{primary} એ એક મહત્વપૂર્ણ વિષય છે જેના દ્વારા સરળતાથી સફળતા મેળવી શકાય છે.",
+      },
+      {
+        "question": f"{primary} ના મુખ્ય ફાયદાઓ કયા છે?",
+        "answer": "આનાથી સમયની બચત થાય છે અને કાર્યમાં ઉત્કૃષ્ટ પરિણામો મળે છે.",
+      },
+      {
+        "question": f"{primary} સાથે શરૂઆત કેવી રીતે કરવી?",
+        "answer": "મૂળભૂત બાબતો શીખીને તબક્કાવાર આયોજન સાથે આગળ વધો.",
+      },
+    ]
+
+  if lang == "es":
+    return [
+      {
+        "question": f"¿Qué es {primary}?",
+        "answer": f"{primary} es una estrategia comprobada utilizada para mejorar la visibilidad y obtener resultados medibles.",
+      },
+      {
+        "question": f"¿Cuánto tiempo tarda {primary} en mostrar resultados?",
+        "answer": "La mayoría de las estrategias muestran un progreso significativo en un plazo de 4 a 8 semanas con una ejecución constante.",
+      },
+      {
+        "question": f"¿Quién debería enfocarse en {primary}?",
+        "answer": "Es ideal para profesionales, emprendedores y empresas que buscan optimizar su rendimiento y crecimiento.",
+      },
+    ]
+
+  if lang == "fr":
+    return [
+      {
+        "question": f"Qu'est-ce que {primary} ?",
+        "answer": f"{primary} est une stratégie éprouvée utilisée par les professionnels pour améliorer la visibilité et les résultats.",
+      },
+      {
+        "question": f"Combien de temps faut-il pour voir les résultats de {primary} ?",
+        "answer": "La plupart des stratégies donnent des résultats mesurables en 4 à 8 semaines avec une exécution régulière.",
+      },
+    ]
+
+  if lang == "de":
+    return [
+      {
+        "question": f"Was ist {primary}?",
+        "answer": f"{primary} ist ein bewährter Ansatz zur Verbesserung der Sichtbarkeit und für messbare Ergebnisse.",
+      },
+      {
+        "question": f"Wie lange dauert es, bis {primary} Ergebnisse zeigt?",
+        "answer": "Die meisten Strategien zeigen bei konsequenter Umsetzung innerhalb von 4–8 Wochen deutliche Fortschritte.",
+      },
+    ]
+
+  if lang == "mr":
+    return [
+      {
+        "question": f"{primary} म्हणजे काय?",
+        "answer": f"{primary} ही एक प्रभावी पद्धत आहे ज्याचा वापर सर्वोत्तम निकाल मिळवण्यासाठी केला जातो.",
+      },
+      {
+        "question": f"{primary} चे निकाल दिसण्यासाठी किती वेळ लागतो?",
+        "answer": "योग्य नियोजन आणि सातत्याने ४ ते ८ आठवड्यात सकारात्मक परिणाम दिसू लागतात.",
+      },
+    ]
+
+  if lang == "bn":
+    return [
+      {
+        "question": f"{primary} কী?",
+        "answer": f"{primary} হলো একটি প্রমাণিত পদ্ধতি যা সাফল্য এবং কার্যকারিতা বৃদ্ধির জন্য ব্যবহৃত হয়।",
+      },
+      {
+        "question": f"{primary}-এর ফলাফল দেখতে কত সময় লাগে?",
+        "answer": "সঠিক পরিকল্পনা এবং ধারাবাহিকতার সাথে ৪ থেকে ৮ সপ্তাহের মধ্যে ইতিবাচক ফলাফল পাওয়া যায়।",
+      },
+    ]
+
+  if lang != "en":
+    what_is = get_localized_heading("what_is", lang)
+    benefits = get_localized_heading("benefits", lang)
+    return [
+      {
+        "question": f"{what_is} {primary}?",
+        "answer": f"{primary} - {topic}",
+      },
+      {
+        "question": f"{primary} - {benefits}?",
+        "answer": f"{primary} - {get_localized_heading('key_takeaways', lang)}",
+      },
+    ]
+
   return [
     {
       "question": f"What is {primary}?",
-      "answer": (
-        f"{primary.title()} is a proven approach used by professionals worldwide{lang_note} "
-        "to improve visibility, engagement, and measurable results."
-      ),
+      "answer": f"{primary.title()} refers to practical methods and knowledge related to {topic}, applied step by step for real results.",
     },
     {
-      "question": f"How long does {primary} take to show results?",
-      "answer": (
-        "Most strategies show meaningful progress within 8–12 weeks when applied consistently "
-        "with quality content and proper optimization."
-      ),
+      "question": f"How do I get started with {primary}?",
+      "answer": "Begin with the fundamentals, set a clear goal, follow a structured plan, and track your progress weekly.",
     },
     {
-      "question": f"Who should focus on {primary}?",
-      "answer": (
-        "Marketers, business owners, creators, and teams who want sustainable growth "
-        "across search, social, and content channels globally."
-      ),
+      "question": f"How long until I see results with {primary}?",
+      "answer": "Most people notice meaningful progress within a few weeks when they apply the steps consistently.",
     },
     {
-      "question": f"What are the best practices for {primary}?",
-      "answer": (
-        "Focus on user intent, original research, clear structure, mobile-friendly pages, "
-        "and regular publishing — avoid keyword stuffing and thin content."
-      ),
+      "question": f"Who benefits most from learning about {primary}?",
+      "answer": f"Beginners, enthusiasts, and anyone who wants practical guidance on {topic} without unnecessary complexity.",
     },
   ]
+
+
+_FAQ_TITLE_PATTERN = r"^##\s+(?:frequently asked questions|faqs?|सामान्य प्रश्न|સામાન્ય પ્રશ્નો|preguntas frecuentes|foire aux questions|häufig gestellte fragen|सतत विचारले जाणारे प्रश्न|질문|よくある質問|常见问题|أسئلة شائعة)\s*$"
 
 
 def extract_outline_from_body(body: str) -> list[str]:
@@ -268,7 +498,7 @@ def extract_outline_from_body(body: str) -> list[str]:
     m = re.match(r"^##\s+(.+)$", line.strip())
     if m:
       title = re.sub(r"[*_`]", "", m.group(1)).strip()
-      if title.lower() not in ("frequently asked questions", "faq", "faqs"):
+      if not re.match(_FAQ_TITLE_PATTERN, line.strip(), re.I) and title.lower() not in ("frequently asked questions", "faq", "faqs"):
         outline.append(title)
   return outline
 
@@ -279,7 +509,7 @@ def extract_faqs_from_body(body: str) -> list[dict[str, str]]:
   current_q = ""
   for line in (body or "").split("\n"):
     stripped = line.strip()
-    if re.match(r"^##\s+(frequently asked questions|faqs?)\s*$", stripped, re.I):
+    if re.match(_FAQ_TITLE_PATTERN, stripped, re.I):
       in_faq = True
       continue
     if not in_faq:
@@ -306,7 +536,7 @@ def strip_faq_section(body: str) -> str:
   out: list[str] = []
   skip = False
   for line in lines:
-    if re.match(r"^##\s+(frequently asked questions|faqs?)\s*$", line.strip(), re.I):
+    if re.match(_FAQ_TITLE_PATTERN, line.strip(), re.I):
       skip = True
       continue
     if skip and line.strip().startswith("## "):

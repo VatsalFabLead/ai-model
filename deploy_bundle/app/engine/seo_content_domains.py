@@ -57,7 +57,7 @@ def extract_short_subject(text: str, max_words: int = 4) -> str:
   if not text:
     return ""
   t = re.sub(r"^(?:how\s+to\s+|guide\s+to\s+|complete\s+guide\s+on\s+)", "", text, flags=re.IGNORECASE).strip()
-  t = t.split(":")[0].split("-")[0].strip()
+  t = re.split(r":|\s+[-—–]\s+", t)[0].strip()
   words = t.split()
   if not words:
     return text[:30]
@@ -66,62 +66,262 @@ def extract_short_subject(text: str, max_words: int = 4) -> str:
   return " ".join(words[:max_words])
 
 
+_LANG_TO_BCP47: dict[str, str] = {
+  "english": "en", "hindi": "hi", "spanish": "es", "french": "fr", "german": "de",
+  "portuguese": "pt", "arabic": "ar", "japanese": "ja", "chinese": "zh", "korean": "ko",
+  "italian": "it", "russian": "ru", "bengali": "bn", "tamil": "ta", "marathi": "mr",
+  "urdu": "ur", "vietnamese": "vi", "thai": "th", "dutch": "nl", "polish": "pl",
+  "turkish": "tr", "indonesian": "id",
+}
+
+
+def detect_language(topic: str, keywords: list[str] | None = None, language: str | None = None) -> str:
+  """Detect language code (bcp47/2-letter) from explicit parameter or script/vocabulary analysis."""
+  if language and language.strip().lower() not in ("auto", "en", "english"):
+    l_clean = language.strip().lower()
+    return _LANG_TO_BCP47.get(l_clean, l_clean[:2])
+
+  text = f"{topic or ''} {' '.join(keywords or [])}"
+
+  # Devanagari script (Hindi / Marathi / Nepali)
+  if re.search(r"[\u0900-\u097F]", text):
+    if any(w in text for w in ("आणि", "आहे", "करतात", "येतात", "झाले", "होते", "महाराष्ट्र")):
+      return "mr"
+    return "hi"
+
+  # Gujarati script
+  if re.search(r"[\u0A80-\u0AFF]", text):
+    return "gu"
+
+  # Gurmukhi script (Punjabi)
+  if re.search(r"[\u0A00-\u0A7F]", text):
+    return "pa"
+
+  # Bengali script
+  if re.search(r"[\u0980-\u09FF]", text):
+    return "bn"
+
+  # Tamil script
+  if re.search(r"[\u0B80-\u0BFF]", text):
+    return "ta"
+
+  # Telugu script
+  if re.search(r"[\u0C00-\u0C7F]", text):
+    return "te"
+
+  # Kannada script
+  if re.search(r"[\u0C80-\u0CFF]", text):
+    return "kn"
+
+  # Malayalam script
+  if re.search(r"[\u0D00-\u0D7F]", text):
+    return "ml"
+
+  # Urdu / Arabic / Persian script
+  if re.search(r"[\u0600-\u06FF]", text):
+    if any(w in text for w in ("کی", "ہے", "کو", "میں", "اور", "سے")):
+      return "ur"
+    return "ar"
+
+  # Japanese (Hiragana / Katakana)
+  if re.search(r"[\u3040-\u30FF]", text):
+    return "ja"
+
+  # Chinese (Hanzi)
+  if re.search(r"[\u4E00-\u9FFF]", text):
+    return "zh"
+
+  # Korean (Hangul)
+  if re.search(r"[\uAC00-\uD7AF]", text):
+    return "ko"
+
+  # Cyrillic (Russian)
+  if re.search(r"[\u0400-\u04FF]", text):
+    return "ru"
+
+  # Thai
+  if re.search(r"[\u0E00-\u0E7F]", text):
+    return "th"
+
+  # Vietnamese
+  if re.search(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]", text, re.IGNORECASE):
+    return "vi"
+
+  # Spanish signals
+  if re.search(r"[¿¡]", text) or any(w in text.lower().split() for w in ("el", "la", "los", "las", "para", "como", "sobre", "guia", "guía")):
+    return "es"
+
+  # French signals
+  if any(w in text.lower().split() for w in ("le", "la", "les", "pour", "comment", "dans", "avec", "guide")):
+    return "fr"
+
+  # German signals
+  if "ß" in text or any(w in text.lower().split() for w in ("der", "die", "das", "und", "für", "wie", "leitfaden")):
+    return "de"
+
+  return "en"
+
+
 _LOCALIZED_HEADINGS: dict[str, dict[str, str]] = {
+  "gu": {
+    "intro": "પ્રસ્તાવના", "what_is": "શું છે", "benefits": "લાભ અને ઉપયોગિતા",
+    "how_it_works": "કેવી રીતે કામ કરે છે", "key_terms": "મુખ્ય શબ્દો", "conclusion": "નિષ્કર્ષ",
+    "faqs": "સામાન્ય પ્રશ્નો", "tools": "જરૂરી ટૂલ્સ", "pitfalls": "સામાન્ય ભૂલો",
+    "metrics": "સફળતાના માપદંડ", "guide": "માર્ગદર્શિકા", "deeper_dive": "ઊંડાણપૂર્વક",
+    "overview": "નિષ્ણાત સમીક્ષા", "quick_answer": "ઝડપી જવાબ",
+    "key_takeaways": "મુખ્ય મુદ્દાઓ અને સારાંશ", "core_focus": "મુખ્ય ફોકસ", "primary_takeaway": "મુખ્ય તારણ",
+  },
+  "pa": {
+    "intro": "ਜਾਣ-ਪਛਾਣ", "what_is": "ਕੀ ਹੈ", "benefits": "ਲਾਭ ਅਤੇ ਵਰਤੋਂ",
+    "how_it_works": "ਇਹ ਕਿਵੇਂ ਕੰਮ ਕਰਦਾ ਹੈ", "key_terms": "ਮੁੱਖ ਸ਼ਬਦ", "conclusion": "ਸਿੱਟਾ",
+    "faqs": "ਅਕਸਰ ਪੁੱਛੇ ਜਾਂਦੇ ਸਵਾਲ", "tools": "ਜ਼ਰੂਰੀ ਟੂਲ", "pitfalls": "ਆਮ ਗਲਤੀਆਂ",
+    "metrics": "ਸਫਲਤਾ ਦੇ ਮਾਪਦੰਡ", "guide": "ਗਾਈਡ", "deeper_dive": "ਵਿਸਥਾਰ ਨਾਲ",
+    "overview": "ਮਾਹਰ ਸਮੀਖਿਆ", "quick_answer": "ਤੁਰੰਤ ਜਵਾਬ",
+    "key_takeaways": "ਮੁੱਖ ਬਿੰਦੂ ਅਤੇ ਸਾਰ", "core_focus": "ਮੁੱਖ ਫੋਕਸ", "primary_takeaway": "ਮੁੱਖ ਸਿੱਟਾ",
+  },
+  "te": {
+    "intro": "పరిచయం", "what_is": "అంటే ఏమిటి", "benefits": "ప్రయోజనాలు మరియు ఉపయోగాలు",
+    "how_it_works": "ఇది ఎలా పనిచేస్తుంది", "key_terms": "ముఖ్యమైన పదాలు", "conclusion": "ముగింపు",
+    "faqs": "తరచుగా అడిగే ప్రశ్నలు", "tools": "అవసరమైన టూల్స్", "pitfalls": "సాధారణ పొరపాట్లు",
+    "metrics": "విజయం కొలమానాలు", "guide": "మార్గదర్శిని", "deeper_dive": "వివరంగా",
+    "overview": "నిపుణుల పరిశీలన", "quick_answer": "త్వరిత సమాధానం",
+    "key_takeaways": "ముఖ్య అంశాలు మరియు సారాంశం", "core_focus": "ప్రధాన దృష్టి", "primary_takeaway": "ప్రధాన ముగింపు",
+  },
+  "kn": {
+    "intro": "పరిచయ", "what_is": "ಎಂದರೆ ఏమిటి", "benefits": "ప్రయోజనగళు మత్తు ఉపయోగిసబహుదు",
+    "how_it_works": "ఇదు హేగె కెలస మాడుత్తదె", "key_terms": "ముఖ్య పదగళు", "conclusion": "ముగింపు",
+    "faqs": "సామాన్య ప్రశ్నెగళు", "tools": "అగత్య టూల్స్", "pitfalls": "సామాన్య తప్పుగళు",
+    "metrics": "యశస్సిన ప్రమాణగళు", "guide": "మార్గదర్శి", "deeper_dive": "వివరవాగి",
+    "overview": "నిపుణర వివరణె", "quick_answer": "త్వరిత ఉత్తర",
+    "key_takeaways": "ముఖ్య అంశగళు మత్తు సారాంశ", "core_focus": "ప్రధాన గమన", "primary_takeaway": "ముఖ్య నిష్కర్షె",
+  },
+  "ml": {
+    "intro": "ആമുഖം", "what_is": "എന്നാൽ എന്താണ്", "benefits": "നേട്ടങ്ങളും ഉപയോഗങ്ങളും",
+    "how_it_works": "ഇത് എങ്ങനെ പ്രവർത്തിക്കുന്നു", "key_terms": "പ്രധാന പദങ്ങൾ", "conclusion": "ഉപസംഹാരം",
+    "faqs": "ചോദ്യങ്ങൾ", "tools": "ആവശ്യമായ ടൂളുകൾ", "pitfalls": "തെറ്റുകൾ",
+    "metrics": "വിജയ മാനദണ്ഡങ്ങൾ", "guide": "വഴികാട്ടി", "deeper_dive": "വിശദമായി",
+    "overview": "വിദഗ്ദ്ധ അവലോകനം", "quick_answer": "പെട്ടെന്നുള്ള മറുപടി",
+    "key_takeaways": "പ്രധാന പോയിന്റുകൾ", "core_focus": "പ്രധാന ശ്രദ്ധ", "primary_takeaway": "പ്രധാന കണ്ടെത്തൽ",
+  },
   "hi": {
-    "intro": "परिचय",
-    "what_is": "क्या है",
-    "benefits": "लाभ और उपयोग",
-    "how_it_works": "यह कैसे काम करता है",
-    "key_terms": "मुख्य शब्द",
-    "conclusion": "निष्कर्ष",
-    "faqs": "सामान्य प्रश्न",
-    "tools": "आवश्यक टूल्स",
-    "pitfalls": "सामान्य गलतियाँ",
-    "metrics": "सफलता के पैमाने",
-    "guide": "मार्गदर्शिका",
-    "deeper_dive": "गहराई से जानें",
+    "intro": "परिचय", "what_is": "क्या है", "benefits": "लाभ और उपयोग",
+    "how_it_works": "यह कैसे काम करता है", "key_terms": "मुख्य शब्द", "conclusion": "निष्कर्ष",
+    "faqs": "सामान्य प्रश्न", "tools": "आवश्यक टूल्स", "pitfalls": "सामान्य गलतियाँ",
+    "metrics": "सफलता के पैमाने", "guide": "चरण-दर-चरण मार्गदर्शिका", "deeper_dive": "गहराई से जानें",
+    "overview": "विशेषज्ञ अवलोकन", "quick_answer": "त्वरित उत्तर",
+    "key_takeaways": "मुख्य बिंदु और कार्यकारी सारांश", "core_focus": "मुख्य केंद्र", "primary_takeaway": "प्राथमिक सीख",
   },
   "es": {
-    "intro": "Introducción",
-    "what_is": "¿Qué es",
-    "benefits": "Beneficios y Casos de Uso",
-    "how_it_works": "Cómo Funciona",
-    "key_terms": "Términos Clave",
-    "conclusion": "Conclusión",
-    "faqs": "Preguntas Frecuentes",
-    "tools": "Herramientas Necesarias",
-    "pitfalls": "Errores Comunes",
-    "metrics": "Métricas de Éxito",
-    "guide": "Guía Completa",
-    "deeper_dive": "Análisis Detallado",
+    "intro": "Introducción", "what_is": "¿Qué es", "benefits": "Beneficios y Casos de Uso",
+    "how_it_works": "Cómo Funciona", "key_terms": "Términos Clave", "conclusion": "Conclusión",
+    "faqs": "Preguntas Frecuentes", "tools": "Herramientas Necesarias", "pitfalls": "Errores Comunes",
+    "metrics": "Métricas de Éxito", "guide": "Guía Paso a Paso", "deeper_dive": "Análisis Detallado",
+    "overview": "Visión General Experta", "quick_answer": "Respuesta Rápida",
+    "key_takeaways": "Puntos Clave y Resumen Ejecutivo", "core_focus": "Enfoque Principal", "primary_takeaway": "Conclusión Principal",
   },
   "de": {
-    "intro": "Einführung",
-    "what_is": "Was ist",
-    "benefits": "Vorteile und Anwendungsfälle",
-    "how_it_works": "Wie es funktioniert",
-    "key_terms": "Schlüsselbegriffe",
-    "conclusion": "Fazit",
-    "faqs": "Häufig gestellte Fragen",
-    "tools": "Wichtige Werkzeuge",
-    "pitfalls": "Häufige Fehler",
-    "metrics": "Erfolgsfaktoren",
-    "guide": "Leitfaden",
-    "deeper_dive": "Vertiefung",
+    "intro": "Einführung", "what_is": "Was ist", "benefits": "Vorteile und Anwendungsfälle",
+    "how_it_works": "Wie es funktioniert", "key_terms": "Schlüsselbegriffe", "conclusion": "Fazit",
+    "faqs": "Häufig gestellte Fragen", "tools": "Wichtige Werkzeuge", "pitfalls": "Häufige Fehler",
+    "metrics": "Erfolgsfaktoren", "guide": "Schritt-für-Schritt-Anleitung", "deeper_dive": "Vertiefung",
+    "overview": "Experten-Übersicht", "quick_answer": "Schnelle Antwort",
+    "key_takeaways": "Wichtigste Erkenntnisse & Zusammenfassung", "core_focus": "Hauptfokus", "primary_takeaway": "Kernaussage",
   },
   "fr": {
-    "intro": "Introduction",
-    "what_is": "Qu'est-ce que",
-    "benefits": "Avantages et Cas d'Utilisation",
-    "how_it_works": "Comment ça marche",
-    "key_terms": "Termes Clés",
-    "conclusion": "Conclusion",
-    "faqs": "Foire Aux Questions",
-    "tools": "Outils Essentiels",
-    "pitfalls": "Erreurs Courantes",
-    "metrics": "Indicateurs de Succès",
-    "guide": "Guide Complet",
-    "deeper_dive": "Analyse Approfondie",
+    "intro": "Introduction", "what_is": "Qu'est-ce que", "benefits": "Avantages et Cas d'Utilisation",
+    "how_it_works": "Comment ça marche", "key_terms": "Termes Clés", "conclusion": "Conclusion",
+    "faqs": "Foire Aux Questions", "tools": "Outils Essentiels", "pitfalls": "Erreurs Courantes",
+    "metrics": "Indicateurs de Succès", "guide": "Guide Étape par Étape", "deeper_dive": "Analyse Approfondie",
+    "overview": "Aperçu d'Expert", "quick_answer": "Réponse Rapide",
+    "key_takeaways": "Points Clés et Résumé Exécutif", "core_focus": "Focus Principal", "primary_takeaway": "Enseignement Principal",
+  },
+  "mr": {
+    "intro": "परिचय", "what_is": "म्हणजे काय", "benefits": "फायदे आणि उपयोग",
+    "how_it_works": "हे कसे कार्य करते", "key_terms": "महत्वाचे शब्द", "conclusion": "निष्कर्ष",
+    "faqs": "सतत विचारले जाणारे प्रश्न", "tools": "आवश्यक साधने", "pitfalls": "सामान्य चुका",
+    "metrics": "यशाचे निकष", "guide": "मार्गदर्शिका", "deeper_dive": "सविस्तर माहिती",
+    "overview": "तज्ञांचे पुनरावलोकन", "quick_answer": "थोडक्यात उत्तर",
+    "key_takeaways": "महत्वाचे मुद्दे", "core_focus": "मुख्य लक्ष", "primary_takeaway": "प्राथमिक निष्कर्ष",
+  },
+  "bn": {
+    "intro": "ভূমিকা", "what_is": "কী এবং কেন", "benefits": "সুবিধা এবং ব্যবহার",
+    "how_it_works": "কীভাবে কাজ করে", "key_terms": "মূল শব্দাবলী", "conclusion": "উপসংহার",
+    "faqs": "সাধারণ প্রশ্নাবলী", "tools": "প্রয়োজনীয় টুলস", "pitfalls": "সাধারণ ভুলসমূহ",
+    "metrics": "সফলতার সূচক", "guide": "ধাপে ধাপে নির্দেশিকা", "deeper_dive": "বিস্তারিত বিশ্লেষণ",
+    "overview": "বিশেষজ্ঞ পর্যালোচনা", "quick_answer": "সংক্ষিপ্ত উত্তর",
+    "key_takeaways": "প্রধান সারসংক্ষেপ", "core_focus": "মূল ফোকাস", "primary_takeaway": "প্রধান শিক্ষা",
+  },
+  "ta": {
+    "intro": "அறிமுகம்", "what_is": "என்றால் என்ன", "benefits": "நன்மைகள் மற்றும் பயன்பாடுகள்",
+    "how_it_works": "எவ்வாறு செயல்படுகிறது", "key_terms": "முக்கிய சொற்கள்", "conclusion": "முடிவுரை",
+    "faqs": "அடிக்கடி கேட்கப்படும் கேள்விகள்", "tools": "தேவையான கருவிகள்", "pitfalls": "பொதுவான தவறுகள்",
+    "metrics": "வெற்றி அளவீடுகள்", "guide": "படிப் படியான வழிகாட்டி", "deeper_dive": "ஆழ்ந்த பகுப்பாய்வு",
+    "overview": "வல்லுனர் கண்ணோட்டம்", "quick_answer": "விரைவான பதில்",
+    "key_takeaways": "முக்கிய அம்சங்கள்", "core_focus": "முதன்மை நோக்கம்", "primary_takeaway": "முக்கிய முடிவு",
+  },
+  "ur": {
+    "intro": "تعارف", "what_is": "کیا ہے", "benefits": "فوائد اور استعمال",
+    "how_it_works": "یہ کیسے کام کرتا ہے", "key_terms": "اہم اصطلاحات", "conclusion": "نتیجہ",
+    "faqs": "عام سوالات", "tools": "ضروری ٹولز", "pitfalls": "عام غلطیاں",
+    "metrics": "کامیابی کے پیمانے", "guide": "مکمل رہنما", "deeper_dive": "تفصیلی جائزہ",
+    "overview": "ماہرانہ جائزہ", "quick_answer": "فوری جواب",
+    "key_takeaways": "اہم نکات اور خلاصہ", "core_focus": "بنیادی توجہ", "primary_takeaway": "بنیادی حاصل",
+  },
+  "ar": {
+    "intro": "مقدمة", "what_is": "ما هو", "benefits": "الفوائد وحالات الاستخدام",
+    "how_it_works": "كيف يعمل", "key_terms": "المصطلحات الرئيسية", "conclusion": "الخاتمة",
+    "faqs": "الأسئلة الشائعة", "tools": "الأدوات المطلوبة", "pitfalls": "الأخطاء الشائعة",
+    "metrics": "مقاييس النجاح", "guide": "دليل خطوة بخطوة", "deeper_dive": "تحليل عميق",
+    "overview": "نظرة عامة من الخبراء", "quick_answer": "إجابة سريعة",
+    "key_takeaways": "النقاط الرئيسية والملخص التنفيذي", "core_focus": "التركيز الأساسي", "primary_takeaway": "النتيجة الرئيسية",
+  },
+  "ja": {
+    "intro": "はじめに", "what_is": "とは何か", "benefits": "メリットと活用事例",
+    "how_it_works": "仕組みと手順", "key_terms": "重要用語", "conclusion": "まとめ",
+    "faqs": "よくある質問", "tools": "必要なツール", "pitfalls": "注意すべき点",
+    "metrics": "成功指標", "guide": "ステップバイステップガイド", "deeper_dive": "詳細分析",
+    "overview": "専門家による概要", "quick_answer": "要約回答",
+    "key_takeaways": "主要なポイントと要約", "core_focus": "主な焦点", "primary_takeaway": "最大の学び",
+  },
+  "zh": {
+    "intro": "引言", "what_is": "什么是", "benefits": "优势与应用场景",
+    "how_it_works": "工作原理与步骤", "key_terms": "核心术语", "conclusion": "总结",
+    "faqs": "常见问题解答", "tools": "所需工具", "pitfalls": "常见误区",
+    "metrics": "成功指标", "guide": "逐步指南", "deeper_dive": "深度解析",
+    "overview": "专家概述", "quick_answer": "快速解答",
+    "key_takeaways": "核心要点与执行摘要", "core_focus": "核心重点", "primary_takeaway": "主要收获",
+  },
+  "ko": {
+    "intro": "서론", "what_is": "이란 무엇인가", "benefits": "혜택 및 활용 사례",
+    "how_it_works": "작동 방식", "key_terms": "핵심 용어", "conclusion": "결론",
+    "faqs": "자주 묻는 질문", "tools": "필수 도구", "pitfalls": "주의할 점",
+    "metrics": "성공 지표", "guide": "단계별 가이드", "deeper_dive": "심층 분석",
+    "overview": "전문가 개요", "quick_answer": "빠른 요약",
+    "key_takeaways": "핵심 요약 및 실행 요약", "core_focus": "핵심 초점", "primary_takeaway": "주요 시사점",
+  },
+  "ru": {
+    "intro": "Введение", "what_is": "Что такое", "benefits": "Преимущества и варианты использования",
+    "how_it_works": "Как это работает", "key_terms": "Ключевые термины", "conclusion": "Заключение",
+    "faqs": "Часто задаваемые вопросы", "tools": "Необходимые инструменты", "pitfalls": "Распространенные ошибки",
+    "metrics": "Метрики успеха", "guide": "Пошаговое руководство", "deeper_dive": "Глубокий анализ",
+    "overview": "Экспертный обзор", "quick_answer": "Краткий ответ",
+    "key_takeaways": "Ключевые выводы и резюме", "core_focus": "Основной фокус", "primary_takeaway": "Главный вывод",
+  },
+  "pt": {
+    "intro": "Introdução", "what_is": "O que é", "benefits": "Benefícios e Casos de Uso",
+    "how_it_works": "Como Funciona", "key_terms": "Termos Chave", "conclusion": "Conclusão",
+    "faqs": "Perguntas Frequentes", "tools": "Ferramentas Necessárias", "pitfalls": "Erros Comuns",
+    "metrics": "Métricas de Sucesso", "guide": "Guia Passo a Passo", "deeper_dive": "Análise Detalhada",
+    "overview": "Visão Geral Especializada", "quick_answer": "Resposta Rápida",
+    "key_takeaways": "Principais Conclusões e Resumo Executivo", "core_focus": "Foco Principal", "primary_takeaway": "Principal Conclusão",
+  },
+  "it": {
+    "intro": "Introduzione", "what_is": "Che cos'è", "benefits": "Vantaggi e Casi d'Uso",
+    "how_it_works": "Come Funziona", "key_terms": "Termini Chiave", "conclusion": "Conclusione",
+    "faqs": "Domande Frequenti", "tools": "Strumenti Essenziali", "pitfalls": "Errori Comuni",
+    "metrics": "Metriche di Successo", "guide": "Guida Passo Passo", "deeper_dive": "Analisi Approfondita",
+    "overview": "Panoramica dell'Esperto", "quick_answer": "Risposta Rapida",
+    "key_takeaways": "Punti Chiave e Sintesi Esecutiva", "core_focus": "Focus Principale", "primary_takeaway": "Conclusione Principale",
   },
 }
 
@@ -135,7 +335,10 @@ def get_localized_heading(key: str, lang: str | None = "en") -> str:
     "intro": "Introduction", "what_is": "What Is", "benefits": "Benefits and Use Cases",
     "how_it_works": "How It Works", "key_terms": "Key Terms", "conclusion": "Conclusion",
     "faqs": "FAQs", "tools": "Tools Involved", "pitfalls": "Common Pitfalls",
-    "metrics": "Success Metrics", "guide": "Guide", "deeper_dive": "Deeper dive",
+    "metrics": "Success Metrics", "guide": "Step-by-Step Guide", "deeper_dive": "Deeper dive",
+    "overview": "Expert Overview", "quick_answer": "Quick Answer",
+    "key_takeaways": "Key Takeaways & Executive Summary",
+    "core_focus": "Core Focus", "primary_takeaway": "Primary Takeaway",
   }
   return fallback_map.get(key, key.title())
 
@@ -185,6 +388,13 @@ _SECONDARY_SUGGESTIONS: dict[str, list[str]] = {
     "beginner guide", "step-by-step", "best practices", "tips and tricks",
     "how to get started", "common mistakes",
   ],
+  "hi_general": [
+    "शुरुआती गाइड", "चरण-दर-चरण मार्गदर्शिका", "सर्वोत्तम कार्यप्रणालियाँ", "व्यावहारिक टिप्स",
+    "सफलता के उपाय", "विशेषज्ञ सलाह",
+  ],
+  "es_general": [
+    "guía para principiantes", "paso a paso", "mejores prácticas", "consejos y trucos",
+  ],
 }
 
 
@@ -232,11 +442,21 @@ def build_structured_outline(
   category: str,
   seed: int,
 ) -> list[dict[str, str]]:
-  h1 = _pick(seed, [
-    f"{topic}: A Professional Guide",
-    f"{topic}: Complete Beginner Guide",
-    f"{primary.title()}: Expert Guide for Beginners",
-  ])
+  lang_h1 = detect_language(topic, [primary])
+  if lang_h1 == "hi":
+    h1 = topic
+  elif lang_h1 == "es":
+    h1 = f"{topic}: Guía Profesional"
+  elif lang_h1 == "fr":
+    h1 = f"{topic} : Guide Professionnel"
+  elif lang_h1 == "de":
+    h1 = f"{topic}: Leitfaden"
+  else:
+    h1 = _pick(seed, [
+      f"{topic}: A Professional Guide",
+      f"{topic}: Complete Beginner Guide",
+      f"{primary.title()}: Expert Guide for Beginners",
+    ])
   if domain == "fitness":
     return [
       {"level": "h1", "text": h1},

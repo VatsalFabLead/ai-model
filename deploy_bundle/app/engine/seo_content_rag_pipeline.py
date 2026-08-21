@@ -1,3 +1,4 @@
+from app.engine.seo_content_domains import detect_language
 """SEO Content Generator — 8-stage production workflow.
 
 Keyword → Intent Understanding → Entity Understanding → Fact Gathering
@@ -395,7 +396,27 @@ def run_outline_planning_stage(
 
 # ── Stage 6: Context-Aware Writing ──────────────────────────────────────────
 
-def _intent_intro(intent: str, topic: str, primary: str) -> str:
+def _intent_intro(intent: str, topic: str, primary: str, language: str | None = None) -> str:
+  lang = detect_language(topic, [primary], language)
+  if lang == "hi":
+    if intent == "informational":
+      return f"यह मार्गदर्शिका **{topic}** के विषय में **{primary}** पर स्पष्ट और व्यावहारिक जानकारी प्रदान करती है। इसमें आप मुख्य अवधारणाएं, चरण-दर-चरण प्रक्रिया और महत्वपूर्ण प्रश्नों के उत्तर जानेंगे।"
+    if intent == "commercial":
+      return f"**{topic}** के लिए **{primary}** का सही चयन करना महत्वपूर्ण है। यह लेख आपको सर्वोत्तम विकल्पों और रणनीतियों का मूल्यांकन करने में मदद करेगा।"
+    if intent == "transactional":
+      return f"क्या आप **{primary}** के साथ शुरुआत करने के लिए तैयार हैं? यह मार्गदर्शिका **{topic}** को तुरंत लागू करने के व्यावहारिक उपाय बताती है।"
+    return f"**{topic}** और **{primary}** एक-दूसरे से गहराई से जुड़े हैं। यह लेख आपको संरचित और उपयोगी मार्गदर्शन प्रदान करता है।"
+  elif lang == "es":
+    if intent == "informational":
+      return f"Esta guía explica **{primary}** con información clara sobre **{topic}**. Aprenderá definiciones, pasos prácticos y respuestas."
+    if intent == "commercial":
+      return f"Elegir el enfoque correcto para **{primary}** es importante para **{topic}**. Este artículo compara las consideraciones clave."
+    return f"**{topic}** y **{primary}** están estrechamente conectados. Este artículo ofrece una guía estructurada y práctica."
+  elif lang == "fr":
+    return f"Ce guide explique **{primary}** dans le contexte de **{topic}** avec des informations claires et des conseils pratiques."
+  elif lang == "de":
+    return f"Dieser Leitfaden erklärt **{primary}** im Kontext von **{topic}** mit klaren Informationen und praktischen Ratschlägen."
+
   if intent == "informational":
     return (
       f"This guide explains **{primary}** with clear, evidence-backed information about **{topic}**. "
@@ -548,22 +569,55 @@ def write_context_aware_article(
   }
 
 
-def _build_faqs(primary: str, topic: str, fact_texts: list[str]) -> list[dict[str, str]]:
-  questions = [
-    f"What is {primary}?",
-    f"How do I get started with {primary}?",
-    f"What are the benefits of {primary}?",
-    f"Who should focus on {primary}?",
-  ]
+def _build_faqs(primary: str, topic: str, fact_texts: list[str], language: str | None = None) -> list[dict[str, str]]:
+  lang = detect_language(topic, [primary], language)
+  if lang == "hi":
+    questions = [
+      f"{primary} क्या है?",
+      f"{primary} के साथ शुरुआत कैसे करें?",
+      f"{primary} के मुख्य लाभ क्या हैं?",
+      f"{primary} का उपयोग किसे करना चाहिए?",
+    ]
+  elif lang == "es":
+    questions = [
+      f"¿Qué es {primary}?",
+      f"¿Cómo empezar con {primary}?",
+      f"¿Cuáles son los beneficios de {primary}?",
+      f"¿Quién debería enfocarse en {primary}?",
+    ]
+  elif lang == "fr":
+    questions = [
+      f"Qu'est-ce que {primary} ?",
+      f"Comment commencer avec {primary} ?",
+      f"Quels sont les avantages de {primary} ?",
+      f"Qui devrait se concentrer sur {primary} ?",
+    ]
+  elif lang == "de":
+    questions = [
+      f"Was ist {primary}?",
+      f"Wie fange ich mit {primary} an?",
+      f"Was sind die Vorteile von {primary}?",
+      f"Wer sollte sich auf {primary} konzentrieren?",
+    ]
+  else:
+    questions = [
+      f"What is {primary}?",
+      f"How do I get started with {primary}?",
+      f"What are the benefits of {primary}?",
+      f"Who should focus on {primary}?",
+    ]
   faqs: list[dict[str, str]] = []
   for i, q in enumerate(questions):
     if i < len(fact_texts):
       faqs.append({"question": q, "answer": _clip(fact_texts[i], 300)})
     else:
-      faqs.append({
-        "question": q,
-        "answer": f"{primary.title()} offers practical value for anyone learning about {topic}.",
-      })
+      if lang == "hi":
+        ans = f"{primary} विषय का सही ज्ञान और निष्पादन बेहतर सफलता प्रदान करता है।"
+      elif lang == "es":
+        ans = f"{primary} ofrece un valor práctico para cualquiera que busque mejorar sus resultados."
+      else:
+        ans = f"{primary.title()} offers practical value for anyone learning about {topic}."
+      faqs.append({"question": q, "answer": ans})
   return faqs
 
 
@@ -655,7 +709,9 @@ def generate_content_table(
   keywords: list[str],
   entities: list[str],
   category: str,
+  language: str | None = None,
 ) -> str:
+  lang = detect_language(topic, keywords, language)
   if category not in ("listicle", "how_to_guide", "blog_article"):
     return ""
   rows = [e for e in entities[:6] if e and len(e) < 40 and "generate" not in e.lower()] or [
@@ -664,13 +720,31 @@ def generate_content_table(
   rows = [r for r in rows if r.lower() != (topic or "").lower()][:4]
   if len(rows) < 2:
     return ""
-  header = "| Aspect | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
-  sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
-  body = [
-    f"| Focus | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'Advanced', 40)} |",
-    f"| Best for | Beginners | Intermediate users | Specialists |",
-    f"| Key takeaway | Core {keywords[0] if keywords else topic} principles | Practical use | Optimization |",
-  ]
+
+  if lang == "hi":
+    header = "| पहलू | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
+    sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
+    body = [
+      f"| मुख्य केंद्र | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'उन्नत', 40)} |",
+      f"| किसके लिए उपयुक्त | शुरुआती | मध्यम उपयोगकर्ता | विशेषज्ञ |",
+      f"| मुख्य सीख | मूल सिद्धांत | व्यावहारिक उपयोग | अनुकूलन |",
+    ]
+  elif lang == "es":
+    header = "| Aspecto | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
+    sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
+    body = [
+      f"| Enfoque | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'Avanzado', 40)} |",
+      f"| Ideal para | Principiantes | Intermedios | Especialistas |",
+      f"| Conclusión clave | Principios básicos | Uso práctico | Optimización |",
+    ]
+  else:
+    header = "| Aspect | " + " | ".join(_clip(r, 28) for r in rows[:3]) + " |"
+    sep = "| --- | " + " | ".join("---" for _ in rows[:3]) + " |"
+    body = [
+      f"| Focus | {_clip(rows[0], 40)} | {_clip(rows[1], 40)} | {_clip(rows[2] if len(rows) > 2 else 'Advanced', 40)} |",
+      f"| Best for | Beginners | Intermediate users | Specialists |",
+      f"| Key takeaway | Core {keywords[0] if keywords else topic} principles | Practical use | Optimization |",
+    ]
   return "\n".join([header, sep] + body)
 
 
@@ -717,6 +791,7 @@ def run_content_enrichment_stage(
   domain: str,
   content_profile: str,
   confidence: float,
+  language: str | None = None,
 ) -> dict[str, Any]:
   """Expand depth, local SEO, unique FAQs, metadata, schema, tables, internal links."""
   primary = _display_primary(topic, keywords, locations)
@@ -844,7 +919,7 @@ def run_seo_optimization_stage(
   article = generate_table_of_contents(article)
 
   # 3. Inject Image Placeholders with SEO Alt Text
-  article = generate_image_placeholders_with_alt(article, topic, primary)
+  article = generate_image_placeholders_with_alt(article, topic, primary, language=language)
 
   coverage = build_coverage_map(article, keywords, entities)
   gaps = gap_analysis(article, coverage, docs, entities, keywords=keywords, short_topic=topic)
@@ -974,6 +1049,7 @@ async def run_seo_content_pipeline(
   target_words: int = 1000,
   variation_seed: int | None = None,
   use_rag: bool = True,
+  language: str | None = None,
 ) -> dict[str, Any]:
   """Full SEO content workflow with per-stage telemetry."""
   t0 = time.perf_counter()
@@ -1103,6 +1179,7 @@ async def run_seo_content_pipeline(
     domain=kw["domain"],
     content_profile=content_profile,
     confidence=float(fact_stage.get("confidence") or 0.0),
+    language=language,
   )
   draft = enrichment["draft"]
   article = draft.get("content", {}).get("article", "")

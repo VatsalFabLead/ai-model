@@ -567,7 +567,7 @@ def _clip_clean(text: str, limit: int = 120) -> str:
   return clipped.rstrip(".,;:-") + "..."
 
 
-from app.engine.seo_content_domains import extract_short_subject, get_localized_heading
+from app.engine.seo_content_domains import extract_short_subject, get_localized_heading, detect_language
 
 def generate_trust_and_citation_blocks(
   article: str,
@@ -575,18 +575,62 @@ def generate_trust_and_citation_blocks(
   primary: str,
   facts: list[Any],
   sources_used: list[str],
+  language: str | None = None,
 ) -> str:
-  """Inject 'Key Takeaways' executive summary block and fact citation callouts into the article."""
-  if "## Executive Summary" in article or "## Key Takeaways" in article:
+  """Inject 'Key Takeaways' executive summary block localized to target language."""
+  if "## Executive Summary" in article or "## Key Takeaways" in article or "## मुख्य बिंदु" in article:
     return article
 
+  lang = detect_language(topic, [primary], language)
   subject = extract_short_subject(primary) if (primary and len(primary.split()) <= 4) else extract_short_subject(topic)
 
-  summary_lines = [
-    "> **Key Takeaways & Executive Summary**",
-    f"> - **Core Focus**: Essential guidance and key insights on **{subject}**.",
-    f"> - **Primary Takeaway**: Optimizing **{subject}** requires structured execution and data-backed decisions.",
-  ]
+  heading = get_localized_heading("key_takeaways", lang)
+  core_heading = get_localized_heading("core_focus", lang)
+  prim_heading = get_localized_heading("primary_takeaway", lang)
+
+  if lang == "hi":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** पर आवश्यक मार्गदर्शन और महत्वपूर्ण जानकारी।",
+      f"> - **{prim_heading}**: **{subject}** को अनुकूलित करने के लिए संरचित योजना और सही निर्णय आवश्यक हैं।",
+    ]
+  elif lang == "es":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Guía esencial y aspectos clave sobre **{subject}**.",
+      f"> - **{prim_heading}**: Optimizar **{subject}** requiere una ejecución estructurada y decisiones basadas en datos.",
+    ]
+  elif lang == "fr":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Conseils essentiels et aperçu clé sur **{subject}**.",
+      f"> - **{prim_heading}**: L'optimisation de **{subject}** nécessite une exécution structurée.",
+    ]
+  elif lang == "de":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Wesentliche Orientierungshilfen und wichtige Einblicke zu **{subject}**.",
+      f"> - **{prim_heading}**: Die Optimierung von **{subject}** erfordert eine strukturierte Umsetzung.",
+    ]
+  elif lang == "mr":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** संदर्भातील महत्त्वाची माहिती आणि मार्गदर्शन.",
+      f"> - **{prim_heading}**: **{subject}** चे नियोजनबद्ध अंमलबजावणी करणे आवश्यक आहे.",
+    ]
+  elif lang == "bn":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** সম্পর্কে গুরুত্বপূর্ণ নির্দেশিকা এবং তথ্য।",
+      f"> - **{prim_heading}**: **{subject}** সঠিকভাবে বাস্তবায়নের জন্য পরিকল্পনা প্রয়োজন।",
+    ]
+  else:
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Essential guidance and key insights on **{subject}**.",
+      f"> - **{prim_heading}**: Optimizing **{subject}** requires structured execution and data-backed decisions.",
+    ]
+
   if facts:
     fact_text = _clip_clean(getattr(facts[0], "text", str(facts[0])), 120)
     summary_lines.append(f"> - **Verified Fact**: {fact_text}")
@@ -597,8 +641,9 @@ def generate_trust_and_citation_blocks(
   summary_lines.append("\n")
   summary_block = "\n".join(summary_lines)
 
-  if "## Introduction" in article:
-    return article.replace("## Introduction", summary_block + "## Introduction", 1)
+  if "## Introduction" in article or "## परिचय" in article:
+    target_h = "## Introduction" if "## Introduction" in article else "## परिचय"
+    return article.replace(target_h, summary_block + target_h, 1)
   elif article.startswith("# "):
     lines = article.split("\n", 2)
     if len(lines) >= 3:
@@ -611,8 +656,9 @@ def generate_image_placeholders_with_alt(
   article: str,
   topic: str,
   primary: str,
+  language: str | None = None,
 ) -> str:
-  """Inject contextual markdown image placeholders with SEO alt text."""
+  """Inject contextual markdown image placeholders with localized alt text."""
   if "![" in article or "image-placeholder" in article:
     return article
 
@@ -620,9 +666,26 @@ def generate_image_placeholders_with_alt(
   if not headings:
     return article
 
+  lang = detect_language(topic, [primary], language)
   first_h2 = headings[0]
-  alt_text = f"Illustration showing {topic} - {primary} best practices"
-  img_markdown = f"\n\n![{alt_text}](https://via.placeholder.com/1200x630.png?text={quote(topic[:40])})\n*Figure 1: Visual overview of {topic}*\n\n"
+
+  if lang == "hi":
+    alt_text = f"{topic} - {primary} सर्वोत्तम कार्यप्रणाली"
+    fig_caption = f"*चित्र 1: {topic} का अवलोकन*"
+  elif lang == "es":
+    alt_text = f"{topic} - Mejores prácticas de {primary}"
+    fig_caption = f"*Figura 1: Visión general de {topic}*"
+  elif lang == "fr":
+    alt_text = f"{topic} - Meilleures pratiques pour {primary}"
+    fig_caption = f"*Figure 1 : Aperçu visuel de {topic}*"
+  elif lang == "de":
+    alt_text = f"{topic} - Bewährte Verfahren für {primary}"
+    fig_caption = f"*Abbildung 1: Visuelle Übersicht von {topic}*"
+  else:
+    alt_text = f"Illustration showing {topic} - {primary} best practices"
+    fig_caption = f"*Figure 1: Visual overview of {topic}*"
+
+  img_markdown = f"\n\n![{alt_text}](https://via.placeholder.com/1200x630.png?text={quote(topic[:40])})\n{fig_caption}\n\n"
 
   target = f"## {first_h2}"
   if target in article:
@@ -631,7 +694,18 @@ def generate_image_placeholders_with_alt(
   return article
 
 
-def build_factor_table(topic: str, profile: str, seed: int) -> str:
+def build_factor_table(topic: str, profile: str, seed: int, language: str | None = None) -> str:
+  lang = detect_language(topic, [], language)
+  col1, col2 = ("Factor", "Influence")
+  if lang == "hi":
+    col1, col2 = ("कारक", "प्रभाव")
+  elif lang == "es":
+    col1, col2 = ("Factor", "Influencia")
+  elif lang == "fr":
+    col1, col2 = ("Facteur", "Influence")
+  elif lang == "de":
+    col1, col2 = ("Faktor", "Einfluss")
+
   if profile in ("adult_services", "local_services"):
     rows = [
       ("Duration", "High"),
@@ -655,7 +729,7 @@ def build_factor_table(topic: str, profile: str, seed: int) -> str:
       ("Expertise required", "Medium"),
       ("ROI potential", "High"),
     ]
-  lines = ["| Factor | Influence |", "| --- | --- |"]
+  lines = [f"| {col1} | {col2} |", "| --- | --- |"]
   for factor, influence in rows:
     lines.append(f"| {factor} | {influence} |")
   return "\n".join(lines)
@@ -714,11 +788,13 @@ def expand_article_depth(
   semantic_entities: list[str],
   locations: list[str],
   profile: str,
+  language: str | None = None,
 ) -> str:
   if _count_words(article) >= max(600, int(target_words * 0.75)):
     return _inject_semantic_entities(article, semantic_entities, locations)
 
-  subject = primary if (primary and len(primary.split()) <= 4) else (topic.split(":")[0].split("-")[0].strip()[:35])
+  lang = detect_language(topic, [primary], language)
+  subject = primary if (primary and len(primary.split()) <= 4) else extract_short_subject(topic)
 
   sections: list[str] = []
   blocks = re.split(r"\n(?=## )", article)
@@ -728,62 +804,33 @@ def expand_article_depth(
     if not m:
       continue
     heading = m.group(1).strip()
-    if any(skip in heading.lower() for skip in ("table of contents", "executive summary", "key takeaways", "conclusion")):
+    if any(skip in heading.lower() for skip in ("table of contents", "executive summary", "key takeaways", "conclusion", "निष्कर्ष", "सारांश")):
       continue
     h3s = _H3_EXPANSIONS.get(heading, [])
-    if not h3s and "pricing" in heading.lower():
+    if not h3s and ("pricing" in heading.lower() or "मूल्य" in heading or "लागत" in heading):
       h3s = _H3_EXPANSIONS["Pricing Factors"]
+    if lang == "hi" and heading in ("How It Works", "यह कैसे काम करता है"):
+      h3s = ["मुख्य कार्यप्रणाली", "आवश्यक टूल्स", "सामान्य गलतियाँ", "सफलता के मापदंड"]
+    elif lang == "hi" and heading in ("Step-by-Step Guide", "चरण-दर-चरण मार्गदर्शिका"):
+      h3s = ["तैयारी", "कार्यान्वयन", "समीक्षा और मूल्यांकन", "अनुकूलन और सुधार"]
+
     extra = ""
-    for h3 in h3s[:4]:
+    for h3 in (h3s[:4] if h3s else ["मूल चरण", "कार्यान्वयन", "समीक्षा", "अनुकूलन"]):
       extra += f"\n\n### {h3}\n\n"
-      if profile in ("adult_services", "local_services"):
-        extra += (
-          f"When evaluating {h3.lower()} for {subject}, confirm policies with the provider, "
-          "compare options, and document agreed terms for transparency."
-        )
+      if lang == "hi":
+        extra += f"{h3} को **{subject}** के साथ व्यावहारिक उदाहरणों के साथ समझें और आवश्यक कदम उठाएं।"
+      elif lang == "es":
+        extra += f"Analice {h3} con ejemplos concretos vinculados a **{subject}**."
+      elif lang == "fr":
+        extra += f"Analysez {h3} avec des exemples concrets liés à **{subject}**."
+      elif lang == "de":
+        extra += f"Analysieren Sie {h3} anhand konkreter Beispiele für **{subject}**."
       else:
-        extra += (
-          f"Break down {h3.lower()} with concrete examples tied to {subject}. "
-          f"Note what to measure, what to avoid, and one practical next step."
-        )
-      if locations and h3.lower() == "location":
-        extra += f" Popular areas include {', '.join(locations[:5])}."
-    if extra:
-      sections.append(extra.strip())
+        extra += f"Break down {h3.lower()} with concrete examples tied to **{subject}**. Note what to measure and what to avoid."
 
-  expanded = "\n\n".join(s for s in sections if s)
-  headings = [
-    h for h in re.findall(r"^##\s+(.+)$", expanded, re.M)
-    if not any(skip in h.lower() for skip in ("table of contents", "executive summary", "conclusion", "key terms", "related guides"))
-  ]
+    sections.append(extra)
 
-  conclusion_block = ""
-  if "## Conclusion" in expanded:
-    parts = expanded.split("## Conclusion", 1)
-    expanded = parts[0].strip()
-    conclusion_block = "\n\n## Conclusion" + parts[1]
-
-  pad_idx = 0
-  while _count_words(expanded + conclusion_block) < max(750, int(target_words * 0.8)) and pad_idx < 16:
-    h = headings[pad_idx % len(headings)] if headings else subject
-    tpl = _DIVE_TEMPLATES[pad_idx % len(_DIVE_TEMPLATES)].format(subject=subject)
-    expanded += f"\n\n### Deeper dive: {h}\n\n{tpl}"
-    if semantic_entities:
-      ent = semantic_entities[pad_idx % len(semantic_entities)]
-      expanded += f" Key concept: **{ent}**."
-    pad_idx += 1
-
-  if _count_words(expanded + conclusion_block) < max(600, target_words // 2):
-    expanded += (
-      f"\n\n## Additional Considerations\n\n"
-      f"Readers researching **{subject}** should also evaluate long-term value, support quality, "
-      f"and alignment with organizational goals. "
-      + (f"Local context in {', '.join(locations[:3])} may affect availability and pricing. " if locations else "")
-      + "Use the FAQ section for quick answers to common questions."
-    )
-
-  full_article = expanded + conclusion_block
-  return _inject_semantic_entities(full_article, semantic_entities, locations)
+  return "\n\n".join(sections)
 
 
 def _inject_semantic_entities(

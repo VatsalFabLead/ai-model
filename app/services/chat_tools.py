@@ -1,3 +1,4 @@
+from app.engine.seo_content_domains import detect_language
 """Route chat/completions messages to any AI tool (all modules in one chat).
 
 Slash commands (first token of the last user message):
@@ -462,12 +463,46 @@ def _fmt_seo_content(r: dict[str, Any]) -> str:
   secondary = (kw.get("secondary") or []) if isinstance(kw, dict) else []
   tags = r.get("suggested_tags") or []
   slug = r.get("slug") or ""
+
+  topic_text = meta.get("title") or r.get("title") or r.get("topic", "SEO Content")
+  lang = detect_language(topic_text, [primary])
+
+  lbl_meta = (
+    "મેટા વર્ણન (Meta Description)" if lang == "gu"
+    else ("मेटा विवरण (Meta Description)" if lang in ("hi", "mr")
+    else ("Meta descripción" if lang == "es"
+    else ("Méta description" if lang == "fr"
+    else ("Meta-Beschreibung" if lang == "de"
+    else "Meta description"))))
+  )
+  lbl_slug = (
+    "સ્લગ (Slug)" if lang == "gu"
+    else ("स्लग (Slug)" if lang in ("hi", "mr")
+    else "Slug")
+  )
+  lbl_tags = (
+    "ટેગ્સ (Suggested Tags)" if lang == "gu"
+    else ("सुझाये गए टैग (Suggested Tags)" if lang in ("hi", "mr")
+    else ("Etiquetas sugeridas" if lang == "es"
+    else ("Tags suggérés" if lang == "fr"
+    else ("Empfohlene Tags" if lang == "de"
+    else "Suggested tags"))))
+  )
+  lbl_kw = (
+    "કીવર્ડ્સ (Keywords)" if lang == "gu"
+    else ("मुख्य कीवर्ड (Keywords)" if lang in ("hi", "mr")
+    else ("Palabras clave" if lang == "es"
+    else ("Mots-clés" if lang == "fr"
+    else ("Schlüsselwörter" if lang == "de"
+    else "Keywords"))))
+  )
+
   lines = [
-    f"## {meta.get('title') or r.get('title') or r.get('topic', 'SEO Content')}",
-    f"**Meta description:** {meta.get('meta_description') or r.get('meta_description', '')}",
-    f"**Slug:** /{slug}" if slug else "**Slug:** —",
-    f"**Suggested tags:** {', '.join(tags[:12])}" if tags else "**Suggested tags:** —",
-    f"**Keywords:** {', '.join([primary] + list(secondary)[:5]).strip(', ')}",
+    f"## {topic_text}",
+    f"**{lbl_meta}:** {meta.get('meta_description') or r.get('meta_description', '')}",
+    f"**{lbl_slug}:** /{slug}" if slug else f"**{lbl_slug}:** —",
+    f"**{lbl_tags}:** {', '.join(tags[:12])}" if tags else f"**{lbl_tags}:** —",
+    f"**{lbl_kw}:** {', '.join([primary] + list(secondary)[:5]).strip(', ')}",
     "",
     r.get("article") or (r.get("content") or {}).get("article", ""),
     "",

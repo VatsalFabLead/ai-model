@@ -1,3 +1,4 @@
+from app.engine.seo_content_domains import detect_language
 """Advanced SEO content engine — worldwide, multilingual, category-aware.
 
 Uses data/seo_content_knowledge.jsonl for training guidance.

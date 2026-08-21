@@ -14,8 +14,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import numpy as np
-
 from app.engine.open_data_retrieval import (
   OpenDoc,
   SOURCE_ROUTES,
@@ -295,12 +293,20 @@ def synthesize_structured_content(
   target_words: int,
   intent: str = "informational",
   content_profile: str = "general",
+  language: str | None = None,
 ) -> dict[str, Any]:
   """Build article from verified facts — one unique fact per section."""
   seed = rag.variation_seed
   domain = detect_domain(topic, keywords)
   kw = expand_keywords(topic, keywords, domain)
   primary = kw["primary"]
+
+  from app.engine.seo_content_domains import detect_language, build_rich_content
+  lang = detect_language(topic, keywords, language)
+  if lang != "en":
+    return build_rich_content(
+      topic, keywords, category=category, tone=tone, audience=audience, seed=seed, language=lang
+    )
 
   outline = build_dynamic_outline(
     topic, primary, profile=content_profile, intent=intent, seed=seed,

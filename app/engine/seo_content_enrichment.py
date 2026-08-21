@@ -567,7 +567,7 @@ def _clip_clean(text: str, limit: int = 120) -> str:
   return clipped.rstrip(".,;:-") + "..."
 
 
-from app.engine.seo_content_domains import extract_short_subject, get_localized_heading
+from app.engine.seo_content_domains import extract_short_subject, get_localized_heading, detect_language
 
 def generate_trust_and_citation_blocks(
   article: str,
@@ -575,18 +575,74 @@ def generate_trust_and_citation_blocks(
   primary: str,
   facts: list[Any],
   sources_used: list[str],
+  language: str | None = None,
 ) -> str:
-  """Inject 'Key Takeaways' executive summary block and fact citation callouts into the article."""
-  if "## Executive Summary" in article or "## Key Takeaways" in article:
+  """Inject 'Key Takeaways' executive summary block localized to target language."""
+  if "## Executive Summary" in article or "## Key Takeaways" in article or "## मुख्य बिंदु" in article:
     return article
 
+  lang = detect_language(topic, [primary], language)
   subject = extract_short_subject(primary) if (primary and len(primary.split()) <= 4) else extract_short_subject(topic)
 
-  summary_lines = [
-    "> **Key Takeaways & Executive Summary**",
-    f"> - **Core Focus**: Essential guidance and key insights on **{subject}**.",
-    f"> - **Primary Takeaway**: Optimizing **{subject}** requires structured execution and data-backed decisions.",
-  ]
+  heading = get_localized_heading("key_takeaways", lang)
+  core_heading = get_localized_heading("core_focus", lang)
+  prim_heading = get_localized_heading("primary_takeaway", lang)
+
+  if lang == "hi":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** पर आवश्यक मार्गदर्शन और महत्वपूर्ण जानकारी।",
+      f"> - **{prim_heading}**: **{subject}** को अनुकूलित करने के लिए संरचित योजना और सही निर्णय आवश्यक हैं।",
+    ]
+  elif lang == "es":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Guía esencial y aspectos clave sobre **{subject}**.",
+      f"> - **{prim_heading}**: Optimizar **{subject}** requiere una ejecución estructurada y decisiones basadas en datos.",
+    ]
+  elif lang == "fr":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Conseils essentiels et aperçu clé sur **{subject}**.",
+      f"> - **{prim_heading}**: L'optimisation de **{subject}** nécessite une exécution structurée.",
+    ]
+  elif lang == "de":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Wesentliche Orientierungshilfen und wichtige Einblicke zu **{subject}**.",
+      f"> - **{prim_heading}**: Die Optimierung von **{subject}** erfordert eine strukturierte Umsetzung.",
+    ]
+  elif lang == "mr":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** संदर्भातील महत्त्वाची माहिती आणि मार्गदर्शन.",
+      f"> - **{prim_heading}**: **{subject}** चे नियोजनबद्ध अंमलबजावणी करणे आवश्यक आहे.",
+    ]
+  elif lang == "gu":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** પર જરૂરી માર્ગદર્શન અને ઉપયોગી માહિતી.",
+      f"> - **{prim_heading}**: **{subject}** ના યોગ્ય ઉપયોગ માટે આયોજન અને યોગ્ય નિર્ણયો જરૂરી છે.",
+    ]
+  elif lang == "bn":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** সম্পর্কে গুরুত্বপূর্ণ নির্দেশিকা এবং তথ্য।",
+      f"> - **{prim_heading}**: **{subject}** সঠিকভাবে বাস্তবায়নের জন্য পরিকল্পনা প্রয়োজন।",
+    ]
+  elif lang != "en":
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: **{subject}** - {heading}.",
+      f"> - **{prim_heading}**: **{subject}**.",
+    ]
+  else:
+    summary_lines = [
+      f"> **{heading}**",
+      f"> - **{core_heading}**: Essential guidance and key insights on **{subject}**.",
+      f"> - **{prim_heading}**: Optimizing **{subject}** requires structured execution and data-backed decisions.",
+    ]
+
   if facts:
     fact_text = _clip_clean(getattr(facts[0], "text", str(facts[0])), 120)
     summary_lines.append(f"> - **Verified Fact**: {fact_text}")
@@ -597,8 +653,10 @@ def generate_trust_and_citation_blocks(
   summary_lines.append("\n")
   summary_block = "\n".join(summary_lines)
 
-  if "## Introduction" in article:
-    return article.replace("## Introduction", summary_block + "## Introduction", 1)
+  if "## Introduction" in article or "## परिचय" in article or "## પ્રસ્તાવના" in article:
+    for h in ("## Introduction", "## परिचय", "## પ્રસ્તાવના", "## Introducción", "## Introduction"):
+      if h in article:
+        return article.replace(h, summary_block + h, 1)
   elif article.startswith("# "):
     lines = article.split("\n", 2)
     if len(lines) >= 3:
@@ -611,8 +669,9 @@ def generate_image_placeholders_with_alt(
   article: str,
   topic: str,
   primary: str,
+  language: str | None = None,
 ) -> str:
-  """Inject contextual markdown image placeholders with SEO alt text."""
+  """Inject contextual markdown image placeholders with localized alt text."""
   if "![" in article or "image-placeholder" in article:
     return article
 
@@ -620,9 +679,35 @@ def generate_image_placeholders_with_alt(
   if not headings:
     return article
 
+  lang = detect_language(topic, [primary], language)
   first_h2 = headings[0]
-  alt_text = f"Illustration showing {topic} - {primary} best practices"
-  img_markdown = f"\n\n![{alt_text}](https://via.placeholder.com/1200x630.png?text={quote(topic[:40])})\n*Figure 1: Visual overview of {topic}*\n\n"
+
+  if lang == "hi":
+    alt_text = f"{topic} - {primary} सर्वोत्तम कार्यप्रणाली"
+    fig_caption = f"*चित्र 1: {topic} का अवलोकन*"
+  elif lang == "gu":
+    alt_text = f"{topic} - {primary} શ્રેષ્ઠ પદ્ધતિઓ"
+    fig_caption = f"*આકૃતિ 1: {topic} ની માહિતી*"
+  elif lang == "mr":
+    alt_text = f"{topic} - {primary} सर्वोत्तम पद्धती"
+    fig_caption = f"*आकृती 1: {topic} ची माहिती*"
+  elif lang == "es":
+    alt_text = f"{topic} - Mejores prácticas de {primary}"
+    fig_caption = f"*Figura 1: Visión general de {topic}*"
+  elif lang == "fr":
+    alt_text = f"{topic} - Meilleures pratiques pour {primary}"
+    fig_caption = f"*Figure 1 : Aperçu visuel de {topic}*"
+  elif lang == "de":
+    alt_text = f"{topic} - Bewährte Verfahren für {primary}"
+    fig_caption = f"*Abbildung 1: Visuelle Übersicht von {topic}*"
+  elif lang != "en":
+    alt_text = f"{topic} - {primary}"
+    fig_caption = f"*{topic}*"
+  else:
+    alt_text = f"Illustration showing {topic} - {primary} best practices"
+    fig_caption = f"*Figure 1: Visual overview of {topic}*"
+
+  img_markdown = f"\n\n![{alt_text}](https://via.placeholder.com/1200x630.png?text={quote(topic[:40])})\n{fig_caption}\n\n"
 
   target = f"## {first_h2}"
   if target in article:
@@ -631,7 +716,18 @@ def generate_image_placeholders_with_alt(
   return article
 
 
-def build_factor_table(topic: str, profile: str, seed: int) -> str:
+def build_factor_table(topic: str, profile: str, seed: int, language: str | None = None) -> str:
+  lang = detect_language(topic, [], language)
+  col1, col2 = ("Factor", "Influence")
+  if lang == "hi":
+    col1, col2 = ("कारक", "प्रभाव")
+  elif lang == "es":
+    col1, col2 = ("Factor", "Influencia")
+  elif lang == "fr":
+    col1, col2 = ("Facteur", "Influence")
+  elif lang == "de":
+    col1, col2 = ("Faktor", "Einfluss")
+
   if profile in ("adult_services", "local_services"):
     rows = [
       ("Duration", "High"),
@@ -655,7 +751,7 @@ def build_factor_table(topic: str, profile: str, seed: int) -> str:
       ("Expertise required", "Medium"),
       ("ROI potential", "High"),
     ]
-  lines = ["| Factor | Influence |", "| --- | --- |"]
+  lines = [f"| {col1} | {col2} |", "| --- | --- |"]
   for factor, influence in rows:
     lines.append(f"| {factor} | {influence} |")
   return "\n".join(lines)
@@ -714,11 +810,13 @@ def expand_article_depth(
   semantic_entities: list[str],
   locations: list[str],
   profile: str,
+  language: str | None = None,
 ) -> str:
   if _count_words(article) >= max(600, int(target_words * 0.75)):
     return _inject_semantic_entities(article, semantic_entities, locations)
 
-  subject = primary if (primary and len(primary.split()) <= 4) else (topic.split(":")[0].split("-")[0].strip()[:35])
+  lang = detect_language(topic, [primary], language)
+  subject = primary if (primary and len(primary.split()) <= 4) else extract_short_subject(topic)
 
   sections: list[str] = []
   blocks = re.split(r"\n(?=## )", article)
@@ -728,79 +826,68 @@ def expand_article_depth(
     if not m:
       continue
     heading = m.group(1).strip()
-    if any(skip in heading.lower() for skip in ("table of contents", "executive summary", "key takeaways", "conclusion")):
+    if any(skip in heading.lower() for skip in ("table of contents", "executive summary", "key takeaways", "conclusion", "निष्कर्ष", "सारांश")):
       continue
     h3s = _H3_EXPANSIONS.get(heading, [])
-    if not h3s and "pricing" in heading.lower():
+    if not h3s and ("pricing" in heading.lower() or "मूल्य" in heading or "लागत" in heading):
       h3s = _H3_EXPANSIONS["Pricing Factors"]
+    if lang == "hi" and heading in ("How It Works", "यह कैसे काम करता है"):
+      h3s = ["मुख्य कार्यप्रणाली", "आवश्यक टूल्स", "सामान्य गलतियाँ", "सफलता के मापदंड"]
+    elif lang == "hi" and heading in ("Step-by-Step Guide", "चरण-दर-चरण मार्गदर्शिका"):
+      h3s = ["तैयारी", "कार्यान्वयन", "समीक्षा और मूल्यांकन", "अनुकूलन और सुधार"]
+    elif lang == "gu" and heading in ("How It Works", "કેવી રીતે કામ કરે છે"):
+      h3s = ["મુખ્ય કાર્યપદ્ધતિ", "જરૂરી સાધનો", "સામાન્ય ભૂલો", "સફળતાના માપદંડ"]
+    elif lang == "gu" and heading in ("Step-by-Step Guide", "માર્ગદર્શિકા"):
+      h3s = ["તૈયારી", "અમલીકરણ", "સમીક્ષા", "સુધારણા"]
+    elif lang == "mr" and heading in ("How It Works", "હે कसे कार्य करते"):
+      h3s = ["मुख्य कार्यपद्धती", "आवश्यक साधने", "सामान्य चुका", "यशाचे निकष"]
+    elif lang == "mr" and heading in ("Step-by-Step Guide", "मार्गदर्शिका"):
+      h3s = ["तयारी", "अंमलबजावणी", "पुनरावलोकन", "सुधारणा"]
+
     extra = ""
-    for h3 in h3s[:4]:
+    default_h3s = ["મુખ્ય પગલાં", "અમલીકરણ", "સમીક્ષા", "સુધારણા"] if lang == "gu" else (["मुख्य पायऱ्या", "अंमलबजावणी", "पुनरावलोकन", "सुधारणा"] if lang == "mr" else (["मुख्य चरण", "कार्यान्वयन", "समीक्षा", "अनुकूलन"] if lang == "hi" else ["Main Steps", "Execution", "Review", "Optimization"]))
+    for h3 in (h3s[:4] if h3s else default_h3s):
       extra += f"\n\n### {h3}\n\n"
-      if profile in ("adult_services", "local_services"):
-        extra += (
-          f"When evaluating {h3.lower()} for {subject}, confirm policies with the provider, "
-          "compare options, and document agreed terms for transparency."
-        )
+      if lang == "hi":
+        extra += f"{h3} को **{subject}** के साथ व्यावहारिक उदाहरणों के साथ समझें और आवश्यक कदम उठाएं।"
+      elif lang == "gu":
+        extra += f"{h3} ને **{subject}** સાથે વ્યવહારુ ઉદાહરણો સાથે સમજો અને જરૂરી પગલાં લો."
+      elif lang == "mr":
+        extra += f"{h3} ला **{subject}** सोबत व्यावहारिक उदाहरणांसह समजून घ्या."
+      elif lang == "es":
+        extra += f"Analice {h3} con ejemplos concretos vinculados a **{subject}**."
+      elif lang == "fr":
+        extra += f"Analysez {h3} avec des exemples concrets liés à **{subject}**."
+      elif lang == "de":
+        extra += f"Analysieren Sie {h3} anhand konkreter Beispiele für **{subject}**."
       else:
-        extra += (
-          f"Break down {h3.lower()} with concrete examples tied to {subject}. "
-          f"Note what to measure, what to avoid, and one practical next step."
-        )
-      if locations and h3.lower() == "location":
-        extra += f" Popular areas include {', '.join(locations[:5])}."
-    if extra:
-      sections.append(extra.strip())
+        extra += f"Break down {h3.lower()} with concrete examples tied to **{subject}**. Note what to measure and what to avoid."
 
-  expanded = "\n\n".join(s for s in sections if s)
-  headings = [
-    h for h in re.findall(r"^##\s+(.+)$", expanded, re.M)
-    if not any(skip in h.lower() for skip in ("table of contents", "executive summary", "conclusion", "key terms", "related guides"))
-  ]
+    sections.append(extra)
 
-  conclusion_block = ""
-  if "## Conclusion" in expanded:
-    parts = expanded.split("## Conclusion", 1)
-    expanded = parts[0].strip()
-    conclusion_block = "\n\n## Conclusion" + parts[1]
-
-  pad_idx = 0
-  while _count_words(expanded + conclusion_block) < max(750, int(target_words * 0.8)) and pad_idx < 16:
-    h = headings[pad_idx % len(headings)] if headings else subject
-    tpl = _DIVE_TEMPLATES[pad_idx % len(_DIVE_TEMPLATES)].format(subject=subject)
-    expanded += f"\n\n### Deeper dive: {h}\n\n{tpl}"
-    if semantic_entities:
-      ent = semantic_entities[pad_idx % len(semantic_entities)]
-      expanded += f" Key concept: **{ent}**."
-    pad_idx += 1
-
-  if _count_words(expanded + conclusion_block) < max(600, target_words // 2):
-    expanded += (
-      f"\n\n## Additional Considerations\n\n"
-      f"Readers researching **{subject}** should also evaluate long-term value, support quality, "
-      f"and alignment with organizational goals. "
-      + (f"Local context in {', '.join(locations[:3])} may affect availability and pricing. " if locations else "")
-      + "Use the FAQ section for quick answers to common questions."
-    )
-
-  full_article = expanded + conclusion_block
-  return _inject_semantic_entities(full_article, semantic_entities, locations)
+  return "\n\n".join(sections)
 
 
 def _inject_semantic_entities(
   article: str,
   semantic_entities: list[str],
   locations: list[str],
+  language: str | None = None,
 ) -> str:
   if not semantic_entities and not locations:
     return article
   terms = semantic_entities[:8]
   if locations:
     terms = locations[:5] + terms
-  if "## Key Terms" in article:
+  lang = detect_language(article[:200], [], language)
+  heading_text = get_localized_heading("key_terms", lang)
+  if f"## {heading_text}" in article or "## Key Terms" in article:
     return article
-  block = "## Key Terms\n\n" + ", ".join(terms[:12]) + "."
-  if "## Conclusion" in article:
-    return article.replace("## Conclusion", block + "\n\n## Conclusion", 1)
+  block = f"## {heading_text}\n\n" + ", ".join(terms[:12]) + "."
+  if "## Conclusion" in article or "## निश्कर्ष" in article or "## નિષ્કર્ષ" in article:
+    for conc in ("## Conclusion", "## निष्कर्ष", "## નિષ્કર્ષ", "## Conclusión", "## Conclusion"):
+      if conc in article:
+        return article.replace(conc, block + "\n\n" + conc, 1)
   return article + "\n\n" + block
 
 
@@ -809,15 +896,22 @@ def apply_local_seo(
   topic: str,
   locations: list[str],
   keywords: list[str],
+  language: str | None = None,
 ) -> tuple[str, list[str]]:
   if not locations:
     return article, keywords
-  loc_para = (
-    f"### Service Areas\n\n"
-    f"For **{topic}**, relevant locations include {', '.join(locations[:8])}. "
-    "Local availability, pricing, and provider options may vary by neighborhood."
-  )
-  if "### Service Areas" not in article and "## Introduction" in article:
+  lang = detect_language(topic, keywords, language)
+  loc_heading = get_localized_heading("locations", lang)
+  if lang == "hi":
+    loc_para = f"### {loc_heading}\n\n**{topic}** के लिए प्रमुख क्षेत्रों में {', '.join(locations[:8])} शामिल हैं।"
+  elif lang == "gu":
+    loc_para = f"### {loc_heading}\n\n**{topic}** માટે સંબંધિત વિસ્તારોમાં {', '.join(locations[:8])} નો સમાવેશ થાય છે."
+  elif lang == "mr":
+    loc_para = f"### {loc_heading}\n\n**{topic}** साठी संबंधित क्षेत्रांमध्ये {', '.join(locations[:8])} यांचा समावेश आहे."
+  else:
+    loc_para = f"### {loc_heading}\n\nFor **{topic}**, relevant locations include {', '.join(locations[:8])}."
+
+  if f"### {loc_heading}" not in article and "## Introduction" in article:
     article = article.replace("## Introduction", "## Introduction\n\n" + loc_para + "\n\n", 1)
   kw_extended = list(dict.fromkeys(keywords + [loc.lower() for loc in locations[:6]]))
   return article, kw_extended
@@ -826,15 +920,22 @@ def apply_local_seo(
 def inject_internal_links_section(
   article: str,
   links: list[dict[str, str]],
+  language: str | None = None,
 ) -> str:
-  if not links or "## Related Guides" in article:
+  if not links:
     return article
-  lines = ["## Related Guides", ""]
+  lang = detect_language(article[:200], [], language)
+  heading_text = get_localized_heading("related_guides", lang)
+  if f"## {heading_text}" in article or "## Related Guides" in article:
+    return article
+  lines = [f"## {heading_text}", ""]
   for link in links[:5]:
     lines.append(f"- [{link['anchor_text']}]({link['url']})")
   block = "\n".join(lines)
-  if "## Conclusion" in article:
-    return article.replace("## Conclusion", block + "\n\n## Conclusion", 1)
+  if "## Conclusion" in article or "## निष्कर्ष" in article or "## નિષ્કર્ષ" in article:
+    for conc in ("## Conclusion", "## निष्कर्ष", "## નિષ્કર્ષ", "## Conclusión", "## Conclusion"):
+      if conc in article:
+        return article.replace(conc, block + "\n\n" + conc, 1)
   return article + "\n\n" + block
 
 

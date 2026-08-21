@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 """SEO Content Generator — advanced, multilingual, worldwide.
 
 Structured output: metadata, keywords, outline, content (article + tone), FAQs.
 Template-first for speed; optional custom-model polish when use_ai=True. No GPT/Claude/Gemini.
 """
 
-from __future__ import annotations
+from app.engine.seo_content_domains import detect_language
 
 import asyncio
 import json
@@ -133,10 +135,9 @@ def _slugify(text: str, max_len: int = 60) -> str:
   text = (text or "").lower().strip()
   text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
   text = re.sub(r"[\s_-]+", "-", text, flags=re.UNICODE).strip("-")
-  if not text or text in ("guide", "comparison", "overview"):
-    words = (text or "").split()
-    text = "-".join([w for w in words if w])[:max_len]
-  return text[:max_len] or "seo-article"
+  if not text or text in ("guide", "comparison", "overview", "untitled"):
+    return "seo-article"
+  return text[:max_len].strip("-")
 
 
 
@@ -148,6 +149,7 @@ def _suggest_tags(
   secondary: list[str],
   outline: list[dict[str, str]] | list[str],
   category: str,
+  language: str | None = None,
   ai_tags: list[str] | None = None,
   max_tags: int = 12,
 ) -> list[str]:
@@ -167,6 +169,12 @@ def _suggest_tags(
       return
     if low in ("introduction", "conclusion", "overview", "summary", "faq", "faqs"):
       return
+    if detect_language(topic, [primary], language) != "en":
+      if low in ("beginner guide", "step-by-step", "best practices", "tips and tricks", "how it works", "benefits and use cases", "step-by-step guide", "blog article", "how to guide", "landing page", "product description", "local seo", "news update", "ecommerce"):
+        return
+      # Drop generic English filler tags when topic is in non-English script
+      if re.match(r"^[a-zA-Z\s-]+$", t) and low not in (primary.lower(), topic.lower()):
+        return
     seen.add(low)
     tags.append(t)
 
@@ -182,8 +190,8 @@ def _suggest_tags(
     level = (item.get("level") if isinstance(item, dict) else "h2") or "h2"
     if str(level).lower() == "h2" and text:
       _add(text)
-  # Category-style tag
-  if category:
+  # Category-style tag (only if English)
+  if category and detect_language(topic, [primary], language) == "en":
     _add(category.replace("_", " "))
   # Title words as last resort for coverage
   if title and len(tags) < 5:
@@ -489,6 +497,7 @@ def _pack_response(
     secondary=secondary,
     outline=outline_struct,
     category=category,
+    language=lang_code,
     ai_tags=structured.get("suggested_tags") if isinstance(structured.get("suggested_tags"), list) else None,
   )
 
@@ -658,10 +667,12 @@ async def generate(
 
   cat = seo_content_engine.normalize_category(category)
   tone_str = seo_content_engine.normalize_tone(tone, cat)
-  lang_code = seo_content_engine.bcp47(language)
+  
+  kws = coerce_keywords(keywords)
+  lang_code = detect_language(topic, kws, language)
+  lang_name = seo_content_engine.get_language_name(lang_code)
   target = max(150, min(1500, word_count or 500))
 
-  kws = coerce_keywords(keywords)
   # If keywords accidentally contain the instruction-wrapped topic, drop them
   kws = [k for k in kws if k.lower() != topic.lower() and not _looks_like_instruction(k)]
   if topic.lower() not in {k.lower() for k in kws}:
@@ -682,7 +693,7 @@ async def generate(
 
   if discover_keywords:
     seed = kws[0] if kws else topic
-    disc = await discover_keywords(seed, language=language, include_alphabet=False)
+    disc = await discover_keywords(seed, language=language or lang_code, include_alphabet=False)
     discovered = [d["keyword"] for d in disc.get("keywords", [])[:max_keyword_items]]
     discovery_meta["sources_used"] = disc.get("sources_used", [])
     discovery_meta["keyword_count"] = len(discovered)
@@ -701,7 +712,13 @@ async def generate(
   kw_line = ", ".join(kws) if kws else topic
 
   audience_line = f" Target audience: {audience.strip()}." if audience else ""
-  lang_line = f" Write in {language} ({lang_code})." if language else ""
+  if lang_code != "en":
+    lang_line = f" CRITICAL MULTILINGUAL INSTRUCTION: Write the ENTIRE response (title, meta description, article markdown body, outline, FAQs, slug, and tags) completely in {lang_name} ({lang_code}). Do NOT output in English."
+  elif language:
+    lang_line = f" Write in {language} ({lang_code})."
+  else:
+    lang_line = ""
+
   structure = seo_content_engine.category_structure_hint(cat)
   seed = make_variation_seed(variation_seed)
 
@@ -715,6 +732,7 @@ async def generate(
       target_words=target,
       variation_seed=seed,
       use_rag=use_rag,
+      language=language or lang_code,
     )
   except Exception:
     pipeline_out = None
