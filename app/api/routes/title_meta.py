@@ -21,6 +21,8 @@ class TitleMetaVariation(BaseModel):
   meta_description: str
   meta_length: int
   angle: str = ""
+  ab_testing_bucket: str | None = None
+  pixel_width: dict[str, Any] | None = None
   quality_score: int = 0
   seo_score: int = 0
   ctr_score: int = 0
@@ -55,6 +57,8 @@ class TitleMetaRequest(BaseModel):
     default="blog_article",
     examples=["blog_article", "product_page", "landing_page", "local_business", "how_to"],
   )
+  brand_name: str | None = Field(default=None, description="Optional brand name to append (e.g. FabAI)")
+  location: str | None = Field(default=None, description="Optional location target (e.g. Ahmedabad)")
   use_ai: bool = Field(default=True, description="Use hosted elite title/meta strategist (falls back to RAG)")
   use_rag: bool = Field(default=True, description="Use open-dataset SERP/evidence routing when strategist unavailable")
   mode: str | None = Field(
@@ -69,7 +73,11 @@ class TitleMetaResponse(BaseModel):
   category: str
   language: str
   tone: str
+  brand_name: str | None = None
+  location: str | None = None
   variations: list[TitleMetaVariation]
+  ab_testing_buckets: dict[str, Any] | None = None
+  social_meta_bundle: dict[str, Any] | None = None
   variation_count: int
   title_limit: int
   meta_min: int
@@ -148,6 +156,8 @@ async def generate(
       tone=payload.tone,
       language=payload.language,
       category=payload.category,
+      brand_name=payload.brand_name,
+      location=payload.location,
       use_ai=payload.use_ai,
       use_rag=payload.use_rag,
       variation_seed=payload.variation_seed,

@@ -39,9 +39,13 @@ _CATEGORIES: dict[str, dict[str, str]] = {
 
 _LANG_TO_BCP47: dict[str, str] = {
   "english": "en", "en": "en", "hindi": "hi", "hi": "hi",
+  "gujarati": "gu", "gu": "gu", "marathi": "mr", "mr": "mr",
   "spanish": "es", "es": "es", "french": "fr", "fr": "fr",
   "german": "de", "de": "de", "portuguese": "pt", "pt": "pt",
-  "arabic": "ar", "ar": "ar", "japanese": "ja", "ja": "ja",
+  "arabic": "ar", "ar": "ar", "bengali": "bn", "bn": "bn",
+  "punjabi": "pa", "pa": "pa", "telugu": "te", "te": "te",
+  "tamil": "ta", "ta": "ta", "kannada": "kn", "kn": "kn",
+  "malayalam": "ml", "ml": "ml", "japanese": "ja", "ja": "ja",
   "chinese": "zh", "zh": "zh", "korean": "ko", "ko": "ko",
   "italian": "it", "it": "it", "russian": "ru", "ru": "ru",
 }

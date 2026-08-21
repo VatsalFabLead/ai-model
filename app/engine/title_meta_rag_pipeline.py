@@ -178,10 +178,13 @@ class VariationContext:
   tone: str
   category: str
   seed: int
+  language: str = "en"
   facts: list[str] = field(default_factory=list)
 
 
 def _ctx_dict(ctx: VariationContext) -> dict[str, Any]:
+  from app.engine.seo_content_domains import detect_language
+  lang = getattr(ctx, "language", None) or detect_language(ctx.topic, [])
   return {
     "phrase": normalize_topic_phrase(ctx.topic),
     "topic_display": ctx.topic_title,
@@ -191,10 +194,12 @@ def _ctx_dict(ctx: VariationContext) -> dict[str, Any]:
     "tone": ctx.tone,
     "seed": ctx.seed,
     "year": "2026",
+    "language": lang,
   }
 
 
-def generate_variations(ctx: VariationContext, count: int) -> list[dict[str, Any]]:
+def generate_variations_synthesized(ctx: VariationContext, count: int) -> list[dict[str, Any]]:
+  from app.engine.title_meta_enrichment import build_title, build_meta_description, trim_title, trim_meta, validate_metadata_pair, is_awkward_title, is_polluted_metadata, calculate_serp_pixel_width, categorize_ab_testing_bucket
   seen_titles: set[str] = set()
   items: list[dict[str, Any]] = []
   ctx_data = _ctx_dict(ctx)
@@ -203,7 +208,12 @@ def generate_variations(ctx: VariationContext, count: int) -> list[dict[str, Any
   for i in range(max_attempts):
     if len(items) >= count:
       break
-    title, angle = build_title(ctx_data, i)
+    title, angle = build_title(
+      ctx_data,
+      i,
+      brand_name=ctx_data.get("brand_name"),
+      location=ctx_data.get("location"),
+    )
     title = trim_title(title)
     if is_awkward_title(title) or is_polluted_metadata(title):
       continue
@@ -211,19 +221,36 @@ def generate_variations(ctx: VariationContext, count: int) -> list[dict[str, Any
     if key in seen_titles:
       continue
 
-    meta = trim_meta(build_meta_description(ctx_data, title, i))
+    meta = trim_meta(build_meta_description(
+      ctx_data,
+      title,
+      i,
+      brand_name=ctx_data.get("brand_name"),
+      location=ctx_data.get("location"),
+    ))
     if is_polluted_metadata(meta):
-      meta = trim_meta(build_meta_description({**ctx_data, "seed": ctx.seed + i + 99}, title, i))
+      meta = trim_meta(build_meta_description(
+        {**ctx_data, "seed": ctx.seed + i + 99},
+        title,
+        i,
+        brand_name=ctx_data.get("brand_name"),
+        location=ctx_data.get("location"),
+      ))
 
     validation = validate_metadata_pair(title, meta, ctx.topic)
     if not validation["valid"] and "source_leakage" in validation["issues"]:
       continue
 
     seen_titles.add(key)
+    pixel_info = calculate_serp_pixel_width(title)
+    bucket = categorize_ab_testing_bucket(title, meta, angle)
+
     items.append({
       "title": title,
       "meta_description": meta,
       "angle": angle,
+      "ab_testing_bucket": bucket,
+      "pixel_width": pixel_info,
       "title_length": len(title),
       "meta_length": len(meta),
       "validation_issues": validation["issues"],
@@ -232,6 +259,7 @@ def generate_variations(ctx: VariationContext, count: int) -> list[dict[str, Any
 
 
 def validate_lengths(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+  from app.engine.title_meta_enrichment import calculate_serp_pixel_width
   notes: list[str] = []
   for v in items:
     issues: list[str] = []
@@ -243,6 +271,7 @@ def validate_lengths(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
       v["meta_description"] = trim_meta(v["meta_description"])
       v["meta_length"] = len(v["meta_description"])
       issues.append("meta_adjusted")
+    v["pixel_width"] = calculate_serp_pixel_width(v["title"])
     v["length_issues"] = issues
     if issues:
       notes.append(f"Adjusted lengths for: {v['title'][:40]}")
@@ -291,6 +320,9 @@ async def run_title_meta_pipeline(
   variations: int = 10,
   tone: str = "professional",
   category: str = "blog_article",
+  language: str = "en",
+  brand_name: str | None = None,
+  location: str | None = None,
   variation_seed: int | None = None,
   use_rag: bool = True,
 ) -> dict[str, Any]:
@@ -298,18 +330,20 @@ async def run_title_meta_pipeline(
   seed = effective_variation_seed(variation_seed)
   count = max(10, min(50, variations))
   raw_topic = _topic_clean(topic)
-  corrected = normalize_seed_typos(raw_topic)
-  topic = corrected
-  stages: dict[str, Any] = {}
+  from app.engine.seo_content_domains import detect_language
+  lang_code = detect_language(topic, [], language)
 
-  stages["input"] = {"topic": topic, "requested_variations": count}
-  stages["input_validator"] = {"valid": bool(topic), "normalized": normalize_topic_phrase(topic)}
+  stages: dict[str, Any] = {}
+  stages["input"] = {"topic": topic, "variations_requested": count, "language": lang_code, "brand_name": brand_name, "location": location}
+
+  corrected = normalize_seed_typos(topic)
   stages["spell_correction"] = {
-    "original": raw_topic,
+    "original": topic,
     "corrected": corrected,
     "applied": corrected != raw_topic,
   }
 
+  topic = corrected
   kw = extract_keywords(topic)
   stages["keyword_extractor"] = kw
 
@@ -389,9 +423,16 @@ async def run_title_meta_pipeline(
       tone=tone,
       category=category,
       seed=seed,
+      language=lang_code,
       facts=facts,
     )
-    raw_items = generate_variations(ctx, count + 5)
+    # Inject brand_name, location, and language into context dict
+    ctx_dict = _ctx_dict(ctx)
+    ctx_dict["brand_name"] = brand_name
+    ctx_dict["location"] = location
+    ctx_dict["language"] = lang_code
+
+    raw_items = generate_variations_synthesized(ctx, count + 5)
     stages["title_generator"] = {"mode": "synthesized", "candidates": len(raw_items)}
     stages["meta_generator"] = {"mode": "ctr_optimized", "tone": tone, "no_snippet_paste": True}
 
@@ -435,6 +476,29 @@ async def run_title_meta_pipeline(
     "policy_status": policy["policy_status"],
   }
 
+  # C. A/B Testing Strategy Buckets
+  ab_buckets: dict[str, list[dict[str, Any]]] = {
+    "high_ctr_power": [],
+    "direct_search": [],
+    "question_snippet": [],
+    "transactional_commercial": [],
+  }
+  for item in final_items:
+    b_key = item.get("ab_testing_bucket", "direct_search")
+    if b_key not in ab_buckets:
+      ab_buckets[b_key] = []
+    ab_buckets[b_key].append(item)
+
+  # E. Social Media Meta Snippet Bundle (Open Graph / Twitter Cards / Schema.org)
+  top_var = final_items[0] if final_items else {"title": topic, "meta_description": f"Learn about {topic}"}
+  from app.engine.title_meta_enrichment import generate_social_meta_bundle
+  social_bundle = generate_social_meta_bundle(
+    top_var["title"],
+    top_var["meta_description"],
+    topic,
+    brand_name=brand_name,
+  )
+
   avg_quality = int(round(sum(v.get("overall_score", v.get("quality_score", 0)) for v in final_items) / max(1, len(final_items))))
 
   return {
@@ -442,7 +506,12 @@ async def run_title_meta_pipeline(
     "topic": topic,
     "category": category,
     "tone": tone,
+    "language": lang_code,
+    "brand_name": brand_name,
+    "location": location,
     "variations": final_items,
+    "ab_testing_buckets": ab_buckets,
+    "social_meta_bundle": social_bundle,
     "variation_count": len(final_items),
     "variation_seed": seed,
     "title_limit": tme.TITLE_MAX,

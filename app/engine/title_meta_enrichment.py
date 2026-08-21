@@ -280,99 +280,254 @@ def is_awkward_title(title: str) -> bool:
   return False
 
 
-def build_title(ctx: dict[str, Any], idx: int) -> tuple[str, str]:
-  """Natural, keyword-forward titles."""
+MULTILINGUAL_COPY_CATALOG: dict[str, dict[str, Any]] = {
+  "gu": {
+    "power_words": ["સંપૂર્ણ", "ઉપયોગી", "ઉત્તમોત્તમ", "સરળ", "મહત્વપૂર્ણ", "વ્યવહારુ"],
+    "suffixes": ["સંપૂર્ણ માર્ગદર્શિકા", "ઉપયોગી ટિપ્સ", "સરળ રીતો", "તબક્કાવાર માહિતી"],
+    "meta_hooks": ["મેળવો", "શીખો", "જાણો", "સમજો"],
+    "meta_ctas": ["આજે જ સંપૂર્ણ માર્ગદર્શિકા વાંચો.", "સચોટ માહિતી માટે અહીં ક્લિક કરો.", "સરળ રીતો વિશે વધુ જાણો."],
+  },
+  "hi": {
+    "power_words": ["संपूर्ण", "उपयोगी", "सर्वश्रेष्ठ", "सरल", "महत्वपूर्ण", "व्यावहारिक"],
+    "suffixes": ["संपूर्ण मार्गदर्शिका", "उपयोगी टिप्स", "आसान तरीके", "स्टेप-बाय-स्टेप"],
+    "meta_hooks": ["जानें", "सीखें", "समझें", "प्राप्त करें"],
+    "meta_ctas": ["आज ही पूरी गाइड पढ़ें।", "विस्तृत जानकारी के लिए पढ़ें।", "आसान तरीकों के बारे में और जानें।"],
+  },
+  "mr": {
+    "power_words": ["सविस्तर", "उपयुक्त", "सर्वोत्तम", "सोपे", "महत्त्वाचे"],
+    "suffixes": ["सविस्तर मार्गदर्शन", "उपयुक्त टिप्स", "सोप्या पद्धती"],
+    "meta_hooks": ["मिळवा", "शिका", "जाणून घ्या"],
+    "meta_ctas": ["आजच पूर्ण मार्गदर्शन वाचा.", "अधिक माहितीसाठी येथे क्लिक करा."],
+  },
+  "es": {
+    "power_words": ["Completa", "Esencial", "Práctica", "Fácil", "Definitiva"],
+    "suffixes": ["Guía Completa", "Consejos Prácticos", "Paso a Paso"],
+    "meta_hooks": ["Descubra", "Aprenda", "Explore", "Conozca"],
+    "meta_ctas": ["Lea la guía completa hoy mismo.", "Obtenga consejos de expertos ahora."],
+  },
+  "fr": {
+    "power_words": ["Complet", "Essentiel", "Pratique", "Facile", "Expert"],
+    "suffixes": ["Guide Complet", "Conseils Pratiques", "Étape par Étape"],
+    "meta_hooks": ["Découvrez", "Apprenez", "Explorez"],
+    "meta_ctas": ["Lisez le guide complet dès aujourd'hui.", "Obtenez des conseils d'experts."],
+  },
+  "de": {
+    "power_words": ["Vollständiger", "Wichtige", "Praktische", "Einfach", "Experten"],
+    "suffixes": ["Vollständiger Leitfaden", "Praktische Tipps", "Schritt für Schritt"],
+    "meta_hooks": ["Lernen Sie", "Entdecken Sie", "Erfahren Sie"],
+    "meta_ctas": ["Lesen Sie den vollständigen Leitfaden.", "Jetzt mehr erfahren."],
+  },
+  "en": {
+    "power_words": ["Complete", "Essential", "Proven", "Expert", "Ultimate", "Practical"],
+    "suffixes": ["Complete Guide", "Expert Tips", "Step by Step", "Made Simple"],
+    "meta_hooks": ["Discover", "Learn", "Explore", "Master", "Find out"],
+    "meta_ctas": ["Read the full guide today.", "Get started now.", "Learn more inside."],
+  },
+}
+
+
+def calculate_serp_pixel_width(text: str) -> dict[str, Any]:
+  """Calculate exact Google SERP pixel width for Desktop (~580px limit) and Mobile (~920px limit)."""
+  t = (text or "").strip()
+  if not t:
+    return {"desktop_px": 0, "mobile_px": 0, "truncated_desktop": False, "truncated_mobile": False}
+
+  desktop_px = 0
+  for ch in t:
+    if ch in "WwMm@%":
+      desktop_px += 14
+    elif ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+      desktop_px += 11
+    elif ch in "abcdefghijklmnopqrstuvwxyz0123456789#$&":
+      desktop_px += 8
+    elif ch in "ilt1!|.,:;' -":
+      desktop_px += 4
+    else:
+      # Non-Latin script characters (Devanagari, Gujarati, CJK)
+      desktop_px += 12
+
+  mobile_px = int(desktop_px * 1.55)
+  return {
+    "desktop_px": desktop_px,
+    "mobile_px": mobile_px,
+    "truncated_desktop": desktop_px > 580,
+    "truncated_mobile": mobile_px > 920,
+  }
+
+
+def categorize_ab_testing_bucket(title: str, meta: str, angle: str) -> str:
+  """Categorize variations into 4 distinct A/B testing strategy buckets."""
+  low = f"{title} {meta}".lower()
+  if any(w in low for w in ("how to", "how", "what is", "why", " guide")):
+    return "question_snippet"
+  if any(w in low for w in ("best", "top", "compare", "vs", "pricing", "cost", "buy", "review")):
+    return "transactional_commercial"
+  if any(w in low for w in ("ultimate", "proven", "essential", "expert", "master", "complete", "સંપૂર્ણ", "संपूर्ण")):
+    return "high_ctr_power"
+  return "direct_search"
+
+
+def generate_social_meta_bundle(
+  title: str,
+  meta: str,
+  topic: str,
+  brand_name: str | None = None,
+) -> dict[str, Any]:
+  """Generate pre-formatted Social Media tags (Open Graph, Twitter Cards, Schema.org JSON-LD, HTML snippet)."""
+  brand = f" | {brand_name.strip()}" if brand_name else ""
+  full_title = f"{title}{brand}"
+
+  schema = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": full_title,
+    "description": meta,
+    "headline": title,
+    "publisher": {"@type": "Organization", "name": brand_name or "Publisher"},
+  }
+
+  html_tags = (
+    f'<title>{full_title}</title>\n'
+    f'<meta name="description" content="{meta}">\n'
+    f'<meta property="og:title" content="{full_title}">\n'
+    f'<meta property="og:description" content="{meta}">\n'
+    f'<meta property="og:type" content="article">\n'
+    f'<meta name="twitter:card" content="summary_large_image">\n'
+    f'<meta name="twitter:title" content="{full_title}">\n'
+    f'<meta name="twitter:description" content="{meta}">'
+  )
+
+  return {
+    "og_title": full_title,
+    "og_description": meta,
+    "og_type": "article",
+    "twitter_card": "summary_large_image",
+    "twitter_title": full_title,
+    "twitter_description": meta,
+    "schema_json_ld": schema,
+    "html_tags": html_tags,
+  }
+
+
+def build_title(
+  ctx: dict[str, Any],
+  idx: int,
+  *,
+  brand_name: str | None = None,
+  location: str | None = None,
+) -> tuple[str, str]:
+  """Natural, keyword-forward titles with brand/location modifiers and native language copy."""
   topic = ctx["topic_display"]
-  phrase = ctx["phrase"]
   year = ctx.get("year", "2026")
   profile = ctx.get("profile", "default")
   intent = ctx.get("intent", {})
   serp = ctx.get("serp", {}).get("recommended", ["complete_guide"])
+  lang = ctx.get("language", "en")
   salt = ctx["seed"] + idx * 41
+
+  cat_copy = MULTILINGUAL_COPY_CATALOG.get(lang, MULTILINGUAL_COPY_CATALOG["en"])
+  powers = cat_copy["power_words"]
+  suffixes = cat_copy["suffixes"]
+
+  loc_str = f" in {location.strip()}" if location and lang == "en" else (f" {location.strip()}" if location else "")
 
   def pick(pool: list[tuple[str, str]], i: int) -> tuple[str, str]:
     return pool[i % len(pool)]
 
-  app_titles = [
-    (f"{topic} Development Guide: Features, Cost & Best Practices ({year})", "complete_guide"),
-    (f"How to Build a {topic}: Complete Guide ({year})", "how_to"),
-    (f"{topic}: Technology Stack, Features & Costs ({year})", "cost_breakdown"),
-    (f"Build a {topic}: Step-by-Step Guide ({year})", "step_by_step"),
-    (f"{topic} - Ultimate Development Guide ({year})", "ultimate_guide"),
-    (f"{topic} Cost & Features: Expert Guide ({year})", "cost_breakdown"),
-  ]
-  general_titles = [
-    (f"{topic}: Complete Guide & Best Practices ({year})", "complete_guide"),
-    (f"How to Master {topic}: Step-by-Step Guide ({year})", "how_to"),
-    (f"{topic} — Expert Tips, Examples & Checklist ({year})", "checklist"),
-    (f"The Ultimate {topic} Guide ({year})", "ultimate_guide"),
-    (f"{topic}: Everything You Need to Know ({year})", "complete_guide"),
-    (f"Best {topic} Strategies for {year}", "best_practices"),
-  ]
+  if lang == "gu":
+    app_titles = [
+      (f"{topic} વિકાસ માર્ગદર્શિકા: સુવિધાઓ, ખર્ચ અને ઉત્તમોત્તમ રીતો ({year})", "complete_guide"),
+      (f"{topic} કેવી રીતે બનાવવું: સંપૂર્ણ માર્ગદર્શિકા ({year})", "how_to"),
+      (f"{topic}: ટેકનોલોજી અને ઉપયોગી માહિતી ({year})", "cost_breakdown"),
+    ]
+    general_titles = [
+      (f"{topic}: સંપૂર્ણ માર્ગદર્શિકા અને ઉપયોગી ટિપ્સ ({year}){loc_str}", "complete_guide"),
+      (f"{topic} કેવી રીતે શીખવું: સરળ તબક્કાવાર માહિતી ({year})", "how_to"),
+      (f"{topic} — ઉત્તમોત્તમ પદ્ધતિઓ અને સચોટ માહિતી ({year})", "checklist"),
+    ]
+  elif lang == "hi":
+    app_titles = [
+      (f"{topic} विकास गाइड: विशेषताएं, लागत और सर्वोत्तम तरीके ({year})", "complete_guide"),
+      (f"{topic} कैसे बनाएं: संपूर्ण मार्गदर्शिका ({year})", "how_to"),
+    ]
+    general_titles = [
+      (f"{topic}: संपूर्ण मार्गदर्शिका और उपयोगी टिप्स ({year}){loc_str}", "complete_guide"),
+      (f"{topic} कैसे सीखें: आसान स्टेप-बाय-स्टेप तरीके ({year})", "how_to"),
+      (f"{topic} — सर्वश्रेष्ठ रणनीतियाँ और उदाहरण ({year})", "checklist"),
+    ]
+  else:
+    app_titles = [
+      (f"{topic} Development Guide: Features, Cost & Best Practices ({year}){loc_str}", "complete_guide"),
+      (f"How to Build a {topic}: Complete Guide ({year}){loc_str}", "how_to"),
+      (f"{topic}: Technology Stack, Features & Costs ({year})", "cost_breakdown"),
+      (f"Build a {topic}: Step-by-Step Guide ({year})", "step_by_step"),
+      (f"{topic} - Ultimate Development Guide ({year})", "ultimate_guide"),
+    ]
+    general_titles = [
+      (f"{topic}: Complete Guide & Best Practices ({year}){loc_str}", "complete_guide"),
+      (f"How to Master {topic}: Step-by-Step Guide ({year}){loc_str}", "how_to"),
+      (f"{topic} — Expert Tips, Examples & Checklist ({year})", "checklist"),
+      (f"The Ultimate {topic} Guide ({year})", "ultimate_guide"),
+      (f"{topic}: Everything You Need to Know ({year})", "complete_guide"),
+    ]
 
   pool = app_titles if profile == "app" else general_titles
-
-  if intent.get("ctr_pattern") == "how_to":
-    pool = sorted(pool, key=lambda x: 0 if "how" in x[0].lower() else 1)
-  if "cost_breakdown" in serp:
-    pool = sorted(pool, key=lambda x: 0 if "cost" in x[0].lower() else 1)
-
   title, angle = pick(pool, salt)
-  if idx % 5 == 2 and "checklist" in serp and profile != "app":
-    title = f"{topic}: Practical Examples & Checklist ({year})"
-    angle = "checklist"
+
+  # Inject brand suffix if space permits
+  if brand_name:
+    b_suffix = f" | {brand_name.strip()}"
+    if len(title) + len(b_suffix) <= TITLE_MAX:
+      title += b_suffix
 
   return title, angle
 
 
-def build_meta_description(ctx: dict[str, Any], title: str, idx: int) -> str:
-  """CTR-focused meta — synthesized, never raw retrieval."""
+def build_meta_description(
+  ctx: dict[str, Any],
+  title: str,
+  idx: int,
+  *,
+  brand_name: str | None = None,
+  location: str | None = None,
+) -> str:
+  """CTR-focused meta — synthesized with brand/location modifiers and native language copy."""
   phrase = ctx["phrase"]
   low = phrase.lower()
   profile = ctx.get("profile", "default")
   bits = _FEATURE_BITS.get(profile, _FEATURE_BITS["default"])
+  lang = ctx.get("language", "en")
   salt = ctx["seed"] + idx * 17
 
-  if profile == "app":
-    templates = [
-      (
-        f"Learn how to build a {low} with {bits[0]}, {bits[1]}, {bits[2]}, and {bits[3]}. "
-        "Start planning your project today."
-      ),
-      (
-        f"Discover how to plan, design, and launch a {low} with expert tips on features, costs, "
-        "and technology choices. Read the complete guide."
-      ),
-      (
-        f"Explore {low} development with practical guidance on features, pricing, tech stack, "
-        "and launch strategy. Get started with confidence."
-      ),
-    ]
-  else:
-    templates = [
-      (
-        f"Learn {low} with {bits[0]}, {bits[1]}, and {bits[2]} explained clearly. "
-        "Read expert tips and start improving results today."
-      ),
-      (
-        f"Discover proven strategies for {low} with actionable steps, examples, and best practices. "
-        "Explore the full guide now."
-      ),
-      (
-        f"Get a complete overview of {low} covering practical tips, common mistakes, and expert advice. "
-        "Start learning today."
-      ),
-    ]
+  cat_copy = MULTILINGUAL_COPY_CATALOG.get(lang, MULTILINGUAL_COPY_CATALOG["en"])
+  hooks = cat_copy["meta_hooks"]
+  ctas = cat_copy["meta_ctas"]
+  loc_str = f" in {location.strip()}" if location and lang == "en" else (f" {location.strip()}" if location else "")
 
-  meta = templates[salt % len(templates)]
-  tone = ctx.get("tone", "professional")
-  if tone == "casual":
-    meta = f"Want the real scoop on {low}? Practical tips, no fluff — plus {bits[0]} and {bits[1]}. Dive in now."
-  elif tone == "formal":
-    meta = (
-      f"A comprehensive overview of {low}, including {bits[0]}, {bits[1]}, and evidence-based recommendations. "
-      "Review the full analysis."
-    )
+  if lang == "gu":
+    meta = f"{phrase} વિશે સરળ અને સચોટ માહિતી મેળવો. {phrase} ના મુખ્ય ફાયદા અને ઉત્તમોત્તમ રીતો સમજો. {ctas[salt % len(ctas)]}"
+  elif lang == "hi":
+    meta = f"{phrase} के बारे में विस्तृत और व्यावहारिक जानकारी प्राप्त करें। {phrase} के मुख्य लाभ और आसान तरीके समझें। {ctas[salt % len(ctas)]}"
+  elif lang == "es":
+    meta = f"Descubra todo sobre {phrase}{loc_str}. Aprenda consejos prácticos, características y mejores prácticas. {ctas[salt % len(ctas)]}"
+  elif lang == "fr":
+    meta = f"Découvrez tout sur {phrase}{loc_str}. Apprenez les meilleures pratiques, étapes et conseils d'experts. {ctas[salt % len(ctas)]}"
+  elif lang == "de":
+    meta = f"Lernen Sie alles über {phrase}{loc_str}. Erfahren Sie wichtige Tipps, Beispiele und Schritte. {ctas[salt % len(ctas)]}"
+  else:
+    if profile == "app":
+      templates = [
+        f"Learn how to build a {low}{loc_str} with {bits[0]}, {bits[1]}, {bits[2]}, and {bits[3]}. {ctas[0]}",
+        f"Discover how to plan, design, and launch a {low} with expert tips on features and costs. {ctas[1]}",
+        f"Explore {low} development with practical guidance on features, pricing, and tech stack. {ctas[2]}",
+      ]
+    else:
+      templates = [
+        f"Learn {low}{loc_str} with {bits[0]}, {bits[1]}, and {bits[2]} explained clearly. {ctas[0]}",
+        f"Discover proven strategies for {low} with actionable steps, examples, and best practices. {ctas[1]}",
+        f"Get a complete overview of {low} covering practical tips, common mistakes, and expert advice. {ctas[2]}",
+      ]
+    meta = templates[salt % len(templates)]
 
   return _clip(meta, META_MAX)
 
