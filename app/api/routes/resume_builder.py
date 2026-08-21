@@ -29,6 +29,7 @@ class ResumeGenerateRequest(BaseModel):
   certifications: str | None = None
   achievements: str | None = None
   languages: str | None = Field(default=None, examples=["English (Fluent), Hindi (Native)"])
+  job_description: str | None = Field(default=None, description="Target Job Description for ATS match analysis")
   template: str = Field(default="modern", examples=["modern", "classic", "executive", "minimal", "creative"])
   template_name: str | None = Field(default=None, description="Alias for template")
   language: str | None = Field(default=None, examples=["English", "Hindi", "Spanish"])
@@ -84,6 +85,10 @@ class ResumeGenerateResponse(BaseModel):
   resume_markdown: str
   resume_ai_text: str
   word_count: int
+  jd_match: dict[str, Any] = Field(default_factory=dict)
+  xyz_bullets: list[str] = Field(default_factory=list)
+  layout_templates: dict[str, dict[str, str]] = Field(default_factory=dict)
+  application_bundle: dict[str, Any] = Field(default_factory=dict)
   quality: ResumeQuality
   ai: ResumeAiMeta
   generator_version: str | None = None

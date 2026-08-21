@@ -536,14 +536,323 @@ def rewrite_achievements_narrative(text: str, seed: int) -> str:
   return "\n".join(bullets[:6])
 
 
-def rewrite_languages_narrative(text: str) -> str:
-  body, _ = format_languages_section(text)
-  return body
-
-
 def is_narrative_text(text: str) -> bool:
   low = (text or "").lower()
   return bool(
     re.search(r"\bi\s+(?:am|have|worked|completed|developed|built|can|use)\b", low)
     or len(_sentences(text)) <= 2 and len(text or "") > 120
   )
+
+
+MULTILINGUAL_RESUME_CATALOG: dict[str, dict[str, Any]] = {
+  "gu": {
+    "headings": {
+      "summary": "વ્યાવસાયિક સારાંશ",
+      "experience": "કાર્ય અનુભવ",
+      "education": "શિક્ષણ",
+      "skills": "કૌશલ્યો અને તકનીકી જ્ઞાન",
+      "projects": "મુખ્ય પ્રોજેક્ટ્સ",
+      "certifications": "પ્રમાણપત્રો",
+      "achievements": "સિદ્ધિઓ",
+      "languages": "ભાષાઓ",
+    },
+    "cover_letter_salutation": "આદરણીય હાયરિંગ મેનેજર,",
+    "cover_letter_intro": "હું {job_title} ની સ્થિતિ માટે ઉત્સાહપૂર્વક અરજી કરી રહ્યો છું.",
+    "cover_letter_closing": "આપના વિશ્વાસુ,\n{full_name}",
+  },
+  "hi": {
+    "headings": {
+      "summary": "पेशेवर सारांश",
+      "experience": "कार्य अनुभव",
+      "education": "शिक्षा",
+      "skills": "तकनीकी कौशल",
+      "projects": "प्रमुख परियोजनाएं",
+      "certifications": "प्रमाणपत्र",
+      "achievements": "उपलब्धियां",
+      "languages": "भाषाएं",
+    },
+    "cover_letter_salutation": "आदरणीय हायरिंग मैनेजर,",
+    "cover_letter_intro": "मैं {job_title} के पद के लिए उत्साहपूर्वक आवेदन कर रहा हूँ।",
+    "cover_letter_closing": "भवदीय,\n{full_name}",
+  },
+  "mr": {
+    "headings": {
+      "summary": "व्यावसायिक सारांश",
+      "experience": "कामगिरी व अनुभव",
+      "education": "शिक्षण",
+      "skills": "कौशल्ये",
+      "projects": "प्रकल्प",
+      "certifications": "प्रमाणपत्रे",
+      "achievements": "यशोगाथा",
+      "languages": "भाषा",
+    },
+    "cover_letter_salutation": "मा. भरती व्यवस्थापक,",
+    "cover_letter_intro": "मी {job_title} या पदासाठी अर्ज करत आहे.",
+    "cover_letter_closing": "आपला नम्र,\n{full_name}",
+  },
+  "es": {
+    "headings": {
+      "summary": "Resumen Profesional",
+      "experience": "Experiencia Laboral",
+      "education": "Educación",
+      "skills": "Habilidades Técnicas",
+      "projects": "Proyectos Clave",
+      "certifications": "Certificaciones",
+      "achievements": "Logros",
+      "languages": "Idiomas",
+    },
+    "cover_letter_salutation": "Estimado/a Responsable de Selección,",
+    "cover_letter_intro": "Le escribo para presentar mi candidatura al puesto de {job_title}.",
+    "cover_letter_closing": "Atentamente,\n{full_name}",
+  },
+  "fr": {
+    "headings": {
+      "summary": "Résumé Professionnel",
+      "experience": "Expérience Professionnelle",
+      "education": "Formation",
+      "skills": "Compétences Techniques",
+      "projects": "Projets Majeurs",
+      "certifications": "Certifications",
+      "achievements": "Réalisations",
+      "languages": "Langues",
+    },
+    "cover_letter_salutation": "Madame, Monsieur,",
+    "cover_letter_intro": "Je vous adresse ma candidature pour le poste de {job_title}.",
+    "cover_letter_closing": "Cordialement,\n{full_name}",
+  },
+  "de": {
+    "headings": {
+      "summary": "Zusammenfassung",
+      "experience": "Berufserfahrung",
+      "education": "Ausbildung",
+      "skills": "Kenntnisse & Fähigkeiten",
+      "projects": "Projekte",
+      "certifications": "Zertifikate",
+      "achievements": "Erfolge",
+      "languages": "Sprachen",
+    },
+    "cover_letter_salutation": "Sehr geehrte Damen und Herren,",
+    "cover_letter_intro": "hiermit bewerbe ich mich um die Position als {job_title}.",
+    "cover_letter_closing": "Mit freundlichen Grüßen,\n{full_name}",
+  },
+  "en": {
+    "headings": {
+      "summary": "PROFESSIONAL SUMMARY",
+      "experience": "WORK EXPERIENCE",
+      "education": "EDUCATION",
+      "skills": "SKILLS & COMPETENCIES",
+      "projects": "KEY PROJECTS",
+      "certifications": "CERTIFICATIONS",
+      "achievements": "KEY ACHIEVEMENTS",
+      "languages": "LANGUAGES",
+    },
+    "cover_letter_salutation": "Dear Hiring Manager,",
+    "cover_letter_intro": "I am writing to express my strong interest in the {job_title} position.",
+    "cover_letter_closing": "Sincerely,\n{full_name}",
+  },
+}
+
+
+def analyze_jd_match(fields: dict[str, Any], job_description: str | None = None) -> dict[str, Any]:
+  """Analyze candidate resume against target Job Description (JD) for keyword gaps and match score."""
+  if not job_description or not job_description.strip():
+    return {
+      "match_score": 90,
+      "jd_provided": False,
+      "missing_keywords": [],
+      "recommended_additions": [
+        "Include metrics (e.g. +30% efficiency, 50k+ active users) to boost ATS ranking.",
+        "Ensure core technical tools are listed under Technical Skills section.",
+      ],
+    }
+
+  jd_tokens = set(re.findall(r"\b[a-zA-Z0-9+#.#-]{3,20}\b", job_description.lower()))
+  resume_text = " ".join(str(v) for v in fields.values() if isinstance(v, (str, list))).lower()
+  resume_tokens = set(re.findall(r"\b[a-zA-Z0-9+#.#-]{3,20}\b", resume_text))
+
+  tech_catalog = {
+    "flutter", "react", "python", "java", "kotlin", "node.js", "docker", "kubernetes",
+    "aws", "sql", "graphql", "rest api", "git", "ci/cd", "agile", "scrum", "microservices",
+    "gcp", "azure", "mongodb", "postgresql", "typescript", "javascript",
+  }
+
+  jd_tech_keywords = jd_tokens.intersection(tech_catalog)
+  matched = jd_tech_keywords.intersection(resume_tokens)
+  missing = list(jd_tech_keywords - resume_tokens)
+
+  if jd_tech_keywords:
+    score = round((len(matched) / len(jd_tech_keywords)) * 100)
+  else:
+    score = 85
+
+  additions = [
+    f"Add '{kw.title()}' to your Skills section to match target Job Description requirement."
+    for kw in missing[:4]
+  ]
+
+  return {
+    "match_score": max(50, min(100, score)),
+    "jd_provided": True,
+    "matched_keywords": sorted([k.title() for k in matched]),
+    "missing_keywords": sorted([k.title() for k in missing]),
+    "recommended_additions": additions or ["Resume matches all core technical keywords in the target Job Description!"],
+  }
+
+
+def rewrite_xyz_bullets(raw_experience: str, job_title: str) -> list[str]:
+  """Rewrite weak work experience lines into Google XYZ formula bullets (Accomplished X by measuring Y and doing Z)."""
+  lines = [ln.strip() for ln in (raw_experience or "").splitlines() if len(ln.strip()) > 5]
+  if not lines:
+    return [
+      f"Engineered scalable {job_title} solutions, achieving a 35% improvement in processing performance across enterprise systems.",
+      f"Implemented robust automated workflows, cutting deployment cycle times by 40% and increasing team velocity.",
+      f"Collaborated with cross-functional product and engineering teams to deliver key features for 100k+ active users.",
+    ]
+
+  xyz_bullets = []
+  metrics = ("30%", "40%", "25%", "50+", "100k+", "3x")
+
+  for i, ln in enumerate(lines[:6]):
+    clean_ln = re.sub(r"^[\-\*\•\d]+[\).\s]+", "", ln).strip()
+    clean_ln = de_first_person(clean_ln)
+    if "achiev" in clean_ln.lower() or "%" in clean_ln or re.search(r"\d", clean_ln):
+      xyz_bullets.append(f"- {clean_ln.rstrip('.')}.")
+    else:
+      m = metrics[i % len(metrics)]
+      xyz_bullets.append(
+        f"- Engineered {clean_ln.lower()}, achieving a {m} boost in operational efficiency through optimized code structures."
+      )
+
+  return xyz_bullets
+
+
+def render_resume_template(
+  fields: dict[str, Any],
+  template_id: str = "modern_clean",
+  language: str | None = None,
+) -> dict[str, str]:
+  """Render resume into 4 distinct ATS layout templates (Modern, Executive, Technical, Minimal)."""
+  lang = (language or "en").lower()[:2]
+  i18n = MULTILINGUAL_RESUME_CATALOG.get(lang, MULTILINGUAL_RESUME_CATALOG["en"])
+  h = i18n["headings"]
+
+  name = fields.get("full_name") or "Candidate Name"
+  title = fields.get("job_title") or "Professional"
+  email = fields.get("email") or "email@example.com"
+  phone = fields.get("phone") or "+1 234 567 890"
+  skills = fields.get("skills") or ""
+  summary = fields.get("summary") or ""
+  exp = fields.get("experience") or ""
+  edu = fields.get("education") or ""
+  projects = fields.get("projects") or ""
+
+  if template_id == "executive_elite":
+    md = (
+      f"# {name.upper()}\n"
+      f"**{title.upper()}** | {email} | {phone}\n\n"
+      f"## EXECUTIVE SUMMARY\n{summary}\n\n"
+      f"## CORE COMPETENCIES & LEADERSHIP\n{skills}\n\n"
+      f"## PROFESSIONAL EXPERIENCE\n{exp}\n\n"
+      f"## EDUCATION & CREDENTIALS\n{edu}\n"
+    )
+  elif template_id == "technical_minimal":
+    md = (
+      f"# {name}\n"
+      f"`{title}` • {email} • {phone}\n\n"
+      f"### TECHNICAL STACK\n{skills}\n\n"
+      f"### ENGINEERING EXPERIENCE\n{exp}\n\n"
+      f"### FEATURED PROJECTS\n{projects}\n\n"
+      f"### EDUCATION\n{edu}\n"
+    )
+  elif template_id == "creative_showcase":
+    md = (
+      f"# {name}\n"
+      f"### {title}\n"
+      f"📫 {email} | 📞 {phone}\n\n"
+      f"---\n"
+      f"## 🌟 ABOUT ME\n{summary}\n\n"
+      f"## 🚀 KEY PROJECTS & PORTFOLIO\n{projects}\n\n"
+      f"## 💼 EXPERIENCE\n{exp}\n\n"
+      f"## 🛠 SKILLS & TOOLS\n{skills}\n"
+    )
+  else:  # modern_clean (default)
+    md = (
+      f"# {name}\n"
+      f"**{title}** | {email} | {phone}\n\n"
+      f"---\n\n"
+      f"## {h['summary']}\n{summary}\n\n"
+      f"## {h['skills']}\n{skills}\n\n"
+      f"## {h['experience']}\n{exp}\n\n"
+      f"## {h['education']}\n{edu}\n"
+    )
+    if projects:
+      md += f"\n## {h['projects']}\n{projects}\n"
+
+  html = (
+    f"<div style=\"font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; line-height: 1.6;\">\n"
+    f"  <h1 style=\"color: #1a365d; margin-bottom: 4px;\">{name}</h1>\n"
+    f"  <p style=\"font-size: 16px; color: #4a5568; font-weight: bold;\">{title} | {email} | {phone}</p>\n"
+    f"  <hr style=\"border: none; border-top: 2px solid #3182ce; margin: 16px 0;\" />\n"
+    f"  <h3 style=\"color: #2b6cb0;\">{h['summary']}</h3>\n"
+    f"  <p>{summary}</p>\n"
+    f"  <h3 style=\"color: #2b6cb0;\">{h['skills']}</h3>\n"
+    f"  <p>{skills}</p>\n"
+    f"  <h3 style=\"color: #2b6cb0;\">{h['experience']}</h3>\n"
+    f"  <div>{exp.replace(chr(10), '<br/>')}</div>\n"
+    f"  <h3 style=\"color: #2b6cb0;\">{h['education']}</h3>\n"
+    f"  <p>{edu}</p>\n"
+    f"</div>"
+  )
+
+  return {"markdown": md, "html": html}
+
+
+def generate_application_bundle(fields: dict[str, Any], language: str | None = None) -> dict[str, Any]:
+  """Generate complete job application bundle including Cover Letter and multi-format exports."""
+  lang = (language or "en").lower()[:2]
+  i18n = MULTILINGUAL_RESUME_CATALOG.get(lang, MULTILINGUAL_RESUME_CATALOG["en"])
+
+  name = fields.get("full_name") or "Candidate"
+  title = fields.get("job_title") or "Professional"
+  skills_summary = ", ".join((fields.get("skills") or "").split(",")[:5]) or "core technical competencies"
+
+  salutation = i18n["cover_letter_salutation"]
+  intro = i18n["cover_letter_intro"].format(job_title=title)
+  closing = i18n["cover_letter_closing"].format(full_name=name)
+
+  cover_letter = (
+    f"{salutation}\n\n"
+    f"{intro} With extensive experience in {skills_summary}, I have consistently delivered "
+    f"high-impact outcomes and optimized team performance.\n\n"
+    f"My background aligns strongly with your organization's goals. I am confident in my ability "
+    f"to bring immediate value to your team.\n\n"
+    f"Thank you for your time and consideration. I look forward to discussing how my skills "
+    f"can contribute to your success.\n\n"
+    f"{closing}"
+  )
+
+  templates = render_resume_template(fields, "modern_clean", language)
+  md_text = templates["markdown"]
+  html_text = templates["html"]
+  txt_text = re.sub(r"[#*_`~-]", "", md_text)
+
+  return {
+    "cover_letter": cover_letter,
+    "export_formats": {
+      "markdown": md_text,
+      "plain_text": txt_text,
+      "html": html_text,
+      "json_schema": {
+        "basics": {
+          "name": name,
+          "label": title,
+          "email": fields.get("email"),
+          "phone": fields.get("phone"),
+          "summary": fields.get("summary"),
+        },
+        "work": [{"position": title, "summary": fields.get("experience")}],
+        "skills": [{"name": "Core Skills", "keywords": (fields.get("skills") or "").split(",")}],
+        "education": [{"institution": fields.get("education")}],
+      },
+    },
+  }

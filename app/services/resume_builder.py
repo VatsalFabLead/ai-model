@@ -193,6 +193,7 @@ async def generate(
   certifications: str | None = None,
   achievements: str | None = None,
   languages: str | None = None,
+  job_description: str | None = None,
   template: str = "modern",
   template_name: str | None = None,
   language: str | None = None,
@@ -216,6 +217,7 @@ async def generate(
     "certifications": certifications,
     "achievements": achievements,
     "languages": languages,
+    "job_description": job_description,
   }
 
   llm: ResumeLLM | None = _PipelineLLM(provider, language) if use_ai and provider else None
@@ -244,3 +246,31 @@ async def generate(
   }
   result["template"] = tpl
   return _ensure_output_fields(result)
+
+
+async def generate_resume(provider: ModelProvider | None, payload: dict[str, Any]) -> dict[str, Any]:
+  """Wrapper for dictionary payload execution."""
+  return await generate(
+    provider,
+    full_name=payload.get("full_name", ""),
+    job_title=payload.get("job_title", ""),
+    email=payload.get("email", ""),
+    phone=payload.get("phone", ""),
+    linkedin=payload.get("linkedin"),
+    portfolio=payload.get("portfolio"),
+    education=payload.get("education"),
+    experience=payload.get("experience"),
+    skills=payload.get("skills"),
+    summary=payload.get("summary"),
+    projects=payload.get("projects"),
+    certifications=payload.get("certifications"),
+    achievements=payload.get("achievements"),
+    languages=payload.get("languages"),
+    job_description=payload.get("job_description"),
+    template=payload.get("template", "modern"),
+    template_name=payload.get("template_name"),
+    language=payload.get("language"),
+    use_ai=payload.get("use_ai", True),
+    use_rag=payload.get("use_rag", True),
+    variation_seed=payload.get("variation_seed"),
+  )

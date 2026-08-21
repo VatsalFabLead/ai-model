@@ -18,19 +18,23 @@ from typing import Any, Protocol
 from app.engine import resume_engine as reng
 from app.engine.open_data_retrieval import OpenDoc
 from app.engine.resume_narrative import (
+  analyze_jd_match,
+  build_role_experience_bullets,
+  enhance_projects_section,
   extract_skills_from_narrative,
-  is_narrative_text,
-  is_minimal_experience,
   format_structured_experience,
+  generate_application_bundle,
+  is_meta_experience_line,
+  is_minimal_experience,
+  is_narrative_text,
+  line_has_action_verb,
+  render_resume_template,
   rewrite_achievements_narrative,
   rewrite_certifications_narrative,
   rewrite_education_narrative,
   rewrite_experience_narrative,
-  enhance_projects_section,
   rewrite_summary_narrative,
-  is_meta_experience_line,
-  line_has_action_verb,
-  build_role_experience_bullets,
+  rewrite_xyz_bullets,
 )
 from app.engine.resume_open_data import (
   OPEN_DATASET_TREE,
@@ -1127,6 +1131,14 @@ async def run_resume_pipeline(
 
   category = reng.detect_category(job)
 
+  jd_match = analyze_jd_match(structured, payload.get("job_description"))
+  xyz_bullets = rewrite_xyz_bullets(experience, job)
+  layout_templates = {
+    t_id: render_resume_template(structured, t_id, language)
+    for t_id in ("modern_clean", "executive_elite", "technical_minimal", "creative_showcase")
+  }
+  application_bundle = generate_application_bundle(structured, language)
+
   return {
     "generator_version": GENERATOR_VERSION,
     "variation_seed": seed,
@@ -1136,6 +1148,10 @@ async def run_resume_pipeline(
     "category": category,
     "personal_info": personal,
     "fields": structured,
+    "jd_match": jd_match,
+    "xyz_bullets": xyz_bullets,
+    "layout_templates": layout_templates,
+    "application_bundle": application_bundle,
     "full_name": personal["full_name"],
     "job_title": personal["job_title"],
     "email": personal["email"],
