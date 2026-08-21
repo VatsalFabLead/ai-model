@@ -391,9 +391,43 @@ def expand_domain_keywords(
   return out[: max(count * 3, 90)]
 
 
+MULTILINGUAL_QUESTION_PATTERNS: dict[str, list[str]] = {
+  "gu": ["{seed} કેવી રીતે કામ કરે છે", "{seed} શું છે", "{seed} ના મુખ્ય ફાયદાઓ", "{seed} કેમ જરૂરી છે", "{seed} ના શ્રેષ્ઠ ઉપયોગો"],
+  "hi": ["{seed} कैसे काम करता है", "{seed} क्या है", "{seed} के मुख्य लाभ", "{seed} क्यों जरूरी है", "{seed} के बेहतरीन तरीके"],
+  "mr": ["{seed} कसे काम करते", "{seed} काय आहे", "{seed} चे फायदे", "{seed} का महत्त्वाचे आहे"],
+  "es": ["cómo funciona {seed}", "qué es {seed}", "por qué es importante {seed}", "mejores prácticas de {seed}"],
+  "fr": ["comment fonctionne {seed}", "qu'est-ce que {seed}", "pourquoi utiliser {seed}", "meilleurs conseils pour {seed}"],
+  "de": ["wie funktioniert {seed}", "was ist {seed}", "warum ist {seed} wichtig", "beste tipps für {seed}"],
+}
+
+MULTILINGUAL_LSI_PATTERNS: dict[str, list[str]] = {
+  "gu": ["{seed} સંપૂર્ણ માર્ગદર્શિકા", "{seed} ઉપયોગી ટિપ્સ", "{seed} સરળ રીતો", "{seed} સચોટ માહિતી"],
+  "hi": ["{seed} संपूर्ण मार्गदर्शिका", "{seed} उपयोगी टिप्स", "{seed} आसान तरीके", "{seed} विस्तृत विवरण"],
+  "mr": ["{seed} सविस्तर मार्गदर्शन", "{seed} उपयुक्त टिप्स", "{seed} सोप्या पद्धती"],
+  "es": ["{seed} guía completa", "{seed} consejos útiles", "{seed} paso a paso", "{seed} mejores prácticas"],
+  "fr": ["{seed} guide complet", "{seed} conseils pratiques", "{seed} étape par étape"],
+  "de": ["{seed} vollständiger leitfaden", "{seed} praktische tipps", "{seed} schritt für schritt"],
+}
+
+
 def generate_domain_questions(context: dict[str, Any], existing: set[str]) -> list[dict[str, Any]]:
   out: list[dict[str, Any]] = []
   brand = context.get("brand_name", "")
+  seed = context.get("seed", "")
+  lang = (context.get("bcp47") or context.get("language_code") or "en")[:2]
+
+  if lang in MULTILINGUAL_QUESTION_PATTERNS and seed:
+    for pat in MULTILINGUAL_QUESTION_PATTERNS[lang]:
+      kw = pat.format(seed=seed).strip().lower()
+      if kw not in existing:
+        out.append({
+          "keyword": kw,
+          "sources": ["multilingual_question_generator"],
+          "category": "questions",
+          "relevance": 88,
+          "topic_cluster": context.get("primary_domain", "Questions"),
+        })
+
   for domain in expansion_domains(context):
     tpl = get_domain_templates(domain, brand=brand)
     for q in tpl.get("questions", []):
@@ -434,6 +468,21 @@ def generate_domain_competitors(context: dict[str, Any], existing: set[str]) -> 
 
 def generate_domain_lsi(context: dict[str, Any], existing: set[str]) -> list[dict[str, Any]]:
   out: list[dict[str, Any]] = []
+  seed = context.get("seed", "")
+  lang = (context.get("bcp47") or context.get("language_code") or "en")[:2]
+
+  if lang in MULTILINGUAL_LSI_PATTERNS and seed:
+    for pat in MULTILINGUAL_LSI_PATTERNS[lang]:
+      kw = pat.format(seed=seed).strip().lower()
+      if kw not in existing:
+        out.append({
+          "keyword": kw,
+          "sources": ["multilingual_lsi_expansion"],
+          "category": "lsi",
+          "relevance": 82,
+          "topic_cluster": context.get("primary_domain", "LSI"),
+        })
+
   for domain in expansion_domains(context):
     for phrase in _DOMAIN_LSI.get(domain, ()):
       kw = phrase.lower()

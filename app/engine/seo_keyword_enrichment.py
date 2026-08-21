@@ -291,6 +291,132 @@ def build_recommendations(
   return recs[:8]
 
 
+def detect_sub_intent(keyword: str, primary_intent: str) -> str:
+  """Classify keywords into granular sub-intents."""
+  low = (keyword or "").lower()
+  if any(w in low for w in ("price", "cost", "pricing", "vs", "compare", "comparison", "quote", "fee", "ખર્ચ", "કિંમત", "कीमत", "precio", "tarif")):
+    return "price_comparison"
+  if any(w in low for w in ("fix", "error", "issue", "problem", "repair", "step by step", "how to", " guide", "સંભાળ", "देखभाल", "cómo reparar", "dépannage")):
+    return "troubleshooting_guide"
+  if any(w in low for w in ("features", "stack", "spec", "review", "demo", "overview", "સુવિધાઓ", "विशेषताएं", "características", "fonctionnalités")):
+    return "feature_investigation"
+  if any(w in low for w in ("hire", "company", "agency", "services", "developer", "provider", "સર્વિસ", "कंपनी", "servicios", "agence")):
+    return "hiring_service"
+  return "general_informational" if primary_intent == "informational" else f"{primary_intent}_general"
+
+
+def detect_serp_feature_targets(keyword: str, intent: str, sub_intent: str) -> dict[str, Any]:
+  """Identify target SERP overlay opportunities (Featured Snippet, PAA, Local Pack, Video)."""
+  low = (keyword or "").lower()
+  words = re.findall(r"\w+", low)
+
+  is_question = any(w in low for w in ("how", "what", "why", "which", "when", "where", "who", "કેવી રીતે", "શું છે", "કેમ", "कैसे", "क्या है", "cómo", "qué", "comment")) or "?" in keyword
+  is_definition = any(w in low for w in ("what is", "meaning", "definition", "overview", "શું છે", "क्या है", "qué es"))
+  is_local = any(w in low for w in ("near me", "in ahmedabad", "in mumbai", "in delhi", "in surat", "in gujarat", "in india", "અમદાવાદમાં", "अहमदाबाद में"))
+  is_video = any(w in low for w in ("tutorial", "video", "how to", "step by step", "demo", "ગાઈડ", "गाइड"))
+
+  features: list[str] = []
+  if is_question or is_definition:
+    features.append("featured_snippet")
+  if is_question:
+    features.append("people_also_ask")
+  if is_local:
+    features.append("local_pack")
+  if is_video:
+    features.append("video_carousel")
+
+  return {
+    "featured_snippet_target": is_question or is_definition,
+    "people_also_ask_target": is_question,
+    "local_pack_target": is_local,
+    "video_target": is_video,
+    "serp_features": features or ["organic_result"],
+  }
+
+
+def detect_cannibalization_risks(keywords: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+  """Calculate pairwise term overlap coefficient to alert cannibalization risks."""
+  warnings: list[dict[str, Any]] = []
+  for i in range(len(keywords)):
+    k1 = keywords[i]["keyword"].lower()
+    t1 = set(w for w in re.findall(r"\w+", k1) if len(w) >= 3)
+    keywords[i]["cannibalization_risk"] = False
+    keywords[i]["cannibalization_pair"] = None
+
+    for j in range(i + 1, len(keywords)):
+      k2 = keywords[j]["keyword"].lower()
+      t2 = set(w for w in re.findall(r"\w+", k2) if len(w) >= 3)
+      if not t1 or not t2:
+        continue
+      overlap = len(t1 & t2) / min(len(t1), len(t2))
+      if overlap >= 0.70 and k1 != k2:
+        keywords[i]["cannibalization_risk"] = True
+        keywords[i]["cannibalization_pair"] = k2
+        warnings.append({
+          "keyword_a": keywords[i]["keyword"],
+          "keyword_b": keywords[j]["keyword"],
+          "overlap_score": round(overlap, 2),
+          "recommendation": "Consolidate both keywords into a single master page to avoid SERP cannibalization.",
+        })
+        break
+  return keywords, warnings
+
+
+def generate_export_bundle(keywords: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
+  """Generate pre-formatted CSV, Markdown Table, and Cluster Tree exports for SEO campaigns."""
+  # CSV Export
+  csv_lines = ["Keyword,Category,Primary Intent,Sub-Intent,Volume Estimate,Difficulty,CPC Estimate,SERP Targets,Cannibalization Risk"]
+  for k in keywords:
+    kw = f'"{k.get("keyword", "")}"'
+    cat = k.get("category", "")
+    intent = k.get("intent", "")
+    sub_intent = k.get("sub_intent", "")
+    vol = k.get("volume_label", k.get("volume_estimate", ""))
+    diff = k.get("difficulty_label", k.get("difficulty_estimate", ""))
+    cpc = k.get("cpc_label", k.get("cpc_estimate", ""))
+    serp = ";".join(k.get("serp_features", []))
+    can_risk = "YES" if k.get("cannibalization_risk") else "NO"
+    csv_lines.append(f"{kw},{cat},{intent},{sub_intent},{vol},{diff},{cpc},{serp},{can_risk}")
+  csv_export = "\n".join(csv_lines)
+
+  # Markdown Table
+  md_lines = [
+    "| Keyword | Category | Sub-Intent | Volume | Difficulty | CPC | SERP Targets |",
+    "|:---|:---|:---|:---|:---|:---|:---|",
+  ]
+  for k in keywords[:25]:
+    kw = k.get("keyword", "")
+    cat = k.get("category", "")
+    sub_intent = k.get("sub_intent", "")
+    vol = k.get("volume_label", k.get("volume_estimate", ""))
+    diff = k.get("difficulty_label", k.get("difficulty_estimate", ""))
+    cpc = k.get("cpc_label", k.get("cpc_estimate", ""))
+    serp = ", ".join(k.get("serp_features", []))
+    md_lines.append(f"| `{kw}` | {cat} | {sub_intent} | {vol} | {diff} | {cpc} | {serp} |")
+  markdown_table = "\n".join(md_lines)
+
+  # Cluster Tree Markdown
+  clusters: dict[str, list[str]] = {}
+  for k in keywords:
+    c = k.get("topic_cluster") or "General"
+    if c not in clusters:
+      clusters[c] = []
+    clusters[c].append(f"- **[{k.get('category', 'kw')}]** `{k.get('keyword')}` _({k.get('sub_intent', 'intent')})_")
+
+  tree_lines = [f"# SEO Keyword Cluster Tree — {context.get('seed', 'Campaign')}\n"]
+  for c_name, c_kws in clusters.items():
+    tree_lines.append(f"### 📁 Topic Cluster: {c_name}")
+    tree_lines.extend(c_kws)
+    tree_lines.append("")
+  cluster_tree_markdown = "\n".join(tree_lines)
+
+  return {
+    "csv_export": csv_export,
+    "markdown_table": markdown_table,
+    "cluster_tree_markdown": cluster_tree_markdown,
+  }
+
+
 def build_output_sections(
   *,
   context: dict[str, Any],
@@ -310,6 +436,17 @@ def build_output_sections(
   recommendations: list[str],
   extra_competitor: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+  # Enrich ranked items with Sub-Intent, SERP Features, and Cannibalization
+  for item in ranked:
+    p_intent = item.get("intent", seed_intent.get("primary_intent", "informational"))
+    s_intent = detect_sub_intent(item.get("keyword", ""), p_intent)
+    item["sub_intent"] = s_intent
+    serp_info = detect_serp_feature_targets(item.get("keyword", ""), p_intent, s_intent)
+    item.update(serp_info)
+
+  ranked, cannibalization_warnings = detect_cannibalization_risks(ranked)
+  export_bundle = generate_export_bundle(ranked, context)
+
   by_intent = {
     "commercial": [k for k in ranked if k.get("intent") == "commercial"],
     "transactional": [k for k in ranked if k.get("intent") == "transactional"],
@@ -351,6 +488,8 @@ def build_output_sections(
     "competitor_keywords": competitor,
     "trending_keywords": trending,
     "opportunity_keywords": opportunities,
+    "cannibalization_warnings": cannibalization_warnings,
+    "export_bundle": export_bundle,
     "keyword_clusters": topic_clusters,
     "metrics": {
       "volume_estimates": _metric_summary(ranked, "volume_label"),

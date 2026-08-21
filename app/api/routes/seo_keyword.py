@@ -32,6 +32,14 @@ class KeywordItem(BaseModel):
   trend_monthly: list[int] = Field(default_factory=list)
   trend_chart: str = ""
   intent: str
+  sub_intent: str | None = None
+  featured_snippet_target: bool | None = None
+  people_also_ask_target: bool | None = None
+  local_pack_target: bool | None = None
+  video_target: bool | None = None
+  serp_features: list[str] | None = Field(default_factory=list)
+  cannibalization_risk: bool | None = None
+  cannibalization_pair: str | None = None
   relevance_score: int = 0
   sources: list[str] = Field(default_factory=list)
   seo_score: int = 0
@@ -115,6 +123,8 @@ class SeoKeywordResponse(BaseModel):
   clusters: list[dict[str, Any]] | None = None
   topic_clusters: dict[str, list[Any]] | None = None
   opportunities: list[dict[str, Any]] | None = None
+  cannibalization_warnings: list[dict[str, Any]] | None = None
+  export_bundle: dict[str, Any] | None = None
   content_gap_analysis: dict[str, Any] | None = None
   serp_predictions: list[dict[str, Any]] | None = None
   output: dict[str, Any] | None = None

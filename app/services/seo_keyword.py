@@ -268,6 +268,10 @@ async def generate_keywords(
   result["keywords"] = items[:n]
   result["count"] = len(result["keywords"])
   result["context"] = brief if brief != seed else None
+  output_sec = result.get("output", {})
+  if isinstance(output_sec, dict):
+    result["cannibalization_warnings"] = output_sec.get("cannibalization_warnings")
+    result["export_bundle"] = output_sec.get("export_bundle")
   if title_s:
     result["title"] = title_s
   if topic_s:
