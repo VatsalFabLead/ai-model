@@ -19,6 +19,7 @@ from typing import Any
 from app.engine.open_data_retrieval import retrieve_from_sources
 from app.engine.seo_optimizer_engine import (
   analyze_issues,
+  analyze_keyword_density,
   content_metrics,
   count_sentences,
   count_words,
@@ -2448,18 +2449,53 @@ async def run_optimizer_rag_pipeline(
 
   optimized = preserve_markdown_structure(optimized)
 
+  # C. Structure & Code Preservation
+  code_blocks = re.findall(r"```[\s\S]*?```", content)
+  tables = re.findall(r"(\|[^\n]+\|\n\|[^\n]+\|\n(?:\|[^\n]+\|\n?)*)", content)
+  for cb in code_blocks:
+    if cb not in optimized:
+      optimized += f"\n\n{cb}"
+  for tbl in tables:
+    if tbl not in optimized:
+      optimized += f"\n\n{tbl}"
+
+  from app.engine.seo_content_domains import detect_language
+  lang_code = detect_language(content, kws)
+
+  # E. Featured Snippet & Direct Answer Formatting
+  from app.engine.seo_optimizer_enrichment import format_featured_snippets, generate_changes_summary
+  optimized = format_featured_snippets(optimized, short_topic, kws, language=lang_code)
+
   internal_links = internal_linking_suggestions(kws, all_entities, gaps)
   schema = schema_suggestions(metadata["title"], metadata["meta_description"], faqs)
   original_metrics = content_metrics(content)
   optimized_metrics = content_metrics(optimized)
-  issues_before = analyze_issues(content, kws)
-  issues_after = analyze_issues(optimized, kws)
+
+  # A. Multilingual Audit & Issue Notes
+  issues_before = analyze_issues(content, kws, language=lang_code)
+  issues_after = analyze_issues(optimized, kws, language=lang_code)
   seo_before = seo_score_from_analysis(original_metrics, issues_before)
   seo_after = seo_score_from_analysis(optimized_metrics, issues_after)
+
+  # B. Semantic (LSI) Keyword Density Analysis
+  lsi_analysis = analyze_keyword_density(optimized, kws, language=lang_code)
+  lsi_keywords_detected = lsi_analysis.get("lsi_keywords_detected", [])
+
+  # D. Visual Change Diff Summary
+  changes_summary = generate_changes_summary(
+    content,
+    optimized,
+    {"seo_score": seo_before, "readability_score": original_metrics["readability_score"]},
+    {"seo_score": seo_after, "readability_score": optimized_metrics["readability_score"]},
+    kws,
+    language=lang_code,
+  )
+
   stages["seo_scorer"] = {
     "before": seo_before,
     "after": seo_after,
     "improvement": seo_after - seo_before,
+    "changes_summary": changes_summary,
   }
   stages["final_article"] = {"word_count": optimized_metrics["word_count"]}
 
@@ -2507,6 +2543,7 @@ async def run_optimizer_rag_pipeline(
       "novelty": novelty,
       "section_plan": section_plan,
       "readability_analysis": original_metrics,
+      "lsi_analysis": lsi_analysis,
     },
     "optimization": {
       "metadata": metadata,
@@ -2517,6 +2554,8 @@ async def run_optimizer_rag_pipeline(
     },
     "optimized_content": optimized,
     "suggestions": all_suggestions[:14],
+    "changes_summary": changes_summary,
+    "lsi_keywords_detected": lsi_keywords_detected,
     "seo_score_before": seo_before,
     "seo_score_after": seo_after,
     "improvement": seo_after - seo_before,

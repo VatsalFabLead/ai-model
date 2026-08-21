@@ -379,6 +379,23 @@ async def optimize(
       except Exception:
         pass
 
+  from app.engine.seo_optimizer_enrichment import format_featured_snippets, generate_changes_summary
+  optimized = format_featured_snippets(optimized, kws[0] if kws else "", kws, language=lang_code)
+
+  changes_summary = rag_result.get("changes_summary") if rag_result else None
+  if not changes_summary:
+    changes_summary = generate_changes_summary(
+      content,
+      optimized,
+      {"seo_score": seo_before, "readability_score": original_metrics["readability_score"]},
+      {"seo_score": seo_after, "readability_score": optimized_metrics["readability_score"]},
+      kws,
+      language=lang_code,
+    )
+
+  lsi_analysis = seo_optimizer_engine.analyze_keyword_density(optimized, kws, language=lang_code)
+  lsi_keywords_detected = lsi_analysis.get("lsi_keywords_detected", [])
+
   result: dict[str, Any] = {
     "category": cat,
     "language": lang_code,
@@ -390,6 +407,8 @@ async def optimize(
     "improvement": seo_after - seo_before,
     "optimized_content": optimized,
     "suggestions": suggestions[:12],
+    "changes_summary": changes_summary,
+    "lsi_keywords_detected": lsi_keywords_detected,
     "issues_before": issues_before,
     "issues_after": issues_after,
     "keywords": kws,

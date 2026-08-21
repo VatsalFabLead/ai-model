@@ -130,6 +130,8 @@ class OptimizeResponse(BaseModel):
   improvement: int
   optimized_content: str
   suggestions: list[str]
+  changes_summary: list[str] = Field(default_factory=list)
+  lsi_keywords_detected: list[str] = Field(default_factory=list)
   issues_before: list[SeoIssue]
   issues_after: list[SeoIssue]
   keywords: list[str]

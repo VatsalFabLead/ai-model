@@ -302,38 +302,163 @@ def content_metrics(text: str) -> dict[str, Any]:
   }
 
 
-def analyze_issues(content: str, keywords: list[str] | None = None) -> list[dict[str, str]]:
+def get_lsi_synonyms(keyword: str, language: str = "en") -> list[str]:
+  """Derive LSI terms, stem variations, and semantic synonyms for keyword coverage analysis."""
+  kw = (keyword or "").strip().lower()
+  if not kw:
+    return []
+
+  synonyms: set[str] = set()
+  # Standard stem / plural variations
+  if kw.endswith("s") and len(kw) > 3:
+    synonyms.add(kw[:-1])
+  elif len(kw) > 3:
+    synonyms.add(kw + "s")
+
+  if kw.endswith("ing") and len(kw) > 5:
+    synonyms.add(kw[:-3])
+
+  # Common LSI pairings by keyword patterns
+  lsi_map = {
+    "mobile repair": ["smartphone repair", "cell phone fix", "mobile servicing", "phone maintenance"],
+    "seo": ["search engine optimization", "organic ranking", "search traffic", "keyword strategy"],
+    "python": ["python programming", "python language", "coding in python", "python script"],
+    "coffee": ["coffee brewing", "espresso", "roasted coffee", "coffee maker"],
+    "મોબાઈલ સંભાળ": ["સ્માર્ટફોન સંભાળ", "મોબાઈલ રીપેરિંગ", "ફોન જાળવણી", "મોબાઈલ ટીપ્સ"],
+    "कॉफी कैसे बनाएं": ["कॉफी बनाने का तरीका", "घर पर कॉफी", "कॉफी रेसिपी", "स्पेशल कॉफी"],
+  }
+
+  for k, v in lsi_map.items():
+    if k in kw or kw in k:
+      synonyms.update(v)
+
+  # Extract significant N-grams
+  words = re.findall(r"\b[\w'-]+\b", kw, flags=re.UNICODE)
+  if len(words) > 1:
+    for w in words:
+      if len(w) > 3 and w not in ("how", "what", "with", "from", "your", "best", "the"):
+        synonyms.add(w)
+
+  return [s for s in synonyms if s != kw]
+
+
+def analyze_issues(content: str, keywords: list[str] | None = None, language: str | None = None) -> list[dict[str, str]]:
+  from app.engine.seo_content_domains import detect_language
+  lang = detect_language(content, keywords or [], language)
   issues: list[dict[str, str]] = []
   text = content or ""
   wc = count_words(text)
 
+  # Multilingual message catalogs
+  msg = {
+    "hi": {
+      "too_short": "SEO रैंकिंग के लिए सामग्री बहुत छोटी है (कम से कम 300+ शब्द लिखें)।",
+      "no_h2": "पठनीयता और रैंकिंग सुधारने के लिए H2 (##) उप-शीर्षक जोड़ें।",
+      "no_h1": "शीर्ष पर एक स्पष्ट H1 शीर्षक जोड़ने पर विचार करें।",
+      "long_paras": "पैराग्राफ बहुत लंबे हैं — छोटे ब्लॉकों में विभाजित करें।",
+      "long_sents": "कुछ वाक्य बहुत लंबे हैं — प्रति वाक्य 15-20 शब्द रखें।",
+      "primary_first_para": "मुख्य कीवर्ड '{kw}' पहले पैराग्राफ में आना चाहिए।",
+      "density_high": "कीवर्ड डेंसिटी बहुत अधिक हो सकती है — स्वाभाविक प्रवाह के लिए कम करें।",
+      "density_low": "मुख्य कीवर्ड '{kw}' का स्वाभाविक रूप से कुछ और बार उपयोग करें।",
+      "no_conclusion": "स्पष्ट निष्कर्ष या कॉल-टू-एक्शन (CTA) के साथ एक निष्कर्ष अनुभाग जोड़ें。",
+    },
+    "gu": {
+      "too_short": "SEO રેન્કિંગ માટે સામગ્રી ખૂબ ટૂંકી છે (ઓછામાં ઓછા 300+ શબ્દો હોવા જોઈએ).",
+      "no_h2": "વાંચનક્ષમતા અને રેન્કિંગ વધારવા માટે H2 (##) પેટા-શીર્ષકો ઉમેરો.",
+      "no_h1": "ટોચ પર સ્પષ્ટ H1 શીર્ષક ઉમેરવાનું વિચારો.",
+      "long_paras": "ફકરા ખૂબ લાંબા છે — નાના વિભાગોમાં વિભાજીત કરો.",
+      "long_sents": "કેટલાક વાક્યો ખૂબ લાંબા છે — વાક્ય દીઠ 15–20 શબ્દો રાખો.",
+      "primary_first_para": "મુખ્ય કીવર્ડ '{kw}' પ્રથમ ફકરામાં આવવો જોઈએ.",
+      "density_high": "કીવર્ડ ઘનતા ખૂબ વધારે હોઈ શકે છે — કુદરતી પ્રવાહ માટે ઘટાડો.",
+      "density_low": "મુખ્ય કીવર્ડ '{kw}' નો કુદરતી રીતે વધુ ઉપયોગ કરો.",
+      "no_conclusion": "સ્પષ્ટ સારાંશ અથવા આહ્વાન (CTA) સાથે નિષ્કર્ષ વિભાગ ઉમેરો.",
+    },
+    "mr": {
+      "too_short": "SEO रँकिंगसाठी मजकूर खूप लहान आहे (किमान 300+ शब्द असावेत).",
+      "no_h2": "वाचनीयता आणि रँकिंग सुधारण्यासाठी H2 (##) उपशीर्षके जोडा.",
+      "no_h1": "वर स्पष्ट H1 शीर्षक जोडण्याचा विचार करा.",
+      "long_paras": "परिच्छेद खूप मोठे आहेत — लहान भागात विभाजित करा.",
+      "long_sents": "काही वाक्ये खूप लांब आहेत — दर वाक्यात 15-20 शब्द ठेवा.",
+      "primary_first_para": "मुख्य कीवर्ड '{kw}' पहिल्या परिच्छेदात आला पाहिजे.",
+      "density_high": "कीवर्ड प्रमाण खूप जास्त असू शकते — नैसर्गिक प्रवाहासाठी कमी करा.",
+      "density_low": "मुख्य कीवर्ड '{kw}' चा नैसर्गिकपणे वापर वाढवा.",
+      "no_conclusion": "स्पष्ट निष्कर्षासह एक शेवटचा भाग जोडा.",
+    },
+    "es": {
+      "too_short": "El contenido es demasiado corto para un buen SEO (apunte a 300+ palabras).",
+      "no_h2": "Añada subtítulos H2 (##) para mejorar la lectura y el posicionamiento.",
+      "no_h1": "Considere agregar un título H1 claro en la parte superior.",
+      "long_paras": "Párrafos demasiado largos: divídalos en bloques más cortos.",
+      "long_sents": "Algunas oraciones son demasiado largas: procure 15–20 palabras por oración.",
+      "primary_first_para": "La palabra clave principal '{kw}' debe aparecer en el primer párrafo.",
+      "density_high": "La densidad de palabras clave es demasiado alta; redúzcala para un flujo natural.",
+      "density_low": "Use la palabra clave principal '{kw}' algunas veces más de forma natural.",
+      "no_conclusion": "Agregue una sección de conclusión con una llamada a la acción clara.",
+    },
+    "fr": {
+      "too_short": "Le contenu est trop court pour un bon référencement (visez 300+ mots).",
+      "no_h2": "Ajoutez des sous-titres H2 (##) pour améliorer la lisibilité et le classement.",
+      "no_h1": "Pensez à ajouter un titre H1 clair en haut.",
+      "long_paras": "Des paragraphes sont très me longs — divisez-les en blocs plus courts.",
+      "long_sents": "Certaines phrases sont trop longues — visez 15 à 20 mots par phrase.",
+      "primary_first_para": "Le mot-clé principal '{kw}' doit apparaître dans le premier paragraphe.",
+      "density_high": "La densité de mots-clés est trop élevée — réduisez pour un flux naturel.",
+      "density_low": "Utilisez le mot-clé principal '{kw}' quelques fois de plus naturellement.",
+      "no_conclusion": "Ajoutez une section de conclusion avec un appel à l'action clair.",
+    },
+    "de": {
+      "too_short": "Der Inhalt ist zu kurz für gutes SEO (mindestens 300+ Wörter anstreben).",
+      "no_h2": "Fügen Sie H2-Unterüberschriften (##) hinzu, um die Lesbarkeit zu verbessern.",
+      "no_h1": "Erwägen Sie, oben eine klare H1-Überschrift hinzuzufügen.",
+      "long_paras": "Einige Absätze sind zu lang — in kürzere Blöcke aufteilen.",
+      "long_sents": "Einige Sätze sind zu lang — zielen Sie auf 15–20 Wörter pro Satz ab.",
+      "primary_first_para": "Das Hauptschlüsselwort '{kw}' sollte im ersten Absatz erscheinen.",
+      "density_high": "Die Keyword-Dichte ist möglicherweise zu hoch — reduzieren Sie für natürlichen Fluss.",
+      "density_low": "Verwenden Sie das Hauptschlüsselwort '{kw}' natürlich noch ein paar Mal.",
+      "no_conclusion": "Fügen Sie einen Fazit-Abschnitt mit einem klaren CTA hinzu.",
+    },
+    "en": {
+      "too_short": "Content is too short for strong SEO (aim for 300+ words for articles).",
+      "no_h2": "Add H2 (##) subheadings to improve scanability and rankings.",
+      "no_h1": "Consider adding a clear H1 title at the top.",
+      "long_paras": "Paragraphs are very long — split into shorter blocks.",
+      "long_sents": "Some sentences are too long — aim for 15–20 words per sentence.",
+      "primary_first_para": "Primary keyword '{kw}' should appear in the first paragraph.",
+      "density_high": "Keyword density may be too high — reduce stuffing for natural flow.",
+      "density_low": "Use primary keyword '{kw}' a few more times naturally.",
+      "no_conclusion": "Add a conclusion section with a clear takeaway or CTA.",
+    },
+  }
+
+  catalog = msg.get(lang, msg["en"])
+
   if wc < 50:
-    issues.append({"type": "length", "priority": "high", "message": "Content is too short for strong SEO (aim for 300+ words for articles)."})
+    issues.append({"type": "length", "priority": "high", "message": catalog["too_short"]})
   if "##" not in text and wc > 150:
-    issues.append({"type": "structure", "priority": "high", "message": "Add H2 (##) subheadings to improve scanability and rankings."})
+    issues.append({"type": "structure", "priority": "high", "message": catalog["no_h2"]})
   if not re.search(r"^#\s+", text, re.MULTILINE) and wc > 100:
-    issues.append({"type": "structure", "priority": "medium", "message": "Consider adding a clear H1 title at the top."})
+    issues.append({"type": "structure", "priority": "medium", "message": catalog["no_h1"]})
 
   long_paras = [p for p in re.split(r"\n\s*\n", text) if count_words(p) > 120 and not p.strip().startswith("#")]
   if long_paras:
-    issues.append({"type": "readability", "priority": "medium", "message": f"{len(long_paras)} paragraph(s) are very long — split into shorter blocks."})
+    issues.append({"type": "readability", "priority": "medium", "message": catalog["long_paras"]})
 
   long_sents = [s for s in re.split(r"[.!?]+", text) if count_words(s) > 30]
   if len(long_sents) >= 2:
-    issues.append({"type": "readability", "priority": "medium", "message": "Some sentences are too long — aim for 15–20 words per sentence."})
+    issues.append({"type": "readability", "priority": "medium", "message": catalog["long_sents"]})
 
   if keywords:
     primary = keywords[0].lower()
     if primary not in text.lower()[:400]:
-      issues.append({"type": "keyword", "priority": "high", "message": f"Primary keyword '{keywords[0]}' should appear in the first paragraph."})
+      issues.append({"type": "keyword", "priority": "high", "message": catalog["primary_first_para"].format(kw=keywords[0])})
     density = text.lower().count(primary) / max(wc, 1) * 100
     if density > 3.5:
-      issues.append({"type": "keyword", "priority": "high", "message": "Keyword density may be too high — reduce stuffing for natural flow."})
+      issues.append({"type": "keyword", "priority": "high", "message": catalog["density_high"]})
     elif density < 0.3 and wc > 100:
-      issues.append({"type": "keyword", "priority": "medium", "message": f"Use primary keyword '{keywords[0]}' a few more times naturally."})
+      issues.append({"type": "keyword", "priority": "medium", "message": catalog["density_low"].format(kw=keywords[0])})
 
-  if not re.search(r"(conclusion|summary|in summary|to sum up|finally)", text, re.IGNORECASE) and wc > 250:
-    issues.append({"type": "structure", "priority": "low", "message": "Add a conclusion section with a clear takeaway or CTA."})
+  if not re.search(r"(conclusion|summary|in summary|to sum up|finally|નિષ્કર્ષ|निष्कर्ष|resumen|fazit)", text, re.IGNORECASE) and wc > 250:
+    issues.append({"type": "structure", "priority": "low", "message": catalog["no_conclusion"]})
 
   return issues
 
@@ -352,23 +477,23 @@ def seo_score_from_analysis(metrics: dict[str, Any], issues: list[dict[str, str]
   return max(0, min(100, score))
 
 
-def analyze_keyword_density(text: str, keywords: list[str]) -> dict[str, Any]:
-  """Analyze primary and secondary keyword density (optimal 1.0%–1.8%) & structural distribution."""
+def analyze_keyword_density(text: str, keywords: list[str], language: str | None = None) -> dict[str, Any]:
+  """Analyze primary & secondary keyword density, semantic LSI synonym coverage & structural distribution."""
   raw = text or ""
   low = raw.lower()
   wc = count_words(raw)
   if not wc or not keywords:
-    return {"primary_density": 0.0, "status": "unknown", "distribution": {}, "keyword_metrics": []}
+    return {"primary_density": 0.0, "status": "unknown", "distribution": {}, "keyword_metrics": [], "lsi_keywords_detected": []}
 
   # Split sections for structural distribution check
   paras = [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
   intro = paras[0].lower() if paras else ""
   headings = " ".join([ln.lower() for ln in raw.splitlines() if ln.strip().startswith("#")])
   conclusion = paras[-1].lower() if len(paras) > 1 else ""
-  body = " ".join([p.lower() for p in paras[1:-1]]) if len(paras) > 2 else low
 
   primary = keywords[0].strip()
   metrics_list: list[dict[str, Any]] = []
+  all_lsi_terms: list[str] = []
 
   for kw in keywords[:6]:
     k_low = kw.strip().lower()
@@ -376,7 +501,23 @@ def analyze_keyword_density(text: str, keywords: list[str]) -> dict[str, Any]:
       continue
     kw_words = len(re.findall(r"\b[\w'-]+\b", k_low))
     occurrences = len(re.findall(r"\b" + re.escape(k_low) + r"\b", low))
+    
+    # Semantic LSI synonym matching
+    lsi_syns = get_lsi_synonyms(kw, language or "en")
+    lsi_found: list[str] = []
+    lsi_occurrences = 0
+    for s in lsi_syns:
+      s_cnt = len(re.findall(r"\b" + re.escape(s.lower()) + r"\b", low))
+      if s_cnt > 0:
+        lsi_found.append(s)
+        lsi_occurrences += s_cnt
+        if s not in all_lsi_terms:
+          all_lsi_terms.append(s)
+
+    total_semantic = occurrences + lsi_occurrences
     density = round((occurrences * kw_words / wc) * 100, 2)
+    semantic_density = round((total_semantic * kw_words / wc) * 100, 2)
+
     in_intro = bool(re.search(r"\b" + re.escape(k_low) + r"\b", intro))
     in_headings = bool(re.search(r"\b" + re.escape(k_low) + r"\b", headings))
     in_conclusion = bool(re.search(r"\b" + re.escape(k_low) + r"\b", conclusion))
@@ -385,17 +526,20 @@ def analyze_keyword_density(text: str, keywords: list[str]) -> dict[str, Any]:
       "keyword": kw,
       "count": occurrences,
       "density_percent": density,
+      "semantic_count": total_semantic,
+      "semantic_density_percent": semantic_density,
+      "lsi_synonyms_found": lsi_found,
       "in_intro": in_intro,
       "in_headings": in_headings,
       "in_conclusion": in_conclusion,
     })
 
-  primary_metric = metrics_list[0] if metrics_list else {"density_percent": 0.0}
-  pd = primary_metric.get("density_percent", 0.0)
+  primary_metric = metrics_list[0] if metrics_list else {"density_percent": 0.0, "semantic_density_percent": 0.0}
+  pd = primary_metric.get("semantic_density_percent") or primary_metric.get("density_percent", 0.0)
 
   if pd < 0.5:
     status = "underused"
-  elif 0.5 <= pd <= 2.2:
+  elif 0.5 <= pd <= 2.5:
     status = "optimal"
   else:
     status = "overused"
@@ -406,5 +550,7 @@ def analyze_keyword_density(text: str, keywords: list[str]) -> dict[str, Any]:
     "status": status,
     "optimal_range": "1.0% - 1.8%",
     "keyword_metrics": metrics_list,
+    "lsi_keywords_detected": all_lsi_terms,
   }
+
 
