@@ -46,6 +46,10 @@ class EmailResponse(BaseModel):
   cta_strategies: dict[str, str] = Field(default_factory=dict)
   reply_stances: dict[str, str] = Field(default_factory=dict)
   thread_audit: dict[str, Any] = Field(default_factory=dict)
+  cold_sequence: dict[str, dict[str, str]] = Field(default_factory=dict)
+  outreach_template: str | None = None
+  cold_strategy_angles: dict[str, str] = Field(default_factory=dict)
+  cold_deliverability: dict[str, Any] = Field(default_factory=dict)
   spam_audit: dict[str, Any] = Field(default_factory=dict)
   quality: EmailQuality | dict[str, Any] | None = None
   scores: EmailScores | dict[str, Any] | None = None

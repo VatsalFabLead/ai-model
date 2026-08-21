@@ -1203,10 +1203,56 @@ def _opening_cold(
   domain_name: str,
   *,
   seed: int = 0,
+  locale: str = "en",
 ) -> tuple[str, str, str, str]:
-  """Return greeting, opener, value intro line, and domain-specific CTA."""
+  """Return localized greeting, opener, value intro line, and domain-specific CTA."""
+  loc = (locale or "en").lower()[:2]
   tmpl = _cold_domain_template(domain_name)
   purpose_clean = _clean_cold_phrase(purpose)
+
+  if loc == "gu":
+    greeting = f"માનનીય {company} ટીમ,"
+    opener = f"હું આપની સંસ્થા {company} સાથે {purpose_clean} સંદર્ભે વ્યાવસાયિક જોડાણ માટે સંપર્ક કરી રહ્યો છું."
+    value_intro = f"{company} જેવી અગ્રણી સંસ્થાઓ માટે મુખ્ય ફાયદાઓ:"
+    cta = "શું આવતા અઠવાડિયે ૧૦ મિનિટની ટૂંકી વાતચીત શક્ય બનશે?"
+    return greeting, opener, value_intro, cta
+
+  if loc == "hi":
+    greeting = f"प्रिय {company} टीम,"
+    opener = f"मैं आपकी संस्था {company} के साथ {purpose_clean} के संबंध में संपर्क कर रहा हूँ।"
+    value_intro = f"{company} जैसी प्रमुख संस्थाओं के लिए मुख्य लाभ:"
+    cta = "क्या अगले सप्ताह १० मिनट की संक्षिप्त बातचीत संभव होगी?"
+    return greeting, opener, value_intro, cta
+
+  if loc == "mr":
+    greeting = f"मा. {company} टीम,"
+    opener = f"मी आपल्या {company} सोबत {purpose_clean} या विषयावर व्यवसाय चर्चेसाठी संपर्क साधत आहे."
+    value_intro = f"{company} सारख्या संस्थांसाठी मुख्य फायदे:"
+    cta = "पुढील आठवड्यात १० मिनिटांच्या चर्चेसाठी वेळ मिळेल का?"
+    return greeting, opener, value_intro, cta
+
+  if loc == "es":
+    greeting = f"Estimado equipo de {company},"
+    opener = f"Le escribo para presentar una oportunidad estratégica para {company} en relación con {purpose_clean}."
+    value_intro = f"Beneficios clave para empresas como {company}:"
+    cta = "¿Tendría disponibilidad para una breve conversación de 10 minutos la próxima semana?"
+    return greeting, opener, value_intro, cta
+
+  if loc == "fr":
+    greeting = f"Chère équipe de {company},"
+    opener = f"Je vous contacte pour échanger sur une opportunité stratégique pour {company} concernant {purpose_clean}."
+    value_intro = f"Bénéfices clés pour des organisations comme {company} :"
+    cta = "Seriez-vous disponible pour un court échange de 10 minutes la semaine prochaine ?"
+    return greeting, opener, value_intro, cta
+
+  if loc == "de":
+    greeting = f"Sehr geehrtes {company}-Team,"
+    opener = f"Ich kontaktiere Sie bezüglich einer strategischen Möglichkeit für {company} im Bereich {purpose_clean}."
+    value_intro = f"Wichtigste Vorteile für Unternehmen wie {company}:"
+    cta = "Hätten Sie nächste Woche Zeit für ein kurzes 10-minütiges Gespräch?"
+    return greeting, opener, value_intro, cta
+
+  # English Default
   if tone == "formal":
     greeting = f"Dear {company} Team,"
     opener = f"I am writing to introduce a strategic opportunity regarding {purpose_clean}."
@@ -1222,6 +1268,122 @@ def _opening_cold(
   value_intro = f"Key business benefits we bring to organizations like {company}:"
   cta = tmpl.get("cta") or f"Would you be open to a brief 10-minute conversation next week to explore if this aligns with {company}'s goals?"
   return greeting, opener, value_intro, cta
+
+
+def generate_cold_sequence(
+  company_name: str,
+  purpose_offer: str,
+  value_proposition: str,
+  tone: str = "professional",
+  language: str | None = None,
+) -> dict[str, dict[str, str]]:
+  """Generate a complete 3-step automated cold outreach campaign sequence."""
+  lang = (language or "en").lower()[:2]
+  c_name = company_name or "your team"
+
+  if lang == "gu":
+    return {
+      "step_1": {
+        "timing": "Day 1",
+        "subject": f"{c_name} માટે મહત્વપૂર્ણ પ્રસ્તાવ",
+        "body": f"માનનીય {c_name} ટીમ,\n\nhું આપની સંસ્થા સાથે {purpose_offer} સંદર્ભે વાતચીત કરવા આતુર છું. અમે {value_proposition} માં મદદ કરીએ છીએ.\n\nશું આવતા અઠવાડિયે ૧૦ મિનિટની વાતચીત શક્ય બનશે?\n\nઆપનો વિશ્વાસુ,",
+      },
+      "step_2": {
+        "timing": "Day 3 (Nudge & Proof)",
+        "subject": f"Re: {c_name} માટે મહત્વપૂર્ણ પ્રસ્તાવ",
+        "body": f"હેલો {c_name} ટીમ,\n\nhું ફક્ત મારો અગાઉનો ઇમેઇલ ફોલોઅપ કરી રહ્યો છું. અમારી સોલ્યુશનથી સમાન કંપનીઓએ કામગીરીમાં ૩૫% નો સુધારો નોંધાવ્યો છે.\n\nશું આપ આ અંગે વધુ જાણવા માંગો છો?\n\nઆભાર,",
+      },
+      "step_3": {
+        "timing": "Day 7 (Breakup Email)",
+        "subject": f"અંતિમ સમીક્ષા — {c_name}",
+        "body": f"હેલો {c_name} ટીમ,\n\nજો આ સમય આપના માટે અનુકૂળ ન હોય તો હું સમજી શકું છું. ભવિષ્યમાં જરૂર જણાય ત્યારે આપ સંપર્ક કરી શકો છો.\n\nશુભેચ્છાઓ સાથે,",
+      },
+    }
+
+  return {
+    "step_1": {
+      "timing": "Day 1",
+      "subject": f"Quick question for {c_name}",
+      "body": f"Hi {c_name} Team,\n\nI am reaching out to explore how we can assist {c_name} with {purpose_offer}. We specialize in delivering {value_proposition}.\n\nWould you be open to a 10-minute call next week?\n\nBest regards,",
+    },
+    "step_2": {
+      "timing": "Day 3 (Nudge & Social Proof)",
+      "subject": f"Re: Quick question for {c_name}",
+      "body": f"Hi {c_name} Team,\n\nFollowing up on my previous note. Similar teams in your sector have seen a 35% increase in efficiency using our approach.\n\nShould I send over a quick case study deck?\n\nBest regards,",
+    },
+    "step_3": {
+      "timing": "Day 7 (Breakup Email)",
+      "subject": f"Final check-in — {c_name}",
+      "body": f"Hi {c_name} Team,\n\nShould I assume this isn't a priority right now? No worries at all if so — I won't crowd your inbox.\n\nFeel free to reach out whenever timing is better.\n\nBest,",
+    },
+  }
+
+
+def generate_merge_tag_template(email_body: str, company_name: str) -> str:
+  """Generate standardized merge-tag template for cold email tools (Lemlist, Instantly, Salesloft)."""
+  text = email_body
+  if company_name and company_name in text:
+    text = text.replace(company_name, "{{COMPANY_NAME}}")
+  text = re.sub(r"^(Hello|Hi|Dear|Hey)\s+[^\n,]+,", r"\1 {{FIRST_NAME}},", text, flags=re.I)
+  return text
+
+
+def generate_cold_strategy_angles(
+  company_name: str,
+  purpose_offer: str,
+  value_proposition: str,
+  language: str | None = None,
+) -> dict[str, str]:
+  """Generate 3 distinct cold outreach strategy angles (Pain Point, Social Proof, Direct ROI)."""
+  c_name = company_name or "your team"
+  return {
+    "pain_point_angle": f"Noticed many teams in {c_name}'s domain struggle with {purpose_offer}. Here is how we help eliminate that bottleneck...",
+    "social_proof_angle": f"How we helped a peer organization similar to {c_name} achieve 40% growth in 90 days with {value_proposition}...",
+    "direct_roi_angle": f"Reduce operational overhead for {c_name} by 35% while accelerating {purpose_offer}...",
+  }
+
+
+def audit_cold_deliverability(subject: str, email_body: str) -> dict[str, Any]:
+  """Audit cold email deliverability metrics (word count, link count, caps, spam triggers)."""
+  text = f"{subject} {email_body}"
+  words = re.findall(r"\b[\w'-]+\b", text)
+  word_count = len(words)
+
+  links = re.findall(r"https?://\S+", text)
+  link_count = len(links)
+
+  all_caps_words = [w for w in words if w.isupper() and len(w) > 3 and w not in ("API", "ROI", "B2B", "SEO", "CRM", "CTA", "HTML", "PHP", "PDF", "SaaS")]
+
+  spam_words = [
+    "guaranteed roi", "100% free", "risk free", "buy now", "click here",
+    "earn money fast", "special offer", "no cost", "instant results",
+  ]
+  text_low = text.lower()
+  found_spam = [w for w in spam_words if w in text_low]
+
+  score = 100
+  if word_count > 150:
+    score -= 15
+  if link_count > 1:
+    score -= 20
+  if all_caps_words:
+    score -= 15
+  if found_spam:
+    score -= len(found_spam) * 20
+
+  score = max(0, score)
+  status = "Optimal Cold Email (High Open & Response Rate)" if score >= 80 else "Needs Trimming / High Spam Risk"
+
+  return {
+    "word_count": word_count,
+    "is_concise": word_count <= 150,
+    "link_count": link_count,
+    "has_all_caps": bool(all_caps_words),
+    "all_caps_words": all_caps_words,
+    "spam_words_found": found_spam,
+    "cold_deliverability_score": score,
+    "deliverability_status": status,
+  }
 
 
 def compose_email(
@@ -1265,7 +1427,7 @@ def compose_email(
     purpose = context.get("purpose_offer", "our solution")
     value = context.get("value_proposition", "")
     greeting, opener, value_intro, domain_cta = _opening_cold(
-      tone, company, purpose, primary_domain, seed=seed,
+      tone, company, purpose, primary_domain, seed=seed, locale=locale,
     )
     if locale != "en" and tone != "formal":
       loc_greeting, loc_closing = _greeting_closing(tone, seed, locale)

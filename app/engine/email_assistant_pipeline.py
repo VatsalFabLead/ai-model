@@ -288,12 +288,16 @@ async def run_email_assistant_pipeline(
   }
 
   from app.engine.email_assistant_enrichment import (
+    audit_cold_deliverability,
     audit_spam_trigger_words,
     audit_thread_reply_coverage,
     generate_ab_subject_buckets,
+    generate_cold_sequence,
+    generate_cold_strategy_angles,
     generate_cta_strategies,
     generate_html_email_template,
     generate_html_thread_reply,
+    generate_merge_tag_template,
     generate_reply_stances,
   )
 
@@ -319,6 +323,15 @@ async def run_email_assistant_pipeline(
   )
   thread_audit = audit_thread_reply_coverage(ctx_data.get("original_email", ""), email_body)
 
+  cold_sequence = generate_cold_sequence(
+    ctx_data.get("company_name", ""), ctx_data.get("purpose_offer", ""), ctx_data.get("value_proposition", ""), effective_tone, lang.get("bcp47")
+  )
+  outreach_template = generate_merge_tag_template(email_body, ctx_data.get("company_name", ""))
+  cold_strategy_angles = generate_cold_strategy_angles(
+    ctx_data.get("company_name", ""), ctx_data.get("purpose_offer", ""), ctx_data.get("value_proposition", ""), lang.get("bcp47")
+  )
+  cold_deliverability = audit_cold_deliverability(subject, email_body)
+
   return {
     "generator_version": GENERATOR_VERSION,
     "mode": mode,
@@ -332,6 +345,10 @@ async def run_email_assistant_pipeline(
     "html_thread_reply": html_thread_reply,
     "reply_stances": reply_stances,
     "thread_audit": thread_audit,
+    "cold_sequence": cold_sequence,
+    "outreach_template": outreach_template,
+    "cold_strategy_angles": cold_strategy_angles,
+    "cold_deliverability": cold_deliverability,
     "word_count": readability["word_count"],
     "reading_time_minutes": readability.get("reading_time_minutes", 1),
     "language": lang,
