@@ -57,6 +57,7 @@ class SchemaMarkupResponse(BaseModel):
   language: str
   jsonld: dict[str, Any]
   jsonld_string: str
+  embed_bundle: dict[str, Any] | None = None
   quality: SchemaQuality
   generator_version: str | None = None
   validation: dict[str, Any] | None = None

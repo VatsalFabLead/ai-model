@@ -571,17 +571,242 @@ def _collect_warnings(schema: dict[str, Any], data: dict[str, Any], schema_type:
   return warnings
 
 
+MULTILINGUAL_SCHEMA_CATALOG: dict[str, dict[str, str]] = {
+  "gu": {
+    "author": "સચોટ લેખક / તજજ્ઞ",
+    "publisher": "સત્તાવાર પ્રકાશક",
+    "customer_service": "ગ્રાહક સેવા",
+    "description": "સંપૂર્ણ અને ઉપયોગી માહિતી સવિસ્તાર સમજો.",
+    "organization": "સત્તાવાર સંસ્થા",
+    "brand": "મુખ્ય બ્રાન્ડ",
+    "step": "તબક્કો",
+  },
+  "hi": {
+    "author": "विशेषज्ञ लेखक",
+    "publisher": "आधिकारिक प्रकाशक",
+    "customer_service": "ग्राहक सेवा",
+    "description": "विस्तृत और उपयोगी जानकारी समझें।",
+    "organization": "आधिकारिक संस्था",
+    "brand": "मुख्य ब्रांड",
+    "step": "चरण",
+  },
+  "mr": {
+    "author": "तज्ज्ञ लेखक",
+    "publisher": "अधिकृत प्रकाशक",
+    "customer_service": "ग्राहक सेवा",
+    "description": "सविस्तर आणि उपयुक्त माहिती.",
+    "organization": "अधिकृत संस्था",
+    "brand": "मुख्य ब्रँड",
+    "step": "टप्पा",
+  },
+  "es": {
+    "author": "Autor Experto",
+    "publisher": "Editorial Oficial",
+    "customer_service": "Atención al Cliente",
+    "description": "Información detallada y práctica.",
+    "organization": "Organización Oficial",
+    "brand": "Marca Principal",
+    "step": "Paso",
+  },
+  "fr": {
+    "author": "Auteur Expert",
+    "publisher": "Éditeur Officiel",
+    "customer_service": "Service Client",
+    "description": "Informations détaillées et pratiques.",
+    "organization": "Organisation Officielle",
+    "brand": "Marque Principale",
+    "step": "Étape",
+  },
+  "de": {
+    "author": "Expertenautor",
+    "publisher": "Offizieller Verlag",
+    "customer_service": "Kundenservice",
+    "description": "Detaillierte und praktische Informationen.",
+    "organization": "Offizielle Organisation",
+    "brand": "Hauptmarke",
+    "step": "Schritt",
+  },
+  "en": {
+    "author": "{{AUTHOR_NAME}}",
+    "publisher": "{{PUBLISHER_NAME}}",
+    "customer_service": "customer service",
+    "description": "{{DESCRIPTION}}",
+    "organization": "{{ORGANIZATION_NAME}}",
+    "brand": "{{BRAND_NAME}}",
+    "step": "Step",
+  },
+}
+
+
+def auto_resolve_currency_and_location(data: dict[str, Any], language: str | None = None) -> dict[str, Any]:
+  """Auto-detect currency symbols and parse raw location text into PostalAddress."""
+  out = dict(data)
+  lang = (language or "en").lower()[:2]
+
+  # 1. Currency Auto-Detection
+  price_raw = str(out.get("price") or out.get("priceRange") or "")
+  if not out.get("currency") and not out.get("priceCurrency"):
+    if "₹" in price_raw or lang in ("gu", "hi", "mr", "bn", "pa", "te", "ta", "kn", "ml"):
+      out["priceCurrency"] = "INR"
+    elif "$" in price_raw:
+      out["priceCurrency"] = "USD"
+    elif "€" in price_raw or lang in ("es", "fr", "de", "it"):
+      out["priceCurrency"] = "EUR"
+    elif "£" in price_raw:
+      out["priceCurrency"] = "GBP"
+    elif "¥" in price_raw:
+      out["priceCurrency"] = "JPY"
+    else:
+      out["priceCurrency"] = "USD"
+
+  # 2. Location Geocoding & Parsing
+  raw_addr = str(out.get("address") or out.get("streetAddress") or "")
+  if isinstance(out.get("address"), str) and "," in out["address"]:
+    parts = [p.strip() for p in out["address"].split(",")]
+    if len(parts) >= 3:
+      out["city"] = parts[0]
+      out["state"] = parts[1]
+      out["country"] = parts[2]
+      out["addressLocality"] = parts[0]
+      out["addressRegion"] = parts[1]
+      out["addressCountry"] = "IN" if "india" in parts[2].lower() or "gujarat" in parts[1].lower() else parts[2]
+    elif len(parts) == 2:
+      out["city"] = parts[0]
+      out["state"] = parts[1]
+      out["addressLocality"] = parts[0]
+      out["addressRegion"] = parts[1]
+
+  return out
+
+
+def enrich_eeat_entity(
+  entity: dict[str, Any] | str | None,
+  entity_type: str = "Person",
+  data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+  """Construct Google E-E-A-T compliant author or publisher entity with sameAs & knowsAbout."""
+  if isinstance(entity, str):
+    name = entity.strip()
+    same_as = []
+  elif isinstance(entity, dict):
+    name = entity.get("name", "")
+    same_as = entity.get("sameAs", [])
+    if isinstance(same_as, str):
+      same_as = [same_as]
+  else:
+    name = "{{AUTHOR_NAME}}" if entity_type == "Person" else "{{PUBLISHER_NAME}}"
+    same_as = []
+
+  res: dict[str, Any] = {
+    "@type": entity_type,
+    "name": name,
+  }
+
+  if same_as:
+    res["sameAs"] = same_as
+  else:
+    # Default E-E-A-T profile structure placeholders
+    if entity_type == "Person":
+      res["jobTitle"] = "Subject Matter Expert"
+      res["knowsAbout"] = ["SEO", "Content Marketing", "Technology"]
+    elif entity_type == "Organization":
+      res["publishingPrinciples"] = f"{data.get('url', 'https://example.com')}/editorial-policy"
+      res["correctionsPolicy"] = f"{data.get('url', 'https://example.com')}/corrections-policy"
+
+  return res
+
+
+def convert_schema_to_microdata(schema: dict[str, Any], schema_type: str) -> str:
+  """Convert JSON-LD schema into HTML Microdata attributes format."""
+  primary = schema.get("@graph", [schema])[0] if isinstance(schema, dict) else schema
+  lines = [f'<div itemscope itemtype="https://schema.org/{schema_type}">']
+
+  for key, val in primary.items():
+    if key.startswith("@"):
+      continue
+    if isinstance(val, (str, int, float)):
+      lines.append(f'  <meta itemprop="{key}" content="{val}" />')
+    elif isinstance(val, dict):
+      sub_type = val.get("@type", "Thing")
+      sub_name = val.get("name", "")
+      lines.append(f'  <div itemprop="{key}" itemscope itemtype="https://schema.org/{sub_type}">')
+      if sub_name:
+        lines.append(f'    <span itemprop="name">{sub_name}</span>')
+      lines.append('  </div>')
+
+  lines.append('</div>')
+  return "\n".join(lines)
+
+
+def convert_schema_to_rdfa(schema: dict[str, Any], schema_type: str) -> str:
+  """Convert JSON-LD schema into HTML RDFa attribute format."""
+  primary = schema.get("@graph", [schema])[0] if isinstance(schema, dict) else schema
+  lines = [f'<div vocab="https://schema.org/" typeof="{schema_type}">']
+
+  for key, val in primary.items():
+    if key.startswith("@"):
+      continue
+    if isinstance(val, (str, int, float)):
+      lines.append(f'  <meta property="{key}" content="{val}" />')
+    elif isinstance(val, dict):
+      sub_type = val.get("@type", "Thing")
+      sub_name = val.get("name", "")
+      lines.append(f'  <div property="{key}" typeof="{sub_type}">')
+      if sub_name:
+        lines.append(f'    <span property="name">{sub_name}</span>')
+      lines.append('  </div>')
+
+  lines.append('</div>')
+  return "\n".join(lines)
+
+
+def generate_embed_bundle(final_schema: dict[str, Any], jsonld_string: str) -> dict[str, Any]:
+  """Generate ready-to-use integration code snippets for HTML, Next.js / React, and WordPress PHP."""
+  html_script = f'<script type="application/ld+json">\n{jsonld_string}\n</script>'
+  
+  nextjs_react = (
+    '<script\n'
+    '  id="schema-jsonld"\n'
+    '  type="application/ld+json"\n'
+    f'  dangerouslySetInnerHTML={{{{ __html: JSON.stringify({json.dumps(final_schema, indent=2)}) }}}}\n'
+    '/>'
+  )
+
+  escaped_jsonld = jsonld_string.replace("'", "\\'")
+  wordpress_php = (
+    "add_action('wp_head', function() {\n"
+    f"  echo '<script type=\"application/ld+json\">{escaped_jsonld}</script>';\n"
+    "});"
+  )
+
+  microdata = convert_schema_to_microdata(final_schema, final_schema.get("@type", "Thing"))
+  rdfa = convert_schema_to_rdfa(final_schema, final_schema.get("@type", "Thing"))
+
+  return {
+    "html_script": html_script,
+    "nextjs_react": nextjs_react,
+    "wordpress_php": wordpress_php,
+    "alternative_formats": {
+      "microdata": microdata,
+      "rdfa": rdfa,
+    },
+  }
+
+
 def apply_verified_defaults(
   schema: dict[str, Any],
   schema_type: str,
   name: str,
   data: dict[str, Any],
 ) -> dict[str, Any]:
-  """Required templates + production recommended placeholders — no fake data."""
+  """Required templates + production recommended placeholders with i18n & EEAT support."""
   out = dict(schema)
+  data = auto_resolve_currency_and_location(data, data.get("inLanguage") or data.get("language"))
+  lang = (data.get("inLanguage") or data.get("language") or "en").lower()[:2]
+  i18n = MULTILINGUAL_SCHEMA_CATALOG.get(lang, MULTILINGUAL_SCHEMA_CATALOG["en"])
+
   content_types = ("Article", "NewsArticle", "Blog", "BlogPosting")
 
-  # WebPage must never carry article fields
   if schema_type == "WebPage":
     out.pop("headline", None)
     out.pop("articleSection", None)
@@ -595,7 +820,7 @@ def apply_verified_defaults(
 
   if schema_type in _DESC_URL_TYPES:
     if not out.get("description"):
-      out["description"] = data.get("description") or TPL["DESCRIPTION"]
+      out["description"] = data.get("description") or i18n["description"]
     if not out.get("url"):
       out["url"] = data.get("url") or TPL["URL"]
 
@@ -608,31 +833,20 @@ def apply_verified_defaults(
     if not out.get("datePublished"):
       out["datePublished"] = data.get("datePublished") or TPL["DATE_PUBLISHED"]
     if not out.get("author"):
-      out["author"] = {"@type": "Person", "name": data.get("author") or TPL["AUTHOR_NAME"]}
+      out["author"] = enrich_eeat_entity(data.get("author"), "Person", data)
+    if not out.get("publisher"):
+      out["publisher"] = enrich_eeat_entity(data.get("publisher"), "Organization", data)
     if data.get("articleBody") and not out.get("articleBody"):
       out["articleBody"] = str(data["articleBody"])[:5000]
-    if data.get("articleSection") and schema_type != "WebPage":
-      out["articleSection"] = str(data["articleSection"])
-
-  if schema_type == "WebPage":
-    crumbs = data.get("breadcrumbs") or data.get("breadcrumb")
-    if crumbs and not out.get("breadcrumb"):
-      out["breadcrumb"] = crumbs
-    if data.get("isPartOf") and not out.get("isPartOf"):
-      out["isPartOf"] = data["isPartOf"]
-    if data.get("primaryImageOfPage") and not out.get("primaryImageOfPage"):
-      out["primaryImageOfPage"] = data["primaryImageOfPage"]
-    elif not out.get("primaryImageOfPage"):
-      out["primaryImageOfPage"] = data.get("image") or TPL["IMAGE_URL"]
 
   if schema_type == "Product":
     if not out.get("brand"):
-      out["brand"] = {"@type": "Brand", "name": data.get("brand") or TPL["BRAND_NAME"]}
+      out["brand"] = {"@type": "Brand", "name": data.get("brand") or i18n["brand"]}
     if not out.get("offers"):
       out["offers"] = {
         "@type": "Offer",
         "price": str(data.get("price") or TPL["PRICE"]),
-        "priceCurrency": str(data.get("priceCurrency") or data.get("currency") or TPL["CURRENCY"]),
+        "priceCurrency": str(data.get("priceCurrency") or data.get("currency") or "INR" if lang in ("gu", "hi", "mr") else "USD"),
       }
 
   if schema_type in {"Organization", "EducationalOrganization", "GovernmentOrganization"}:
@@ -646,59 +860,19 @@ def apply_verified_defaults(
       out["contactPoint"] = {
         "@type": "ContactPoint",
         "telephone": data.get("telephone") or data.get("phone") or TPL["PHONE"],
-        "contactType": "customer service",
+        "contactType": i18n["customer_service"],
       }
-
-  if schema_type == "Service":
-    if not out.get("provider"):
-      out["provider"] = {"@type": "Organization", "name": data.get("provider") or TPL["PROVIDER_NAME"]}
-    if not out.get("serviceType"):
-      out["serviceType"] = data.get("serviceType") or TPL["SERVICE_TYPE"]
-    if not out.get("areaServed"):
-      out["areaServed"] = data.get("areaServed") or TPL["AREA_SERVED"]
-    if not out.get("offers"):
-      out["offers"] = {
-        "@type": "Offer",
-        "price": str(data.get("price") or TPL["PRICE"]),
-        "priceCurrency": str(data.get("priceCurrency") or TPL["CURRENCY"]),
-      }
-
-  if schema_type == "Course":
-    if not out.get("provider"):
-      out["provider"] = {"@type": "Organization", "name": data.get("provider") or TPL["PROVIDER_NAME"]}
-    if not out.get("offers"):
-      out["offers"] = {
-        "@type": "Offer",
-        "price": str(data.get("price") or TPL["PRICE"]),
-        "priceCurrency": str(data.get("priceCurrency") or TPL["CURRENCY"]),
-      }
-
-  if schema_type == "Brand":
-    if not out.get("logo"):
-      out["logo"] = data.get("logo") or TPL["LOGO_URL"]
-    if not out.get("sameAs"):
-      out["sameAs"] = data.get("sameAs") or [TPL["SOCIAL_URL"]]
-
-  if schema_type in {"LocalBusiness", "MedicalBusiness", "Restaurant", "RealEstateAgent"}:
-    if not out.get("address"):
-      out["address"] = _address_from_data(data)
-
-  if schema_type == "Recipe":
-    if not out.get("recipeIngredient"):
-      out["recipeIngredient"] = data.get("recipeIngredient") or data.get("ingredients") or []
-    if not out.get("recipeInstructions"):
-      out["recipeInstructions"] = data.get("recipeInstructions") or []
 
   if schema_type == "HowTo" and not out.get("step"):
     out["step"] = [{
-      "@type": "HowToStep", "position": 1, "name": "Step 1", "text": TPL["DESCRIPTION"],
+      "@type": "HowToStep", "position": 1, "name": f"{i18n['step']} 1", "text": i18n["description"],
     }]
 
   if schema_type == "FAQPage" and not out.get("mainEntity"):
     out["mainEntity"] = [{
       "@type": "Question",
-      "name": TPL["DESCRIPTION"],
-      "acceptedAnswer": {"@type": "Answer", "text": TPL["DESCRIPTION"]},
+      "name": i18n["description"],
+      "acceptedAnswer": {"@type": "Answer", "text": i18n["description"]},
     }]
 
   if schema_type == "Review":
@@ -780,19 +954,31 @@ def build_linked_schema_graph(
   slug = slugify(name)
   base = f"https://example.org/schema/{slug}"
   graph: list[dict[str, Any]] = []
+  lang = (data.get("inLanguage") or data.get("language") or "en").lower()[:2]
+  i18n = MULTILINGUAL_SCHEMA_CATALOG.get(lang, MULTILINGUAL_SCHEMA_CATALOG["en"])
 
   if schema_type in {"Article", "NewsArticle", "Blog", "BlogPosting"}:
     author_id = f"{base}#author"
-    author_name = (
-      primary.get("author", {}).get("name")
-      if isinstance(primary.get("author"), dict) else data.get("author")
-    ) or TPL["AUTHOR_NAME"]
+    author_dict = primary.get("author") if isinstance(primary.get("author"), dict) else (data.get("author") if isinstance(data.get("author"), dict) else {})
+    author_name = author_dict.get("name") if isinstance(author_dict, dict) else (data.get("author") or i18n.get("author", TPL["AUTHOR_NAME"]))
 
     article = dict(primary)
     article["@id"] = f"{base}#article"
     article["author"] = {"@id": author_id}
     graph.append(article)
-    graph.append({"@type": "Person", "@id": author_id, "name": str(author_name)})
+    
+    person_node = {"@type": "Person", "@id": author_id, "name": str(author_name)}
+    if isinstance(author_dict, dict):
+      if author_dict.get("sameAs"):
+        person_node["sameAs"] = author_dict["sameAs"]
+      if author_dict.get("knowsAbout"):
+        person_node["knowsAbout"] = author_dict["knowsAbout"]
+      if author_dict.get("jobTitle"):
+        person_node["jobTitle"] = author_dict["jobTitle"]
+    else:
+      person_node["jobTitle"] = "Subject Matter Expert"
+      person_node["knowsAbout"] = ["SEO", "Content Strategy", "Technology"]
+    graph.append(person_node)
 
     page_url = data.get("url") or primary.get("url")
     if page_url and user_provided(page_url):

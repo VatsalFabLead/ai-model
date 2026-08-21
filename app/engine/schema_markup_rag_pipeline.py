@@ -233,6 +233,9 @@ async def run_schema_markup_pipeline(
 
   elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
 
+  from app.engine.schema_markup_enrichment import generate_embed_bundle
+  embed_bundle = generate_embed_bundle(final_schema, jsonld_string)
+
   return {
     "generator_version": GENERATOR_VERSION,
     "schema_type": stype,
@@ -240,6 +243,7 @@ async def run_schema_markup_pipeline(
     "language": schema_engine.bcp47(language),
     "jsonld": final_schema,
     "jsonld_string": jsonld_string,
+    "embed_bundle": embed_bundle,
     "quality": {
       "completeness_score": scores["completeness_score"],
       "verified_completeness_score": scores.get("verified_completeness_score", 0),
